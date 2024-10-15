@@ -1,5 +1,9 @@
 
 
+// TODO: probably remove the need for Internal_Variable_Value and instead use Any
+// OR, if we really want to enumerate all the types that can be used in this way, we need to add some means to dyncall to get the return values stored directly into this union
+// We can probably do both at some point tbh
+
 Internal_Variable_Value :: Tagged_Union(float32, Vector2);
 
 // Custom code to set tagged union using data types not explicitly allowed in union
@@ -7,7 +11,7 @@ Internal_Variable_Value :: Tagged_Union(float32, Vector2);
 set_internal_variable_value :: (ivv: *Internal_Variable_Value, value: Any) -> bool {
     if set_any(ivv, value)  return false;
     
-    f32_value, ok := get_numeric_value_as_f32(node.variable.binding);
+    f32_value, ok := get_numeric_value_as_f32(value);
     if !ok  return false;
 
     set(ivv, f32_value);

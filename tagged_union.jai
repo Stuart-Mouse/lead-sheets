@@ -30,7 +30,7 @@ set :: (u: *Tagged_Union, value: $T) {
 
 // set from an Any
 set_any :: (u: *Tagged_Union, value: Any) -> bool {
-    if !is_valid_type(u.*, type_from_info(value.type)) return false;
+    if !u.is_valid_type(type_from_info(value.type)) return false;
     
     u.tag = type_from_info(value.type);
     memcpy(*u.value, value.value_pointer, value.type.runtime_size);

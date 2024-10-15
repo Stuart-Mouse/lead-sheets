@@ -1,45 +1,39 @@
 
 Script_Procedure :: struct {
     name : string;
-    proc : #type ([]Internal_Variable_Value) -> (Internal_Variable_Value, bool);
+    type : *Type_Info;
+    ptr  : *void;
 }
 
-/*
-    Wrapping Jai procedures for use in scripts.
-    Jonathan Blow suggested using LibDynCall, which seems like a pretty good solution, but requires the C calling convention.
-    If using the x64 backend, that means we can only use #c_call procedures
-    If using LLVM backend, then all Jai procs still get translated to use the C calling convention.
-    
-    For Jai procedures that get translated to C proc headers:
-        multiple returns are passed by pointer after arguments
-        all structs and arrays passed by pointer
-        
-    Probably better to just only use #c_call procedures for now, since that is more straightforward.
-    Not to mention that we may not be able to rely on the LLVM backend in perpetuity.
-    
-    Wrapping procedures through some macro and code gen feels really hacky and ultimately cannot be done runtime dynamically.
-    
-*/
+// adds a procedure to the given script's context
+register_procedure :: (script: *Script, name: string, procedure: Any) {
+    assert(procedure.type.type == .PROCEDURE);
+    array_add(*script.procedures, .{
+        name = name,
+        type = procedure.type,
+        ptr  = (cast(**void)procedure.value_pointer).*
+    });
+}
 
+// The Any here actually points to the pointer in the given Script_Procedure.
+// This could be problematic if we were to modify the script's procedures array and cause a realloc, but that should never happen.
+make_procedure_any :: (script_proc: Script_Procedure) -> Any {
+    return Any.{ script_proc.type, *script_proc.ptr }; 
+}
 
-// wrap_procedure_for_use_in_scripts :: ($proc: Any) -> (Script_Procedure, bool)  {
-//     proc_ti :: cast(*Type_Info_Procedure) proc.type;
-//     proc_t  : Type : (cast(*Type)*proc_ti).*;
+// wraps calls to Dyncall further so that we can provide special checks and error relevant to Lead Sheets
+// call_procedure :: (script: *Script, proc: Script_Procedure, param_nodes: [] int) -> (Any, bool) {
+//     if !proc.ptr || !proc.type  return false;
     
-//     // check argument type 
-//     for (ti_proc.argument_types) {
-        
+//     // 
+    
+//     params := NewArray(node.procedure_call.params.count, Any,, allocator = temp);
+//     for node.procedure_call.params {
+//         params[it_index] = evaluate_expression(script, expr, it);
 //     }
     
-//     __generate_procedure_body :: () -> string {
-//         sb: String_Builder;
-        
-//         print_to_builder(*sb, "(cast(%)proc.value_pointer)(", );
-//         for (ti_proc.argument_types) {
-            
-//         }
-//     }
-    
-    
+//     return DYNAMIC_JAI_CALL(make_procedure_any(proc), );
 // }
+
+
 

@@ -3,6 +3,7 @@
 #import "Math";
 #import "String";
 #import "Hash_Table";
+#import "dyncall";
 
 #load "token.jai";
 #load "ast.jai";

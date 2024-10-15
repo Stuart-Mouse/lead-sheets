@@ -214,35 +214,39 @@ evaluate_expression :: (
             right := evaluate_expression(script, expr, node.operation.right);
             ret   : Internal_Variable_Value;
             if !do_binary_operation(node.operation._operator, *ret, left, right) {
-                print("Invalid operator: %", string.{ 1, *node.operation._operator });
+                print("Invalid operator: % % %\n", get_as_any(*left), string.{ 1, *node.operation._operator }, get_as_any(*right));
                 assert(false);
             }
             print("returning result of binary operation %: % %\n", string.{ 1, *node.operation._operator }, ret.tag, get_as_any(*ret));
             return ret, true;
             
         case .PROCEDURE_CALL;
-            // get the actual proc ptr for a given procedure if it is not already set
-            if node.procedure_call.proc == null {
+            if node.procedure_call.ptr == null {
                 for * script.procedures {
                     if it.name == node.procedure_call.name {
-                        node.procedure_call.proc = it.proc;
+                        node.procedure_call.procedure = it;
                         break;
                     }
                 }
             }
-            if node.procedure_call.proc == null {
-                print("ERROR: No procedure found named '%'!\n", node.variable.name);
-            }
             
-            // print("evaluating procedure '%' with % params\n", node.procedure_call.name, node.procedure_call.params.count);
-            params := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, allocator = temp);
+            if !node.procedure_call.ptr || !node.procedure_call.type  return .{}, false;
+            
+            param_vals := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, temp);
+            param_anys := NewArray(node.procedure_call.params.count, Any,, temp);
             for node.procedure_call.params {
-                params[it_index] = evaluate_expression(script, expr, it);
-                // print("param % = %\n", it_index, params[it_index]);
+                param_vals[it_index] = evaluate_expression(script, expr, it);
+                param_anys[it_index] = get_as_any(*param_vals[it_index]);
             }
             
-            ret, ok := node.procedure_call.proc(params);
-            print("returning result of proc call %: % %\n", node.procedure_call.name, ret.tag, get_as_any(*ret));
+            print("param_anys: %\n", param_anys);
+            
+            ret: Internal_Variable_Value;
+            
+            r := DYNAMIC_JAI_CALL(make_procedure_any(node.procedure_call), ..param_anys);
+            assert(r.count == 1); // TODO
+            set_internal_variable_value(*ret, r[0]);
+            
             return ret, true;
     }
     
