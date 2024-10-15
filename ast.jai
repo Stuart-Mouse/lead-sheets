@@ -1,0 +1,303 @@
+
+AST :: struct {
+    Node_Type :: enum {
+        OPERATION;
+        NUMBER;
+        VARIABLE;
+        PROCEDURE_CALL;
+    }
+    Node :: struct {
+        value_type : Type;
+        type       : Node_Type;
+        src_loc    : Source_Location;
+        
+        union {
+            variable : External_Variable;
+            number   : float32;
+            ident    : string; // view onto source string
+            procedure_call : struct {
+                using #as procedure: Script_Procedure; // maybe we can make this be by pointer later if really worth it
+                params: [..] int; // should make this not be a dynamic array later if possible. for now, its just convenient
+            };
+            operation: struct {
+                _operator: u8; // for now, just use the character that represents the operation. Later, we will desugar all operations into "procedures", maybe
+                left, right: int;
+            };
+        }
+    }
+    
+    Expression :: struct {
+        flags : enum { TYPECHECKED; };
+        root  : int;
+    }
+    
+    Statement_Type :: enum {
+        ASSIGNMENT;
+    }
+    Statement :: struct {
+        type : Statement_Type;
+        union {
+            assignment : struct {
+                left  : string; // TODO: later we will want to support some kind of expression on left side (primarily for arrays)
+                right : Expression;
+            };
+        }
+    }
+    
+    // for now all nodes are stored in one big array
+    // later maybe we put nodes in separate arrays for each statement
+    nodes      : [..] Node;
+    statements : [..] Statement;
+}
+
+free_ast :: (ast: *AST) {
+    array_free(ast.nodes);
+    memset(*ast.nodes, 0, size_of(Resizable_Array));
+}
+
+get_expression_type :: (expr: *AST.Expression) -> Type { 
+    ret: Type; // 0-valued Type
+    if !expr.flags & .TYPECHECKED     return ret;
+    if expr.root >= expr.nodes.count  return ret;
+    return expr.nodes[expr.root].value_type;
+}
+
+
+print_ast :: (using ctxt: *Script, node_i: int, parent_prec: int = 0) {
+    if node_i < 0 || node_i >= ast.nodes.count  return;
+    
+    node := *ast.nodes[node_i];
+    if node.type == {
+        case .NUMBER;
+            print("%", node.number);
+            
+        case .VARIABLE;
+            print("%", node.variable.name);
+            
+        case .OPERATION;
+            prec := get_operator_precedence(node.operation._operator);
+            do_parens := ifx prec < parent_prec then true;
+            
+            if do_parens  print("(");
+            print_ast(ctxt, node.operation.left, prec);
+            print("%", string.{ 1, *node.operation._operator });
+            print_ast(ctxt, node.operation.right, prec);
+            if do_parens  print(")");
+            
+        case .PROCEDURE_CALL;
+            print("%(", node.procedure_call.name);
+            for node.procedure_call.params {
+                print_ast(ctxt, it);
+                if it_index != node.procedure_call.params.count-1  print(",");
+            }
+            print(")");
+    }
+}
+
+sprint_ast_node :: (node: AST.Node) -> string {
+    if node.type == {
+        case .NUMBER;
+            return tprint(".NUMBER: %", node.number);
+            
+        case .VARIABLE;
+            return tprint(".VARIABLE: %", node.variable.name);
+            
+        case .OPERATION;
+            return tprint(".OPERATION: %", string.{ 1, *node.operation._operator });
+        
+        case .PROCEDURE_CALL;
+            return tprint(".PROCEDURE_CALL: %", node.procedure_call.name);
+        
+        case;
+            print("%: ??? ", node.type);
+    }
+    return "";
+}
+
+execute_script :: (script : *Script) -> bool {
+    print("executing script with % statements\n", script.ast.statements.count);
+    for * script.ast.statements {
+        print("executing statement #%\n", it_index);
+        if !execute_statement(script, it)  return false;
+    }
+    return true;
+}
+
+execute_statement :: (
+    script : *Script, 
+    stmt   : *AST.Statement
+) -> bool {
+    if stmt.type == {
+      case .ASSIGNMENT;
+        print("statement type is %\n", stmt.type);
+        ret, ok := evaluate_expression(script, *stmt.assignment.right);
+        if !ok {
+            print("failed to evaluate statement!\n");
+            return false;
+        }
+        
+        dst: Any;
+        for script.variables 
+            if it.name == stmt.assignment.left 
+                dst = it.binding;
+        
+        if !dst.value_pointer {
+            print("could not resolve variable '%'\n", stmt.assignment.left);
+            return false;
+        }
+        
+        return set_any_from_internal_variable_value(dst, *ret);
+        
+      case;
+        return false;
+    }
+}
+
+// evaluates expression from the root node
+evaluate_expression :: inline (
+    script : *Script, 
+    expr   : *AST.Expression
+) -> (
+    Internal_Variable_Value, bool
+) {
+    ret, ok := evaluate_expression(script, expr, expr.root);
+    return ret, ok;
+}
+
+// evaluates expression from the given node index
+// TODO: maybe rename to evaulate_expression_node?
+evaluate_expression :: (
+    script : *Script, 
+    expr   : *AST.Expression, 
+    node_i : int
+) -> (
+    Internal_Variable_Value, bool
+) {
+    if node_i < 0 || node_i >= script.ast.nodes.count {
+        print("Invalid node '%'\n", node_i);
+        return .{}, false;
+    }
+    
+    node := *script.ast.nodes[node_i];
+    if node.type == {
+        case .NUMBER;
+            ret: Internal_Variable_Value;
+            set(*ret, cast(float32) node.number);
+            print("returning number literal: % %\n", ret.tag, get_as_any(*ret));
+            return ret, true;
+            
+        case .VARIABLE;
+            // get the binding for a given variable if it is not already set
+            // TODO: should probably make sure that all variables and procedures resolve before evaluating an expression
+            if node.variable.binding.value_pointer == null {
+                for * script.variables {
+                    if it.name == node.variable.name {
+                        node.variable.binding = it.binding;
+                        break;
+                    }
+                }
+            }
+            if node.variable.binding.value_pointer == null {
+                print("ERROR: No variable found named '%'!\n", node.variable.name);
+            }
+            
+            // TODO: factor out mapping of external variable type to internal and reverse. should be in some table with fn ptr to convert values
+            f32_value, ok := get_numeric_value_as_f32(node.variable.binding);
+            if !ok  assert(false);
+            ret: Internal_Variable_Value;
+            set(*ret, f32_value);
+            print("returning variable %: % %\n", node.variable.name, ret.tag, get_as_any(*ret));
+            return ret, true;
+            
+        case .OPERATION;
+            left  := evaluate_expression(script, expr, node.operation.left );
+            right := evaluate_expression(script, expr, node.operation.right);
+            ret   : Internal_Variable_Value;
+            if !do_binary_operation(node.operation._operator, *ret, left, right) {
+                print("Invalid operator: %", string.{ 1, *node.operation._operator });
+                assert(false);
+            }
+            print("returning result of binary operation %: % %\n", string.{ 1, *node.operation._operator }, ret.tag, get_as_any(*ret));
+            return ret, true;
+            
+        case .PROCEDURE_CALL;
+            // get the actual proc ptr for a given procedure if it is not already set
+            if node.procedure_call.proc == null {
+                for * script.procedures {
+                    if it.name == node.procedure_call.name {
+                        node.procedure_call.proc = it.proc;
+                        break;
+                    }
+                }
+            }
+            if node.procedure_call.proc == null {
+                print("ERROR: No procedure found named '%'!\n", node.variable.name);
+            }
+            
+            // print("evaluating procedure '%' with % params\n", node.procedure_call.name, node.procedure_call.params.count);
+            params := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, allocator = temp);
+            for node.procedure_call.params {
+                params[it_index] = evaluate_expression(script, expr, it);
+                // print("param % = %\n", it_index, params[it_index]);
+            }
+            
+            ret, ok := node.procedure_call.proc(params);
+            print("returning result of proc call %: % %\n", node.procedure_call.name, ret.tag, get_as_any(*ret));
+            return ret, true;
+    }
+    
+    assert(false);
+    return .{}, false;
+}
+
+
+// typecheck_expression :: (
+//     script : *Script, 
+//     expr   : *AST.Expression, 
+//     node_i : int
+// ) -> (
+//     Type, bool
+// ) {
+//     if node_i < 0 || node_i >= expr.nodes.count {
+//         print("Invalid node.");
+//         assert(false);
+//         return .{}, false;
+//     }
+    
+//     node := *expr.nodes[node_i];
+//     if node.type == {
+//         case .NUMBER;
+//             return float32, true;
+            
+//         case .VARIABLE; 
+//             if node.variable.binding.value_pointer == null {
+//                 print("ERROR: No variable found named '%'!\n", node.variable.name);
+//             }
+//             type := ((*Type)*node.variable.binding.type).*;
+//             ok   := Internal_Variable_Value.is_valid_type(type) || is_numeric_type(type);
+//             return type, ok;
+            
+//         case .OPERATION;
+//             left     := get_expression_type(script, expr, node.operation.left );
+//             right    := get_expression_type(script, expr, node.operation.right);
+//             type, ok := typecheck_binary_operation(node.operation._operator, left, right);
+//             return ret, ok;
+            
+//         case .PROCEDURE_CALL;
+//             if node.procedure_call.proc == null {
+//                 print("ERROR: No procedure found named '%'!\n", node.variable.name);
+//             }
+            
+//             params := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, allocator = temp);
+//             for node.procedure_call.params {
+//                 params[it_index] = evaluate_expression(script, expr, it);
+//             }
+            
+//             ret, ok := node.procedure_call.proc(params);
+//             print("returning result of proc call %: % %\n", node.procedure_call.name, ret.tag, get_as_any(*ret));
+//             return ret, true;
+//     }
+    
+//     assert(false);
+//     return .{}, false;
+// }
