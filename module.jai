@@ -8,8 +8,7 @@
 #load "token.jai";
 #load "ast.jai";
 #load "procedure.jai";
-#load "tagged_union.jai";
-#load "intermediate_value.jai";
+#load "binary_op.jai";
 
 /*
     TODO:
@@ -53,8 +52,12 @@ Script :: struct {
     ast         : AST;
     variables   : [..] External_Variable;
     procedures  : [..] Script_Procedure;
+    operators   : [..] Script_Procedure;
+    flags       : Flags;
     
-    // _ast_validated : bool;
+    Flags :: enum_flags {
+        READY_TO_RUN;
+    }
 }
 
 free_script :: (using script: *Script) {
@@ -62,9 +65,12 @@ free_script :: (using script: *Script) {
     memset(*variables, 0, size_of(Resizable_Array));
     array_free(procedures);
     memset(*procedures, 0, size_of(Resizable_Array));
+    array_free(operators);
+    memset(*operators, 0, size_of(Resizable_Array));
     free_ast(*ast);
 }
 
+// ensures no name conflicts
 set_variable :: (script: *Script, name: string, any: Any) {
     for *script.variables {
         if it.name == name {
@@ -75,7 +81,6 @@ set_variable :: (script: *Script, name: string, any: Any) {
     
     array_add(*script.variables, .{ name, any });
 }
-
 
 
 Script_Constructor :: struct {
@@ -346,6 +351,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
 // cycles between skipping whitespace and comments until next character is neither
 // TODO: add *int param to increment line count 
 skip_whitespace_and_comments :: (file: *string) -> bool {
+    if file.count == 0 return false;
     while true {
         while is_whitespace(file.*[0]) {
             if !advance(file) return false;
@@ -452,5 +458,38 @@ is_numeric_type :: (t: Type) {
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
 
-type_from_info :: (ti: *Type_Info) -> Type #expand { return (cast(*Type)*ti).*; }
+type_from_info :: inline (ti: *Type_Info) -> Type { return (cast(*Type)*ti).*; }
 
+
+// copied from how_to/170_modify.jai
+Dynamic_New :: (ti: *Type_Info, initialized := true) -> *void {
+    size := ti.runtime_size;
+    if size < 0 return null;   // Maybe they gave us a weird polymorphic type for some reason.
+
+    memory := alloc(size);
+
+    if initialized {
+        if ti.type == .STRUCT {
+            // Structs can have initializers. If the initializer is null, the struct is to be zeroed.
+            tis := cast(*Type_Info_Struct) ti;
+            if tis.initializer  tis.initializer(memory);
+            else                memset(memory, 0, size);
+        } else {
+            // Non-structs always default to 0.
+            // @Incomplete: Here we are not handling variants, or arrays of things that might have initializers.
+            memset(memory, 0, size);
+        }
+    }
+
+    return memory;
+}
+
+Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
+    memory := Dynamic_New(ti, initialized);
+    return ifx memory then Any.{ ti, memory } else Any.{};
+}
+
+
+type_info_to_type :: inline (ti: *Type_Info) -> Type {
+    return (cast(*Type)*ti).*;
+}

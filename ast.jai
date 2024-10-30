@@ -114,7 +114,7 @@ sprint_ast_node :: (node: AST.Node) -> string {
     return "";
 }
 
-execute_script :: (script : *Script) -> bool {
+execute_script :: (script: *Script) -> bool {
     print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
         print("executing statement #%\n", it_index);
@@ -146,7 +146,7 @@ execute_statement :: (
             return false;
         }
         
-        return set_any_from_internal_variable_value(dst, *ret);
+        return remap_data(dst, ret);
         
       case;
         return false;
@@ -154,37 +154,30 @@ execute_statement :: (
 }
 
 // evaluates expression from the root node
-evaluate_expression :: inline (
-    script : *Script, 
-    expr   : *AST.Expression
-) -> (
-    Internal_Variable_Value, bool
-) {
-    ret, ok := evaluate_expression(script, expr, expr.root);
+evaluate_expression :: inline (script: *Script, expr: *AST.Expression) -> (Any, bool) {
+    ret, ok := evaluate_expression_node(script, expr, expr.root);
     return ret, ok;
 }
 
 // evaluates expression from the given node index
 // TODO: maybe rename to evaulate_expression_node?
-evaluate_expression :: (
+evaluate_expression_node :: (
     script : *Script, 
     expr   : *AST.Expression, 
     node_i : int
 ) -> (
-    Internal_Variable_Value, bool
+    Any, bool
 ) {
     if node_i < 0 || node_i >= script.ast.nodes.count {
         print("Invalid node '%'\n", node_i);
-        return .{}, false;
+        return Any.{}, false;
     }
     
     node := *script.ast.nodes[node_i];
     if node.type == {
         case .NUMBER;
-            ret: Internal_Variable_Value;
-            set(*ret, cast(float32) node.number);
-            print("returning number literal: % %\n", ret.tag, get_as_any(*ret));
-            return ret, true;
+            print("returning number literal: %\n", node.number);
+            return node.number, true;
             
         case .VARIABLE;
             // get the binding for a given variable if it is not already set
@@ -201,57 +194,100 @@ evaluate_expression :: (
                 print("ERROR: No variable found named '%'!\n", node.variable.name);
             }
             
-            // TODO: factor out mapping of external variable type to internal and reverse. should be in some table with fn ptr to convert values
+            ret := Dynamic_New_Any(type_info(float32));
             f32_value, ok := get_numeric_value_as_f32(node.variable.binding);
             if !ok  assert(false);
-            ret: Internal_Variable_Value;
-            set(*ret, f32_value);
-            print("returning variable %: % %\n", node.variable.name, ret.tag, get_as_any(*ret));
+            (cast(*float32)ret.value_pointer).* = f32_value;
+            print("returning variable '%': %\n", node.variable.name, ret);
             return ret, true;
             
         case .OPERATION;
-            left  := evaluate_expression(script, expr, node.operation.left );
-            right := evaluate_expression(script, expr, node.operation.right);
-            ret   : Internal_Variable_Value;
-            if !do_binary_operation(node.operation._operator, *ret, left, right) {
-                print("Invalid operator: % % %\n", get_as_any(*left), string.{ 1, *node.operation._operator }, get_as_any(*right));
-                assert(false);
+            left, ok := evaluate_expression_node(script, expr, node.operation.left);
+            if !ok  return Any.{}, false;
+            
+            right:, ok = evaluate_expression_node(script, expr, node.operation.right);
+            if !ok  return Any.{}, false;
+            
+            arguments: [2] Any = .[ left, right ];
+            
+            // log("trying to find proc '%'", string.{ 1, *node.operation._operator });
+            proc_call: Script_Procedure;
+            for *script.operators {
+                // log("comparing proc '%'", it.name);
+                if it.name != string.{ 1, *node.operation._operator }  continue;
+                // log("typechecking args...");
+                
+                ti_proc := cast(*Type_Info_Procedure) it.type;
+                
+                // typechecking logic is slightly messy for operators
+                {
+                    ok := typecheck_arguments(ti_proc, left, right);
+                    if !ok && (ti_proc.procedure_flags & .IS_SYMMETRIC) {
+                        ok = typecheck_arguments(ti_proc, right, left);
+                        if ok {
+                            // swap left and right args to match what symmetric call expects
+                            arguments = .[ right, left ];
+                        }
+                    }
+                    if !ok  continue;
+                }
+                
+                proc_call = it;
+                break;
             }
-            print("returning result of binary operation %: % %\n", string.{ 1, *node.operation._operator }, ret.tag, get_as_any(*ret));
+            if !proc_call.ptr {
+                log("Unable to find procedure '%' with matching parameter types!", string.{ 1, *node.operation._operator });
+                return Any.{}, false;
+            }
+            
+            ti_proc := cast(*Type_Info_Procedure) proc_call.type;
+            assert(ti_proc.return_types.count == 1);
+            ret := Dynamic_New_Any(ti_proc.return_types[0]);
+            
+            if !setup_and_exec_vm_jai(make_procedure_any(proc_call), arguments, Any.[ ret ]) {
+                return Any.{}, false;
+            }
+            
+            print("returning result of operation '%': %\n", proc_call.name, ret);
+            
             return ret, true;
             
         case .PROCEDURE_CALL;
+            arguments := NewArray(node.procedure_call.params.count, Any,, temp);
+            for node.procedure_call.params {
+                arguments[it_index] = evaluate_expression_node(script, expr, it);
+            }
+            
             if node.procedure_call.ptr == null {
                 for * script.procedures {
-                    if it.name == node.procedure_call.name {
-                        node.procedure_call.procedure = it;
-                        break;
-                    }
+                    if it.name != node.procedure_call.name  continue;
+                    if !typecheck_arguments(xx it.type, ..arguments)  continue;
+                    
+                    node.procedure_call.procedure = it;
+                    break;
                 }
             }
             
-            if !node.procedure_call.ptr || !node.procedure_call.type  return .{}, false;
+            print("arguments: %\n", arguments);
             
-            param_vals := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, temp);
-            param_anys := NewArray(node.procedure_call.params.count, Any,, temp);
-            for node.procedure_call.params {
-                param_vals[it_index] = evaluate_expression(script, expr, it);
-                param_anys[it_index] = get_as_any(*param_vals[it_index]);
+            if !node.procedure_call.ptr {
+                log("Unable to find procedure '%' with matching parameter types!", node.procedure_call.name);
+                return Any.{}, false;
             }
             
-            print("param_anys: %\n", param_anys);
+            ti_proc := cast(*Type_Info_Procedure) node.procedure_call.type;
+            assert(ti_proc.return_types.count == 1);
+            ret := Dynamic_New_Any(ti_proc.return_types[0]);
             
-            ret: Internal_Variable_Value;
-            
-            r := DYNAMIC_JAI_CALL(make_procedure_any(node.procedure_call), ..param_anys);
-            assert(r.count == 1); // TODO
-            set_internal_variable_value(*ret, r[0]);
+            if !setup_and_exec_vm_jai(make_procedure_any(node.procedure_call), arguments, .[ ret ]) {
+                return Any.{}, false;
+            }
             
             return ret, true;
     }
     
     assert(false);
-    return .{}, false;
+    return Any.{}, false;
 }
 
 
@@ -294,7 +330,7 @@ evaluate_expression :: (
             
 //             params := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, allocator = temp);
 //             for node.procedure_call.params {
-//                 params[it_index] = evaluate_expression(script, expr, it);
+//                 params[it_index] = evaluate_expression_node(script, expr, it);
 //             }
             
 //             ret, ok := node.procedure_call.proc(params);
@@ -305,3 +341,6 @@ evaluate_expression :: (
 //     assert(false);
 //     return .{}, false;
 // }
+
+
+#import "Data_Packer";
