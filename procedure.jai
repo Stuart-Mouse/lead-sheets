@@ -1,13 +1,23 @@
 
 Script_Procedure :: struct {
-    name : string;
-    type : *Type_Info;
-    ptr  : *void;
+    name  : string;
+    type  : *Type_Info;
+    ptr   : *void;
+    flags : Flags;
+    
+    Flags :: enum_flags { 
+        SWAP_ARGUMENT_ORDER_FOR_SYMMETRIC_CALL :: 1; 
+    };
 }
 
 // adds a procedure to the given script's context
 register_procedure :: (script: *Script, name: string, procedure: Any) {
     assert(procedure.type.type == .PROCEDURE);
+    
+    ti_proc := cast(*Type_Info_Procedure) procedure.type;
+    assert(ti_proc.return_types.count == 1);
+    // TODO: is not C call
+    
     array_add(*script.procedures, .{
         name = name,
         type = procedure.type,
@@ -17,6 +27,11 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
 
 register_operator :: (script: *Script, name: string, procedure: Any) {
     assert(procedure.type.type == .PROCEDURE);
+    
+    ti_proc := cast(*Type_Info_Procedure) procedure.type;
+    assert(ti_proc.argument_types.count == 2);
+    assert(ti_proc.return_types.count == 1);
+    
     array_add(*script.operators, .{
         name = name,
         type = procedure.type,
@@ -30,13 +45,12 @@ make_procedure_any :: (script_proc: Script_Procedure) -> Any {
     return Any.{ script_proc.type, *script_proc.ptr }; 
 }
 
-
-resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_Info) -> (Any, bool) {
+resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_Info, is_operator := false) -> (Script_Procedure, bool) {
     // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
     // maybe we will put this behind some debug flag later
     Procedure_Resolution_Error :: struct {
         proc    : *Script_Procedure;
-        reason  : enum { ARG_COUNT; ARG_TYPE; };
+        error_type : enum { NONE; ARG_COUNT; ARG_TYPE; };
         details : union {
             arg_count : struct { expected: int; provided: int; };
             arg_type  : struct { index: int; expected: *Type_Info; provided: *Type_Info; };
@@ -44,39 +58,67 @@ resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_In
     }
     
     failing_overloads: [..] Procedure_Resolution_Error;
-    defer array_free(matching_overloads);
+    defer array_free(failing_overloads);
     
-    for proc: *script.procedures {
-        if proc.name != node.procedure_call.name  continue;
+    if is_operator {
+        assert(argument_types.count == 2, "argument_types.count was %", argument_types.count);
+    }
+    
+    proc_list := ifx is_operator then script.operators else script.procedures;
+    for *proc: proc_list {
+        if proc.name != name  continue proc;
         ti_proc := cast(*Type_Info_Procedure) proc.type;
         
         // typecheck arguments
         if ti_proc.argument_types.count != argument_types.count {
-            error := Procedure_Resolution_Error.{ proc = proc, reason = .ARG_COUNT };
+            error := Procedure_Resolution_Error.{ proc = proc, error_type = .ARG_COUNT };
             error.details.arg_count = .{ 
                 expected = ti_proc.argument_types.count, 
                 provided = argument_types.count 
             };
-            array_add(*matching_overloads, error);
+            array_add(*failing_overloads, error);
             
             continue proc;
         }
-        for expected: ti_proc.argument_types {
-            provided := argument_types[it_index];
-            if expected != provided {
-                error := Procedure_Resolution_Error.{ proc = proc, reason = .ARG_TYPE };
-                error.details.arg_type = .{ 
-                    index    = it_index,
-                    expected = ti_proc.argument_types.count, 
-                    provided = argument_types.count 
-                };
-                array_add(*matching_overloads, error);
+        
+        typecheck_arguments :: (script_proc: *Script_Procedure, expected_list: [] *Type_Info, provided_list: [] *Type_Info) -> (Procedure_Resolution_Error, bool) {
+            for expected: expected_list {
+                provided := provided_list[it_index];
+                if expected != provided {
+                    error := Procedure_Resolution_Error.{ proc = script_proc, error_type = .ARG_TYPE };
+                    error.details.arg_type = .{ 
+                        index    = it_index + 1,
+                        expected = expected, 
+                        provided = provided
+                    };
+                    return error, false;
+                }
+            }
+            return .{}, true;
+        }
+        
+        return_flags: Script_Procedure.Flags;
+        error, ok := typecheck_arguments(proc, ti_proc.argument_types, argument_types);
+        
+        // fallback case to try reordering args for symmetric case
+        if !ok && is_operator {
+            if (ti_proc.procedure_flags & .IS_SYMMETRIC) {
+                assert(ti_proc.argument_types.count == 2);
+                assert(argument_types.count == 2);
                 
-                continue proc;
+                return_flags |= .SWAP_ARGUMENT_ORDER_FOR_SYMMETRIC_CALL;
+                error, ok = typecheck_arguments(proc, ti_proc.argument_types, .[ argument_types[1], argument_types[0] ]);
             }
         }
         
-        return it, true;
+        if !ok {
+            array_add(*failing_overloads, error);
+            continue proc;
+        }
+        
+        return_proc := proc;
+        return_proc.flags = return_flags;
+        return return_proc, true;
     }
     
     print("Unable to resolve procedure '%'\n", name);
@@ -93,7 +135,7 @@ resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_In
             }
             print(")\n");
             
-            if reason == {
+            if it.error_type == {
               case .ARG_COUNT;
                 print(
                     "Mismatch on argument count: expected %, got %\n\n", 
@@ -104,7 +146,7 @@ resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_In
               case .ARG_TYPE;
                 print(
                     "Type mismatch on argument %: expected %, got %\n\n", 
-                    it.details.arg_type, 
+                    it.details.arg_type.index, 
                     type_info_to_type(it.details.arg_type.expected), 
                     type_info_to_type(it.details.arg_type.provided)
                 );
@@ -112,7 +154,7 @@ resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_In
         }
     }
     
-    return Any.{}, false;
+    return .{}, false;
 }
 
 

@@ -3,6 +3,8 @@
 #import "Math";
 #import "String";
 #import "Hash_Table";
+
+#import "Data_Packer";
 #import "dyncall";
 
 #load "token.jai";
@@ -54,6 +56,8 @@ Script :: struct {
     procedures  : [..] Script_Procedure;
     operators   : [..] Script_Procedure;
     flags       : Flags;
+    
+    // TOOD: replace resizable arrays with views, use resizable in script constructor instead?
     
     Flags :: enum_flags {
         READY_TO_RUN;
@@ -271,7 +275,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
         node.* = .{
             type = .OPERATION,
             operation = .{
-                _operator = #char "*",
+                name  = "*",
                 left  = neg_i,
                 right = node_i,
             }
@@ -338,7 +342,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
     node.* = .{
         type = .OPERATION,
         operation = .{
-            _operator = next_token.text[0],
+            name  = next_token.text,
             left  = left_i,
             right = right_i,
         }
@@ -453,8 +457,12 @@ array_find_where :: (array: []$T, $$cond: (T, *void) -> bool, data: *void) -> in
     for array  if cond(it, data)  return it_index;
 }
 
-is_numeric_type :: (t: Type) {
+is_numeric_type :: (t: Type) -> bool {
     ti := cast(*Type_Info)t;
+    return ti.type == .INTEGER || ti.type == .FLOAT;
+}
+
+is_numeric_type :: (ti: *Type_Info) -> bool {
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
 

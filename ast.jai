@@ -16,11 +16,11 @@ AST :: struct {
             number   : float32;
             ident    : string; // view onto source string
             procedure_call : struct {
-                using #as procedure: Script_Procedure; // maybe we can make this be by pointer later if really worth it
-                params: [..] int; // should make this not be a dynamic array later if possible. for now, its just convenient
+                using #as procedure: Script_Procedure;
+                params: [..] int; // TODO: should make this not be a dynamic array later if possible. for now, its just convenient
             };
             operation: struct {
-                _operator: u8; // for now, just use the character that represents the operation. Later, we will desugar all operations into "procedures", maybe
+                using #as procedure: Script_Procedure;
                 left, right: int;
             };
         }
@@ -62,35 +62,34 @@ get_expression_type :: (expr: *AST.Expression) -> Type {
     return expr.nodes[expr.root].value_type;
 }
 
-
 print_ast :: (using ctxt: *Script, node_i: int, parent_prec: int = 0) {
     if node_i < 0 || node_i >= ast.nodes.count  return;
     
     node := *ast.nodes[node_i];
     if node.type == {
         case .NUMBER;
-            print("%", node.number);
+            dbg_print("%", node.number);
             
         case .VARIABLE;
-            print("%", node.variable.name);
+            dbg_print("%", node.variable.name);
             
         case .OPERATION;
-            prec := get_operator_precedence(node.operation._operator);
+            prec := get_operator_precedence(node.operation.name[0]);
             do_parens := ifx prec < parent_prec then true;
             
-            if do_parens  print("(");
-            print_ast(ctxt, node.operation.left, prec);
-            print("%", string.{ 1, *node.operation._operator });
-            print_ast(ctxt, node.operation.right, prec);
-            if do_parens  print(")");
+            if do_parens  dbg_print("(");
+            dbg_print_ast(ctxt, node.operation.left, prec);
+            dbg_print(node.operation.name);
+            dbg_print_ast(ctxt, node.operation.right, prec);
+            if do_parens  dbg_print(")");
             
         case .PROCEDURE_CALL;
-            print("%(", node.procedure_call.name);
+            dbg_print("%(", node.procedure_call.name);
             for node.procedure_call.params {
-                print_ast(ctxt, it);
-                if it_index != node.procedure_call.params.count-1  print(",");
+                dbg_print_ast(ctxt, it);
+                if it_index != node.procedure_call.params.count-1  dbg_print(",");
             }
-            print(")");
+            dbg_print(")");
     }
 }
 
@@ -103,21 +102,21 @@ sprint_ast_node :: (node: AST.Node) -> string {
             return tprint(".VARIABLE: %", node.variable.name);
             
         case .OPERATION;
-            return tprint(".OPERATION: %", string.{ 1, *node.operation._operator });
+            return tprint(".OPERATION: %", node.operation.name);
         
         case .PROCEDURE_CALL;
             return tprint(".PROCEDURE_CALL: %", node.procedure_call.name);
         
         case;
-            print("%: ??? ", node.type);
+            dbg_print("%: ??? ", node.type);
     }
     return "";
 }
 
 execute_script :: (script: *Script) -> bool {
-    print("executing script with % statements\n", script.ast.statements.count);
+    dbg_print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
-        print("executing statement #%\n", it_index);
+        dbg_print("executing statement #%\n", it_index);
         if !execute_statement(script, it)  return false;
     }
     return true;
@@ -129,24 +128,32 @@ execute_statement :: (
 ) -> bool {
     if stmt.type == {
       case .ASSIGNMENT;
-        print("statement type is %\n", stmt.type);
+        dbg_print("statement type is %\n", stmt.type);
         ret, ok := evaluate_expression(script, *stmt.assignment.right);
         if !ok {
-            print("failed to evaluate statement!\n");
+            dbg_print("failed to evaluate statement!\n");
             return false;
         }
         
         dst: Any;
-        for script.variables 
-            if it.name == stmt.assignment.left 
+        for script.variables {
+            if it.name == stmt.assignment.left { 
                 dst = it.binding;
+                break;
+            }
+        }
         
         if !dst.value_pointer {
-            print("could not resolve variable '%'\n", stmt.assignment.left);
+            dbg_print("could not resolve variable '%'\n", stmt.assignment.left);
             return false;
         }
         
-        return remap_data(dst, ret);
+        if !remap_data(dst, ret) {
+            dbg_print("remap_data failed in assignment statement to script variable '%'\n", stmt.assignment.left);
+            return false;
+        }
+        
+        return true;
         
       case;
         return false;
@@ -169,14 +176,14 @@ evaluate_expression_node :: (
     Any, bool
 ) {
     if node_i < 0 || node_i >= script.ast.nodes.count {
-        print("Invalid node '%'\n", node_i);
+        dbg_print("Invalid node '%'\n", node_i);
         return Any.{}, false;
     }
     
     node := *script.ast.nodes[node_i];
     if node.type == {
         case .NUMBER;
-            print("returning number literal: %\n", node.number);
+            dbg_print("returning number literal: %\n", node.number);
             return node.number, true;
             
         case .VARIABLE;
@@ -191,14 +198,20 @@ evaluate_expression_node :: (
                 }
             }
             if node.variable.binding.value_pointer == null {
-                print("ERROR: No variable found named '%'!\n", node.variable.name);
+                dbg_print("ERROR: No variable found named '%'!\n", node.variable.name);
+                return Any.{}, false;
             }
             
-            ret := Dynamic_New_Any(type_info(float32));
-            f32_value, ok := get_numeric_value_as_f32(node.variable.binding);
-            if !ok  assert(false);
-            (cast(*float32)ret.value_pointer).* = f32_value;
-            print("returning variable '%': %\n", node.variable.name, ret);
+            ret := node.variable.binding;
+            
+            if is_numeric_type(node.variable.binding.type) {
+                ret = Dynamic_New_Any(type_info(float32));
+                f32_value, ok := get_numeric_value_as_f32(node.variable.binding);
+                if !ok  assert(false);
+                (cast(*float32)ret.value_pointer).* = f32_value;
+            }
+            
+            dbg_print("returning variable '%': %\n", node.variable.name, ret);
             return ret, true;
             
         case .OPERATION;
@@ -210,69 +223,46 @@ evaluate_expression_node :: (
             
             arguments: [2] Any = .[ left, right ];
             
-            // log("trying to find proc '%'", string.{ 1, *node.operation._operator });
-            proc_call: Script_Procedure;
-            for *script.operators {
-                // log("comparing proc '%'", it.name);
-                if it.name != string.{ 1, *node.operation._operator }  continue;
-                // log("typechecking args...");
-                
-                ti_proc := cast(*Type_Info_Procedure) it.type;
-                
-                // typechecking logic is slightly messy for operators
-                {
-                    ok := typecheck_arguments(ti_proc, left, right);
-                    if !ok && (ti_proc.procedure_flags & .IS_SYMMETRIC) {
-                        ok = typecheck_arguments(ti_proc, right, left);
-                        if ok {
-                            // swap left and right args to match what symmetric call expects
-                            arguments = .[ right, left ];
-                        }
-                    }
-                    if !ok  continue;
-                }
-                
-                proc_call = it;
-                break;
-            }
-            if !proc_call.ptr {
-                log("Unable to find procedure '%' with matching parameter types!", string.{ 1, *node.operation._operator });
-                return Any.{}, false;
+            // TODO: move this to typecheck phase, but at least for now we only do it once?
+            if !node.operation.ptr {
+                script_proc, ok := resolve_procedure(script, node.operation.name, .[ left.type, right.type ], true);
+                if !ok  return Any.{}, false;
+                node.operation.procedure = script_proc;
             }
             
-            ti_proc := cast(*Type_Info_Procedure) proc_call.type;
+            if node.operation.flags & .SWAP_ARGUMENT_ORDER_FOR_SYMMETRIC_CALL {
+                arguments = .[ right, left ];
+            }
+            
+            ti_proc := cast(*Type_Info_Procedure) node.operation.type;
             assert(ti_proc.return_types.count == 1);
             ret := Dynamic_New_Any(ti_proc.return_types[0]);
             
-            if !setup_and_exec_vm_jai(make_procedure_any(proc_call), arguments, Any.[ ret ]) {
+            if !setup_and_exec_vm_jai(make_procedure_any(node.operation), arguments, Any.[ ret ]) {
+                dbg_print("failed while trying to execute dyncall!\n");
                 return Any.{}, false;
             }
             
-            print("returning result of operation '%': %\n", proc_call.name, ret);
+            dbg_print("returning result of operation '%': %\n", node.operation.name, ret);
             
             return ret, true;
             
         case .PROCEDURE_CALL;
             arguments := NewArray(node.procedure_call.params.count, Any,, temp);
+            argument_types := NewArray(node.procedure_call.params.count, *Type_Info,, temp); // TODO: this is dumb, but we have to do this until resolving procedure is moved to typechecking step
             for node.procedure_call.params {
                 arguments[it_index] = evaluate_expression_node(script, expr, it);
+                argument_types[it_index] = arguments[it_index].type;
             }
+            dbg_print("arguments: %\n", arguments);
             
-            if node.procedure_call.ptr == null {
-                for * script.procedures {
-                    if it.name != node.procedure_call.name  continue;
-                    if !typecheck_arguments(xx it.type, ..arguments)  continue;
-                    
-                    node.procedure_call.procedure = it;
-                    break;
-                }
-            }
-            
-            print("arguments: %\n", arguments);
-            
+            // TODO: move this to typecheck phase, but at least for now we only do it once?
             if !node.procedure_call.ptr {
-                log("Unable to find procedure '%' with matching parameter types!", node.procedure_call.name);
-                return Any.{}, false;
+                script_proc, ok := resolve_procedure(script, node.procedure_call.name, argument_types);
+                if !ok {
+                    return Any.{}, false;
+                }
+                node.procedure_call.procedure = script_proc;
             }
             
             ti_proc := cast(*Type_Info_Procedure) node.procedure_call.type;
@@ -290,6 +280,17 @@ evaluate_expression_node :: (
     return Any.{}, false;
 }
 
+/*
+    Typechecking notes
+    
+    once we have typechecking, we won't need to abuse temp storage for all intermediate values and their Any's
+    and even further, if we improve the interface for dyncall so that we can do a call passing *void instead of Any, then we can cut out the need to allocated space for the Any's to values
+    
+    Even with current situation, we could improve things by just using a custom stack allocator for the intermediate values and Any's
+    
+    
+*/
+
 
 // typecheck_expression :: (
 //     script : *Script, 
@@ -299,7 +300,7 @@ evaluate_expression_node :: (
 //     Type, bool
 // ) {
 //     if node_i < 0 || node_i >= expr.nodes.count {
-//         print("Invalid node.");
+//         dbg_print("Invalid node.");
 //         assert(false);
 //         return .{}, false;
 //     }
@@ -311,7 +312,7 @@ evaluate_expression_node :: (
             
 //         case .VARIABLE; 
 //             if node.variable.binding.value_pointer == null {
-//                 print("ERROR: No variable found named '%'!\n", node.variable.name);
+//                 dbg_print("ERROR: No variable found named '%'!\n", node.variable.name);
 //             }
 //             type := ((*Type)*node.variable.binding.type).*;
 //             ok   := Internal_Variable_Value.is_valid_type(type) || is_numeric_type(type);
@@ -325,7 +326,7 @@ evaluate_expression_node :: (
             
 //         case .PROCEDURE_CALL;
 //             if node.procedure_call.proc == null {
-//                 print("ERROR: No procedure found named '%'!\n", node.variable.name);
+//                 dbg_print("ERROR: No procedure found named '%'!\n", node.variable.name);
 //             }
             
 //             params := NewArray(node.procedure_call.params.count, Internal_Variable_Value,, allocator = temp);
@@ -334,7 +335,7 @@ evaluate_expression_node :: (
 //             }
             
 //             ret, ok := node.procedure_call.proc(params);
-//             print("returning result of proc call %: % %\n", node.procedure_call.name, ret.tag, get_as_any(*ret));
+//             dbg_print("returning result of proc call %: % %\n", node.procedure_call.name, ret.tag, get_as_any(*ret));
 //             return ret, true;
 //     }
     
@@ -343,4 +344,12 @@ evaluate_expression_node :: (
 // }
 
 
-#import "Data_Packer";
+
+#scope_module
+
+DEBUG :: true;
+
+dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -> bytes_printed: s64 {
+    #if DEBUG  return print(format_string, ..args, to_standard_error);
+}
+
