@@ -13,25 +13,30 @@
 #load "binary_op.jai";
 
 /*
-    TODO:
+    Right now, it looks like we could probably just do typechecking as we construct the script. 
+    However, I'm not sure if that's the best long-term idea.
+    But, in any case it should ucrrently be so simple to do so, that there would be very little trouble to factor it out later.
+    So for now I will do it that way, even though that may be tentative.
+    Doing it this way for now also makes it easier to have a 'compile an run' sort of option that does it all in one call
     
-    proc to validate ast before evaluating it as expression
-        verfiy that all variables referenced are actually provided
-        verify that all procedures referenced are provided and have the proper number/type of parameters
-    create a comptime helper proc to wrap functions for use in scripts
-    create an array of standard procs
-    
-    add the ability to use vec2 type in scripts
-        need this in order to actually use scripts for mario engine
+    It may be better to just store indexes to variables, procedures, and operators on each node instead of duplicating the data on the node or using a pointer
+    main reason being for variables, so that we can sub out the variables' values before running the script, since presumably we may want to run a script multiple times and our memory could move around
     
     
-    we definitely will need vector literals eventually
-        or do we? it can just be a procedure call like Vec2(x, y)
-        maybe at first we just determine dimension based on number of provided literals
+    in the process of changin stuff to use indices...
+    problem iwht resolve proc, since we also need to get back flags (whether to swap args) to store on node
+    no biggie, but worth noting ig
     
     
     
+    we currently handle procedure overloading because of operators, but I may actaully remove proc overloading 
+        on the one hand, could be useful for matrix operations
+        on the other hand, could complicate pattern matching on the ast for expression analysis
+    
+    also, we need to add additional flag for operator now in order to support builtin operators
+    since we are doing the type checking while creating ast, we need to encapsulate the typechecking an execution for this nicely
 */
+
 
 // need to remember how to not have to specify the count explicitly here
 operator_precedence_table : [4] struct { op: u8; prec: int; } : .[
@@ -54,12 +59,14 @@ Script :: struct {
     ast         : AST;
     variables   : [..] External_Variable;
     procedures  : [..] Script_Procedure;
-    operators   : [..] Script_Procedure;
+    operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
     flags       : Flags;
     
     // TOOD: replace resizable arrays with views, use resizable in script constructor instead?
+    // these really will not need to or even be able to change after ast has been created
     
     Flags :: enum_flags {
+        AST_CONSTRUCTED;
         READY_TO_RUN;
     }
 }
@@ -149,6 +156,15 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     return true;
 }
 
+resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
+    for * script.variables {
+        if it.name == ident {
+            return it_index;
+        }
+    }
+    return -1;
+}
+
 resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
     print("resolve_identifier(ident = '%')\n", ident);
     
@@ -156,21 +172,28 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
     // don't need to check if next token was invalid rn, only need to know if it was or wasn't an open paren
     
     if token.type != .OPEN_PAREN {
+        var_idx := resolve_variable(ctxt, ident);
+        if var_idx == -1 {
+            dbg_print("Unable to resolve variable '%'!\n", ident);
+            return -1;
+        }
+        
         node := array_add(*ast.nodes);
         node.* = .{
-            type     = .VARIABLE,
-            variable = .{ name = ident }
+            type = .VARIABLE,
+            variable_index = var_idx,
         };
         return ast.nodes.count - 1;
-    } else {
+    } 
+    else {
         if !consume_token(*tokenizer)  return -1; // consume OPEN_PAREN just peeked
         
-        param_nodes: [..] int;
+        param_nodes: [..] int; // TODO: later we will allocate this array somewhere contiguous with other script constants
         while true {
             node_i := parse_expression(ctxt, 0);
             if node_i == -1  return -1;
             
-            print("added node % to param list\n", sprint_ast_node(ast.nodes[node_i]));
+            print("added node % to param list\n", sprint_ast_node(ctxt, ast.nodes[node_i]));
             array_add(*param_nodes, node_i);
             
             token = peek_token(*tokenizer);
@@ -187,13 +210,19 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
         }
         
         node := array_add(*ast.nodes);
-        node.* = .{
-            type = .PROCEDURE_CALL,
-            procedure_call = .{ 
-                params = param_nodes,
-                name   = ident
-            }
-        };
+        node.type = .PROCEDURE_CALL;
+        node.procedure_call.params = param_nodes;
+        
+        argument_types := NewArray(param_nodes.count, *Type_Info,, temp);
+        for param_nodes {
+            value_type := node_get_value_type(ctxt, ast.nodes[it]);
+            assert(value_type != null);
+            argument_types[it_index] = value_type;
+        }
+        
+        node.procedure_call.index = resolve_procedure_index(ctxt, ident, argument_types);
+        if node.procedure_call.index == -1  return -1;
+        
         return ast.nodes.count - 1;
     }
     
@@ -271,17 +300,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
         };
         neg_i := ast.nodes.count - 1;
         
-        node := array_add(*ast.nodes);
-        node.* = .{
-            type = .OPERATION,
-            operation = .{
-                name  = "*",
-                left  = neg_i,
-                right = node_i,
-            }
-        };
-        
-        node_i = ast.nodes.count-1;
+        node_i = create_binary_operation(ctxt, "*", neg_i, node_i);
     }
     
     return node_i;
@@ -293,7 +312,7 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> int {
     left_i := parse_leaf(ctxt);
     if left_i == -1  return -1;
     
-    print("parsed a leaf: %\n", sprint_ast_node(ast.nodes[left_i]));
+    print("parsed a leaf: %\n", sprint_ast_node(ctxt, ast.nodes[left_i]));
     
     while true {
         node_i := parse_increasing_precedence(ctxt, left_i, min_prec);
@@ -314,7 +333,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
     if !token_is_binary_operator(next_token) {
         print("peeked token %, but it was not an operator. Returning node % to caller.\n",
             sprint_token(next_token), 
-            sprint_ast_node(ast.nodes[left_i]), 
+            sprint_ast_node(ctxt, ast.nodes[left_i]), 
         );
         return left_i;
     }
@@ -325,7 +344,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
             sprint_token(next_token), 
             next_token_prec,
             min_prec,
-            sprint_ast_node(ast.nodes[left_i]), 
+            sprint_ast_node(ctxt, ast.nodes[left_i]), 
         );
         return left_i;
     }
@@ -336,15 +355,23 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
     right_i := parse_expression(ctxt, next_token_prec);
     if right_i == -1  return -1;
     
-    print("creating binary operation % % %\n", sprint_ast_node(ast.nodes[left_i]), string.{ 1, *next_token.text[0] }, sprint_ast_node(ast.nodes[right_i]));
+    return create_binary_operation(ctxt, next_token.text, left_i, right_i);
+}
+
+create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
+    print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
+
+    oper_idx, swap_args := resolve_procedure_index(ctxt, operator_ident, .[ node_get_value_type(ctxt, ast.nodes[left_i]), node_get_value_type(ctxt, ast.nodes[right_i]) ], true);
+    if oper_idx == -1  return -1;
     
     node := array_add(*ast.nodes);
     node.* = .{
         type = .OPERATION,
         operation = .{
-            name  = next_token.text,
             left  = left_i,
             right = right_i,
+            index = oper_idx,
+            swap_args = swap_args,
         }
     };
     
