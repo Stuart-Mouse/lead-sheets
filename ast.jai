@@ -11,26 +11,24 @@ AST :: struct {
         src_loc    : Source_Location;
         
         union {
-            variable_index : int; // index to variable in Script.variables array
-            number   : float32;
+            variable_index: int; // index to variable in Script.variables array
+            number: float32;
             procedure_call : struct {
                 index  : int;
                 params : [..] int; // TODO: should make this not be a dynamic array later if possible. for now, its just convenient
                 
             };
             operation: struct {
-                index: int;
-                left, right: int;
-                swap_args: bool;
+                index       : int;
+                left, right : int;
+                swap_args   : bool;
+                // TODO: add flags, since we have swap_args and will also need is_builtin
             };
         }
     }
     
     Expression :: struct {
-        root  : int;
-        flags : Flags;
-        
-        Flags :: enum { TYPECHECKED; }; // TODO: remove?
+        root: int;
     }
     
     Statement_Type :: enum {
@@ -57,11 +55,10 @@ free_ast :: (ast: *AST) {
     memset(*ast.nodes, 0, size_of(Resizable_Array));
 }
 
+// for now, void means invalid type ?
 get_expression_type :: (expr: *AST.Expression) -> Type { 
-    ret: Type; // 0-valued Type
-    if !expr.flags & .TYPECHECKED     return ret;
-    if expr.root >= expr.nodes.count  return ret;
-    return expr.nodes[expr.root].value_type;
+    if expr.root >= expr.nodes.count  return void;
+    return node_get_value_type(expr.nodes[expr.root]);
 }
 
 print_ast :: (script: *Script, node_i: int, parent_prec: int = 0) {

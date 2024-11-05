@@ -349,7 +349,6 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
         return left_i;
     }
     
-    // consume next_token
     if !consume_token(*tokenizer)  return -1;
     
     right_i := parse_expression(ctxt, next_token_prec);
@@ -358,6 +357,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
     return create_binary_operation(ctxt, next_token.text, left_i, right_i);
 }
 
+// TODO: we will need to add logic here for builtin operators
 create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
     print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
 
