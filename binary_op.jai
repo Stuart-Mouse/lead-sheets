@@ -32,15 +32,65 @@ set_basic_operators :: (script: *Script) {
 }
 
 
-// typecheck_operator_node :: (
-//     script : *Script, 
-//     expr   : *AST.Expression, 
-//     node_i : int
-// ) -> Type, bool {
+BUILTIN_OPERATIONS :: (
+    struct { operator_ident: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
+).[
+    .{ "+", float, float, float, false },
+    .{ "-", float, float, float, false },
+    .{ "*", float, float, float, false },
+    .{ "/", float, float, float, false },
     
-    
-    
-// }
+    .{ "+", Vector2, Vector2, Vector2, false },
+    .{ "-", Vector2, Vector2, Vector2, false },
+    .{ "*", Vector2, Vector2, Vector2, false },
+    .{ "/", Vector2, Vector2, Vector2, false },
+    .{ "*", Vector2, float,   Vector2, true  },
+    .{ "/", Vector2, float,   Vector2, false },
+];
 
 
+resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, right_type: *Type_Info) -> (index: int, swap_args: bool) {
+    // TODO: could be faster if we generate a switch case, but not going to worry about that for now
+    for BUILTIN_OPERATIONS {
+        if it.operator_ident != operator_ident  continue;
+        
+        if cast(*Type_Info) it.left  == left_type 
+        && cast(*Type_Info) it.right == right_type {
+            return it_index, false;
+        }
+        
+        if it.is_symmetric 
+        && cast(*Type_Info) it.left  == right_type 
+        && cast(*Type_Info) it.right == left_type {
+            return it_index, true;
+        }
+    }
+    return -1, false;
+}
 
+
+exec_builtin_operation :: (oper_idx: int, left: Any, right: Any) -> (ret: Any, ok: bool) {
+    ret_ti := cast(*Type_Info) BUILTIN_OPERATIONS[oper_idx].ret;
+    ret := Dynamic_New_Any(ret_ti,, temp);
+    
+    // generate switch case for all builtin operations
+    #insert -> string {
+        builder: String_Builder;
+        
+        FORMAT_STRING :: #string DONE
+      case %1;
+        (cast(*%2)ret.value_pointer).* = (cast(*%3)left.value_pointer).* %5 (cast(*%4)right.value_pointer).*;
+        return ret, true;
+DONE;
+        
+        append(*builder, "    if oper_idx == {\n");
+        for BUILTIN_OPERATIONS {
+            print_to_builder(*builder, FORMAT_STRING, it_index, it.ret, it.left, it.right, it.operator_ident);
+        }
+        append(*builder, "    }\n");
+        
+        return builder_to_string(*builder);
+    }
+    
+    return Any.{}, false;
+}

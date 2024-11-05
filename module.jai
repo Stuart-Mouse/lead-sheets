@@ -67,7 +67,6 @@ Script :: struct {
     
     Flags :: enum_flags {
         AST_CONSTRUCTED;
-        READY_TO_RUN;
     }
 }
 
@@ -151,6 +150,8 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
             break;
         }
     }
+    
+    script.flags |= .AST_CONSTRUCTED;
     
     success = true;
     return true;
@@ -360,20 +361,34 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
 // TODO: we will need to add logic here for builtin operators
 create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
     print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
-
-    oper_idx, swap_args := resolve_procedure_index(ctxt, operator_ident, .[ node_get_value_type(ctxt, ast.nodes[left_i]), node_get_value_type(ctxt, ast.nodes[right_i]) ], true);
-    if oper_idx == -1  return -1;
+    
+    left_ti  := node_get_value_type(ctxt, ast.nodes[left_i ]);
+    right_ti := node_get_value_type(ctxt, ast.nodes[right_i]);
+    
+    swap_args, is_builtin := false;
+    
+    oper_idx:, swap_args = resolve_builtin_operation(operator_ident, left_ti, right_ti);
+    if oper_idx >= 0 {
+        is_builtin = true;
+        print("is builtin, idx %\n", oper_idx);
+    } else {
+        oper_idx, swap_args = resolve_procedure_index(ctxt, operator_ident, .[ left_ti, right_ti ], true);
+        print("resolved to operator index %\n", oper_idx);
+        if oper_idx == -1  return -1;
+    }
     
     node := array_add(*ast.nodes);
-    node.* = .{
-        type = .OPERATION,
-        operation = .{
-            left  = left_i,
-            right = right_i,
-            index = oper_idx,
-            swap_args = swap_args,
-        }
+    node.type = .OPERATION;
+    node.operation = .{
+        left  = left_i,
+        right = right_i,
+        index = oper_idx,
     };
+    
+    if swap_args   node.operation.flags |= .SWAP_ARGS; 
+    if is_builtin  node.operation.flags |= .IS_BUILTIN;  
+    
+    print("operation flags: %\n", node.operation.flags);
     
     return ast.nodes.count - 1;
 }

@@ -1,4 +1,7 @@
 
+
+Operation_Flags :: enum_flags { SWAP_ARGS; IS_BUILTIN; };
+
 AST :: struct {
     Node_Type :: enum {
         OPERATION;
@@ -7,8 +10,8 @@ AST :: struct {
         PROCEDURE_CALL;
     }
     Node :: struct {
-        type       : Node_Type;
-        src_loc    : Source_Location;
+        type    : Node_Type;
+        src_loc : Source_Location;
         
         union {
             variable_index: int; // index to variable in Script.variables array
@@ -21,8 +24,7 @@ AST :: struct {
             operation: struct {
                 index       : int;
                 left, right : int;
-                swap_args   : bool;
-                // TODO: add flags, since we have swap_args and will also need is_builtin
+                flags       : Operation_Flags;
             };
         }
     }
@@ -117,10 +119,16 @@ node_get_value_type :: (script: *Script, node: AST.Node) -> *Type_Info {
     if #complete node.type == {
       case .NUMBER;
         return type_info(float32);
+        
       case .VARIABLE;
         return node_get_variable(script, node).binding.type;
+        
       case .OPERATION;
+        if node.operation.flags & .IS_BUILTIN {
+            return cast(*Type_Info) BUILTIN_OPERATIONS[node.operation.index].ret;
+        }
         return node_get_operation(script, node).type;
+        
       case .PROCEDURE_CALL;
         return node_get_procedure(script, node).type;
     }
@@ -151,6 +159,8 @@ node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
 
 
 execute_script :: (script: *Script) -> bool {
+    if !(script.flags & .AST_CONSTRUCTED)  return false;
+    
     dbg_print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
         dbg_print("executing statement #%\n", it_index);
@@ -247,32 +257,34 @@ evaluate_expression_node :: (
             right:, ok = evaluate_expression_node(script, expr, node.operation.right);
             if !ok  return Any.{}, false;
             
-            arguments: [2] Any = .[ left, right ];
+            print("operation flags: %\n", node.operation.flags);
             
-            // // TODO: move this to typecheck phase, but at least for now we only do it once?
-            // if !node.operation.ptr {
-            //     script_proc, ok := resolve_procedure(script, get_node_operation(script, node).name, .[ left.type, right.type ], true);
-            //     if !ok  return Any.{}, false;
-            //     node.operation.procedure = script_proc;
-            // }
+            arguments := ifx (node.operation.flags & .SWAP_ARGS)
+                then Any.[ right, left ]
+                else Any.[ left, right ];
+                
             
-            if node.operation.swap_args {
-                arguments = .[ right, left ];
+            ret: Any;
+            if node.operation.flags & .IS_BUILTIN {
+                ret, ok = exec_builtin_operation(node.operation.index, left, right);
+                if !ok  return Any.{}, false;
             }
-            
-            procedure := node_get_operation(script, node);
-            
-            ti_proc := cast(*Type_Info_Procedure) procedure.type;
-            assert(ti_proc.return_types.count == 1);
-            ret := Dynamic_New_Any(ti_proc.return_types[0],, temp);
-            
-            if !setup_and_exec_vm_jai(make_procedure_any(procedure), arguments, Any.[ ret ]) {
-                dbg_print("failed while trying to execute dyncall!\n");
-                return Any.{}, false;
+            else {
+                procedure := node_get_operation(script, node);
+                ti_proc := cast(*Type_Info_Procedure) procedure.type;
+                assert(ti_proc.return_types.count == 1);
+                ret = Dynamic_New_Any(ti_proc.return_types[0],, temp);
+                
+                print("exec proc of type: %\n", type_info_to_type(ti_proc));
+                print("args: %\n", arguments);
+                
+                if !setup_and_exec_vm_jai(make_procedure_any(procedure), arguments, Any.[ ret ]) {
+                    dbg_print("failed while trying to execute dyncall!\n");
+                    return Any.{}, false;
+                }
             }
             
             dbg_print("returning result of operation '%': %\n", node_get_operation(script, node).name, ret);
-            
             return ret, true;
             
         case .PROCEDURE_CALL;
@@ -283,15 +295,6 @@ evaluate_expression_node :: (
                 argument_types[it_index] = arguments[it_index].type;
             }
             dbg_print("arguments: %\n", arguments);
-            
-            // TODO: move this to typecheck phase, but at least for now we only do it once?
-            // if !node.procedure_call.ptr {
-            //     script_proc, ok := resolve_procedure(script, get_node_prcedure(script, node).name, argument_types);
-            //     if !ok {
-            //         return Any.{}, false;
-            //     }
-            //     node.procedure_call.procedure = script_proc;
-            // }
             
             procedure := node_get_procedure(script, node);
             
