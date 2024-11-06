@@ -14,7 +14,7 @@ Typechecking_Flags :: enum_flags {
 typecheck_node :: (using ctxt: *Script_Constructor, node_i: int, check_flags: Typechecking_Flags) -> *Type_Info {
     node := ctxt.nodes[node_i];
     
-    if node.type == {
+    if #complete node.type == {
       case .NUMBER;
         if check_flags & .EXPECT_LVALUE  return null, false;
         return type_info(float32), true;
@@ -75,3 +75,13 @@ typecheck_node :: (using ctxt: *Script_Constructor, node_i: int, check_flags: Ty
     return null;
 }
 
+typecheck_statement :: (using ctxt: *Script_Constructor, statement: *AST.Statement, check_flags: Typechecking_Flags) -> *Type_Info {
+    if #complete statment.type == {
+      case .ASSIGNMENT;
+        right_ti := typecheck_node();
+        if !right_ti  return null;
+        
+        // get type of left side
+    }
+    return null;
+}

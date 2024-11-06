@@ -181,3 +181,28 @@ tokenize :: (text: string) -> ([..] Script_Token, bool) {
     return tokens, true;
 }
 
+
+// cycles between skipping whitespace and comments until next character is neither
+// TODO: add *int param to increment line count 
+skip_whitespace_and_comments :: (file: *string) -> bool {
+    if file.count == 0 return false;
+    while true {
+        while is_whitespace(file.*[0]) {
+            if !advance(file) return false;
+        }
+        if file.*[0] == #char "#" {
+            while file.*[0] != #char "\n" {
+                if !advance(file) return false;
+            }
+        }
+        else return true;
+    }
+    return true;
+}
+
+is_whitespace :: inline (char: u8) -> bool {
+  return char == #char " "
+      || char == #char "\t"
+      || char == #char "\r"
+      || char == #char "\n";
+}

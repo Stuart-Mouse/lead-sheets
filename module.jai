@@ -204,9 +204,9 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         // for now, we only have assignement statements, so just do that
         // this is all very much hardcoded for that one case
         
-        stmt: AST.Statement;
+        statement: AST.Statement;
         
-        stmt.type == .ASSIGNMENT;
+        statement.type == .ASSIGNMENT;
         
         ident_token, ok := get_token(*tokenizer);
         if !ok || ident_token.type != .IDENTIFIER {
@@ -214,8 +214,12 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         }
         
         equals_token:, ok = get_token(*tokenizer);
-        if !ok || equals_token.type != .EQUALS 
+        if !ok || equals_token.type != .EQUALS {
             return false;
+        }
+        
+        // TODO: parse left side as an expression
+        // for now it should always be a variable, later can be any valid lvalue
         
         dbg_print("parsed identifier '%' for left side of assignment statement\n", ident_token.text);
         var_idx := resolve_variable(ctxt, ident_token.text);
@@ -223,18 +227,18 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
             dbg_print("Error: unable to resolve variable '%'\n", ident_token.text);
             return false;
         }
-        stmt.assignment.left = var_idx;
+        statement.assignment.left = var_idx;
         
         dbg_print("parsing expression for right side of assignment statement\n");
-        stmt.assignment.right.root = parse_expression(ctxt, 0);
-        if stmt.assignment.right.root == -1  return false;
+        statement.assignment.right.root = parse_expression(ctxt, 0);
+        if statement.assignment.right.root == -1  return false;
         
         semicolon_token:, ok = get_token(*tokenizer);
         if !ok || semicolon_token.type != .SEMICOLON 
             return false;
         
-        array_add(*script.ast.statements, stmt);
-                
+        array_add(*script.ast.statements, statement);
+        
         return true;
     }
     
@@ -248,7 +252,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     }
     
     script.flags |= .AST_CONSTRUCTED;
-    
+        
     success = true;
     return true;
 }
@@ -268,30 +272,22 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
     token := peek_token(*tokenizer);
     // don't need to check if next token was invalid rn, only need to know if it was or wasn't an open paren
     
-    if token.type != .OPEN_PAREN {
-        var_idx := resolve_variable(ctxt, ident);
-        if var_idx == -1 {
-            dbg_print("Unable to resolve variable '%'!\n", ident);
-            return -1;
-        }
-        
+    if token.type != .OPEN_PAREN {  
         node := array_add(*ast.nodes);
-        node.* = .{
-            type = .VARIABLE,
-            variable_index = var_idx,
-        };
+        node.type = .VARIABLE;
+        node.src_text = operator_ident;
         return ast.nodes.count - 1;
     } 
     else {
         if !consume_token(*tokenizer)  return -1; // consume OPEN_PAREN just peeked
         
-        param_nodes: [..] int; // TODO: later we will allocate this array somewhere contiguous with other script constants
+        argument_nodes: [..] int; // TODO: later we will allocate this array somewhere contiguous with other script constants
         while true {
             node_i := parse_expression(ctxt, 0);
             if node_i == -1  return -1;
             
             dbg_print("added node % to param list\n", sprint_ast_node(ctxt, ast.nodes[node_i]));
-            array_add(*param_nodes, node_i);
+            array_add(*argument_nodes, node_i);
             
             token = peek_token(*tokenizer);
             dbg_print("next token after expression in param list: %\n", sprint_token(token));
@@ -308,18 +304,8 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
         
         node := array_add(*ast.nodes);
         node.type = .PROCEDURE_CALL;
-        node.procedure_call.argument_nodes = param_nodes;
-        
-        argument_types := NewArray(param_nodes.count, *Type_Info,, temp);
-        for param_nodes {
-            value_type := node_get_value_type(ctxt, ast.nodes[it]);
-            assert(value_type != null);
-            argument_types[it_index] = value_type;
-        }
-        
-        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, ident, argument_types);
-        if node.procedure_call.procedure_index == -1  return -1;
-        
+        node.src_text = operator_ident;
+        node.procedure_call.argument_nodes = argument_nodes;
         return ast.nodes.count - 1;
     }
     
@@ -369,13 +355,11 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
                 return -1;
             }
             dbg_print("consumed corresponding close paren\n");
-    
+            
         case .NUMBER;
             node := array_add(*ast.nodes);
-            node.* = .{
-                type   = .NUMBER,
-                number = token.number,
-            };
+            node.type   = .NUMBER;
+            node.number = token.number;
             node_i = ast.nodes.count - 1;
             
         case .IDENTIFIER;
@@ -391,10 +375,8 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
     if do_unary_minus {
         // makes a binary op of -1 * node
         neg := array_add(*ast.nodes);
-        neg.* = .{
-            type   = .NUMBER,
-            number = -1
-        };
+        neg.type   = .NUMBER;
+        neg.number = -1;
         neg_i := ast.nodes.count - 1;
         
         node_i = create_binary_operation(ctxt, "*", neg_i, node_i);
@@ -458,62 +440,22 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
 create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
     dbg_print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
     
-    left_ti  := node_get_value_type(ctxt, ast.nodes[left_i ]);
-    right_ti := node_get_value_type(ctxt, ast.nodes[right_i]);
-    
-    swap_args, is_builtin := false;
-    
-    oper_idx:, swap_args = resolve_builtin_operation(operator_ident, left_ti, right_ti);
-    if oper_idx >= 0 {
-        is_builtin = true;
-        dbg_print("operator is builtin, ");
-    } else {
-        oper_idx, swap_args = resolve_procedure_index(ctxt, operator_ident, .[ left_ti, right_ti ], true);
-        if oper_idx == -1  return -1;
-    }
-    dbg_print("resolved to operator index %\n", oper_idx);
-    
     node := array_add(*ast.nodes);
     node.type = .OPERATION;
+    node.src_text = operator_ident;
     node.operation = .{
         left  = left_i,
         right = right_i,
-        operator_index = oper_idx,
     };
-    
-    if swap_args   node.operation.flags |= .SWAP_ARGS; 
-    if is_builtin  node.operation.flags |= .IS_BUILTIN;  
-    
-    dbg_print("operation flags: %\n", node.operation.flags);
     
     return ast.nodes.count - 1;
 }
 
 
-// cycles between skipping whitespace and comments until next character is neither
-// TODO: add *int param to increment line count 
-skip_whitespace_and_comments :: (file: *string) -> bool {
-    if file.count == 0 return false;
-    while true {
-        while is_whitespace(file.*[0]) {
-            if !advance(file) return false;
-        }
-        if file.*[0] == #char "#" {
-            while file.*[0] != #char "\n" {
-                if !advance(file) return false;
-            }
-        }
-        else return true;
-    }
-    return true;
-}
 
-is_whitespace :: inline (char: u8) -> bool {
-  return char == #char " "
-      || char == #char "\t"
-      || char == #char "\r"
-      || char == #char "\n";
-}
+
+
+
 
 get_numeric_value_as_f32 :: (any: Any) -> (float32, bool) {
     if any.type.type == {
