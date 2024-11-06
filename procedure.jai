@@ -1,7 +1,7 @@
 
 Script_Procedure :: struct {
     name  : string;
-    type  : *Type_Info;
+    type  : *Type_Info_Procedure;
     ptr   : *void;
 }
 
@@ -16,7 +16,7 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     
     array_add(*script.procedures, .{
         name = name,
-        type = procedure.type,
+        type = xx procedure.type,
         ptr  = (cast(**void)procedure.value_pointer).*
     });
 }
@@ -40,120 +40,6 @@ register_operator :: (script: *Script, name: string, procedure: Any) {
 make_procedure_any :: (script_proc: Script_Procedure) -> Any {
     return Any.{ script_proc.type, *script_proc.ptr }; 
 }
-
-resolve_procedure :: (script: *Script, name: string, argument_types: [] *Type_Info, is_operator := false) -> (Script_Procedure, bool) {
-    // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
-    // maybe we will put this behind some debug flag later
-    Procedure_Resolution_Error :: struct {
-        proc    : *Script_Procedure;
-        error_type : enum { NONE; ARG_COUNT; ARG_TYPE; };
-        details : union {
-            arg_count : struct { expected: int; provided: int; };
-            arg_type  : struct { index: int; expected: *Type_Info; provided: *Type_Info; };
-        };
-    }
-    
-    failing_overloads: [..] Procedure_Resolution_Error;
-    defer array_free(failing_overloads);
-    
-    if is_operator {
-        assert(argument_types.count == 2, "argument_types.count was %", argument_types.count);
-    }
-    
-    proc_list := ifx is_operator then script.operators else script.procedures;
-    for *proc: proc_list {
-        if proc.name != name  continue proc;
-        ti_proc := cast(*Type_Info_Procedure) proc.type;
-        
-        // typecheck arguments
-        if ti_proc.argument_types.count != argument_types.count {
-            error := Procedure_Resolution_Error.{ proc = proc, error_type = .ARG_COUNT };
-            error.details.arg_count = .{ 
-                expected = ti_proc.argument_types.count, 
-                provided = argument_types.count 
-            };
-            array_add(*failing_overloads, error);
-            
-            continue proc;
-        }
-        
-        typecheck_arguments :: (script_proc: *Script_Procedure, expected_list: [] *Type_Info, provided_list: [] *Type_Info) -> (Procedure_Resolution_Error, bool) {
-            for expected: expected_list {
-                provided := provided_list[it_index];
-                if expected != provided {
-                    error := Procedure_Resolution_Error.{ proc = script_proc, error_type = .ARG_TYPE };
-                    error.details.arg_type = .{ 
-                        index    = it_index + 1,
-                        expected = expected, 
-                        provided = provided
-                    };
-                    return error, false;
-                }
-            }
-            return .{}, true;
-        }
-        
-        return_flags: Script_Procedure.Flags;
-        error, ok := typecheck_arguments(proc, ti_proc.argument_types, argument_types);
-        
-        // fallback case to try reordering args for symmetric case
-        if !ok && is_operator {
-            if (ti_proc.procedure_flags & .IS_SYMMETRIC) {
-                assert(ti_proc.argument_types.count == 2);
-                assert(argument_types.count == 2);
-                
-                return_flags |= .SWAP_ARGUMENT_ORDER_FOR_SYMMETRIC_CALL;
-                error, ok = typecheck_arguments(proc, ti_proc.argument_types, .[ argument_types[1], argument_types[0] ]);
-            }
-        }
-        
-        if !ok {
-            array_add(*failing_overloads, error);
-            continue proc;
-        }
-        
-        return_proc := proc;
-        return_proc.flags = return_flags;
-        return return_proc, true;
-    }
-    
-    print("Unable to resolve procedure '%'\n", name);
-    if failing_overloads {
-        print("% failing overload(s):\n\n", failing_overloads.count);
-        
-        for failing_overloads {
-            ti_proc := cast(*Type_Info_Procedure) it.proc.type;
-            
-            print("%(", name);
-            for ti_proc.argument_types {
-                if it_index != 0  print(", ");
-                print("%", type_info_to_type(it));
-            }
-            print(")\n");
-            
-            if it.error_type == {
-              case .ARG_COUNT;
-                print(
-                    "Mismatch on argument count: expected %, got %\n\n", 
-                    it.details.arg_count.expected, 
-                    it.details.arg_count.provided
-                );
-                
-              case .ARG_TYPE;
-                print(
-                    "Type mismatch on argument %: expected %, got %\n\n", 
-                    it.details.arg_type.index, 
-                    type_info_to_type(it.details.arg_type.expected), 
-                    type_info_to_type(it.details.arg_type.provided)
-                );
-            }
-        }
-    }
-    
-    return .{}, false;
-}
-
-
 
 resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *Type_Info, is_operator := false) -> (index: int, swap_args: bool) {
     // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
@@ -260,7 +146,16 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
                 );
             }
         }
+    } else {
+        print("No procedure found with the given identifier.\n");
     }
+    
+    print("Argument types were: ");
+    for argument_types {
+        if it_index != 0  print(", ");
+        print("%", type_info_to_type(it));
+    }
+    print("\n");
     
     return -1, false;
 }

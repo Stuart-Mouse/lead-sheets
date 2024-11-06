@@ -2,31 +2,52 @@
 
 Operation_Flags :: enum_flags { SWAP_ARGS; IS_BUILTIN; };
 
+/*
+    Thinking about some further refactoring on AST Nodes
+    
+    seems like most node types are now using an index to refer to data stored on script itself
+    this is probabyl good for performance a bit, since it makes nodes smaller
+    but also, we can probably use this fact to simplify the data layout too
+    
+    and, we will probably want to have literals of other types eventually.
+    
+    node could have a member 'ref_index' that is used differently depending on node type
+    and then we can have the union only cover the type-specific values
+    but then again, it doesn't really do us any good to factor out the ref_index thing
+    
+    so nvm, we wont do that. in fact, I may rename the index property on union members to distinguish them further
+    
+    
+*/
+
 AST :: struct {
     Node_Type :: enum {
-        OPERATION;
         NUMBER;
         VARIABLE;
+        OPERATION;
         PROCEDURE_CALL;
     }
     Node :: struct {
-        type    : Node_Type;
-        src_loc : Source_Location;
+        type     : Node_Type;
+        src_loc  : Source_Location;
+        src_text : string; // need for identifiers before typechecking step
         
         union {
             variable_index: int; // index to variable in Script.variables array
             number: float32;
             procedure_call : struct {
-                index  : int;
-                params : [..] int; // TODO: should make this not be a dynamic array later if possible. for now, its just convenient
-                
+                procedure_index : int;
+                argument_nodes  : [..] int; // TODO: should make this not be a dynamic array later if possible. for now, its just convenient
             };
             operation: struct {
-                index       : int;
-                left, right : int;
-                flags       : Operation_Flags;
+                operator_index : int; // index to either a builtin operator or an operator procedure
+                left, right    : int;
+                flags          : Operation_Flags;
             };
         }
+        
+        flags: Flags;
+        Flags :: enum_flags { L_VALUE; };
     }
     
     Expression :: struct {
@@ -40,7 +61,7 @@ AST :: struct {
         type : Statement_Type;
         union {
             assignment : struct {
-                left  : string; // TODO: later we will want to support some kind of expression on left side (primarily for arrays)
+                left  : int; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
                 right : Expression;
             };
         }
@@ -86,9 +107,9 @@ print_ast :: (script: *Script, node_i: int, parent_prec: int = 0) {
             
         case .PROCEDURE_CALL;
             dbg_print("%(", get_node_prcedure(script, node).name);
-            for node.procedure_call.params {
+            for node.procedure_call.argument_nodes {
                 dbg_print_ast(script, it);
-                if it_index != node.procedure_call.params.count-1  dbg_print(",");
+                if it_index != node.procedure_call.argument_nodes.count-1  dbg_print(",");
             }
             dbg_print(")");
     }
@@ -103,6 +124,9 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
             return tprint(".VARIABLE: %", node_get_variable(script, node).name);
             
         case .OPERATION;
+            if node.operation.flags & .IS_BUILTIN {
+                return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
+            }
             return tprint(".OPERATION: %", node_get_operation(script, node).name);
         
         case .PROCEDURE_CALL;
@@ -125,12 +149,12 @@ node_get_value_type :: (script: *Script, node: AST.Node) -> *Type_Info {
         
       case .OPERATION;
         if node.operation.flags & .IS_BUILTIN {
-            return cast(*Type_Info) BUILTIN_OPERATIONS[node.operation.index].ret;
+            return cast(*Type_Info) BUILTIN_OPERATIONS[node.operation.operator_index].ret;
         }
-        return node_get_operation(script, node).type;
+        return node_get_operation(script, node).type.return_types[0];
         
       case .PROCEDURE_CALL;
-        return node_get_procedure(script, node).type;
+        return node_get_procedure(script, node).type.return_types[0];
     }
     return null;
 }
@@ -141,19 +165,21 @@ node_get_value_type :: (script: *Script, node: AST.Node) -> *Type_Info {
     Unfortunately these also need the script as context, since this is just an array lookup.
 */
 
-node_get_variable :: (script: *Script, node: AST.Node) -> *External_Variable {
+node_get_variable :: (script: *Script, node: AST.Node) -> *Script_Variable {
     assert(node.type == .VARIABLE);
     return *script.variables[node.variable_index];
 }
 
 node_get_procedure :: (script: *Script, node: AST.Node) -> *Script_Procedure {
     assert(node.type == .PROCEDURE_CALL);
-    return *script.procedures[node.procedure_call.index];
+    return *script.procedures[node.procedure_call.procedure_index];
 }
 
+// TODO: probably rename to node_get_operation_procedure
 node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
     assert(node.type == .OPERATION);
-    return *script.operators[node.operation.index];
+    assert(node.operation.flags & .IS_BUILTIN == 0);
+    return *script.operators[node.operation.operator_index];
 }
 
 
@@ -176,29 +202,15 @@ execute_statement :: (
     if stmt.type == {
       case .ASSIGNMENT;
         dbg_print("statement type is %\n", stmt.type);
-        ret, ok := evaluate_expression(script, *stmt.assignment.right);
+        r_value, ok := evaluate_expression(script, *stmt.assignment.right);
         if !ok {
             dbg_print("failed to evaluate statement!\n");
             return false;
         }
         
-        dst: Any;
-        for script.variables {
-            if it.name == stmt.assignment.left { 
-                dst = it.binding;
-                break;
-            }
-        }
-        
-        if !dst.value_pointer {
-            dbg_print("could not resolve variable '%'\n", stmt.assignment.left);
-            return false;
-        }
-        
-        if !remap_data(dst, ret) {
-            dbg_print("remap_data failed in assignment statement to script variable '%'\n", stmt.assignment.left);
-            return false;
-        }
+        left_variable := script.variables[stmt.assignment.left];
+        assert(left_variable.binding.type == r_value.type);
+        memcpy(left_variable.binding.value_pointer, r_value.value_pointer, left_variable.binding.type.runtime_size);
         
         return true;
         
@@ -262,11 +274,10 @@ evaluate_expression_node :: (
             arguments := ifx (node.operation.flags & .SWAP_ARGS)
                 then Any.[ right, left ]
                 else Any.[ left, right ];
-                
             
             ret: Any;
             if node.operation.flags & .IS_BUILTIN {
-                ret, ok = exec_builtin_operation(node.operation.index, left, right);
+                ret, ok = exec_builtin_operation(node.operation.operator_index, arguments[0], arguments[1]);
                 if !ok  return Any.{}, false;
             }
             else {
@@ -284,15 +295,13 @@ evaluate_expression_node :: (
                 }
             }
             
-            dbg_print("returning result of operation '%': %\n", node_get_operation(script, node).name, ret);
+            // dbg_print("returning result of operation '%': %\n", node_get_operation(script, node).name, ret);
             return ret, true;
             
         case .PROCEDURE_CALL;
-            arguments := NewArray(node.procedure_call.params.count, Any,, temp);
-            argument_types := NewArray(node.procedure_call.params.count, *Type_Info,, temp); // TODO: this is dumb, but we have to do this until resolving procedure is moved to typechecking step
-            for node.procedure_call.params {
+            arguments := NewArray(node.procedure_call.argument_nodes.count, Any,, temp);
+            for node.procedure_call.argument_nodes {
                 arguments[it_index] = evaluate_expression_node(script, expr, it);
-                argument_types[it_index] = arguments[it_index].type;
             }
             dbg_print("arguments: %\n", arguments);
             

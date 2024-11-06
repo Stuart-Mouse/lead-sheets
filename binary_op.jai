@@ -9,29 +9,32 @@
     then if we are unable to find such an operation, we will have to error out
 */
 
-set_basic_operators :: (script: *Script) {
-    {
-        operator + :: (a: $T, b: T) -> type_of(a + b) { return a + b; }
-        operator - :: (a: $T, b: T) -> type_of(a - b) { return a - b; }
-        operator * :: (a: $T, b: T) -> type_of(a * b) { return a * b; }
-        operator / :: (a: $T, b: T) -> type_of(a / b) { return a / b; }
+// set_basic_operators :: (script: *Script) {
+//     {
+//         operator + :: (a: $T, b: T) -> type_of(a + b) { return a + b; }
+//         operator - :: (a: $T, b: T) -> type_of(a - b) { return a - b; }
+//         operator * :: (a: $T, b: T) -> type_of(a * b) { return a * b; }
+//         operator / :: (a: $T, b: T) -> type_of(a / b) { return a / b; }
         
-        register_operator(script, "+", #procedure_of_call operator + (cast(float)1.0, cast(float)1.0));
-        register_operator(script, "-", #procedure_of_call operator - (cast(float)1.0, cast(float)1.0));
-        register_operator(script, "*", #procedure_of_call operator * (cast(float)1.0, cast(float)1.0));
-        register_operator(script, "/", #procedure_of_call operator / (cast(float)1.0, cast(float)1.0));
-    }
+//         register_operator(script, "+", #procedure_of_call operator + (cast(float)1.0, cast(float)1.0));
+//         register_operator(script, "-", #procedure_of_call operator - (cast(float)1.0, cast(float)1.0));
+//         register_operator(script, "*", #procedure_of_call operator * (cast(float)1.0, cast(float)1.0));
+//         register_operator(script, "/", #procedure_of_call operator / (cast(float)1.0, cast(float)1.0));
+//     }
     
-    register_operator(script, "+", #procedure_of_call operator + (Vector2.{}, Vector2.{}));
-    register_operator(script, "-", #procedure_of_call operator - (Vector2.{}, Vector2.{}));
-    register_operator(script, "*", #procedure_of_call operator * (Vector2.{}, Vector2.{}));
-    register_operator(script, "/", #procedure_of_call operator / (Vector2.{}, Vector2.{}));
+//     register_operator(script, "+", #procedure_of_call operator + (Vector2.{}, Vector2.{}));
+//     register_operator(script, "-", #procedure_of_call operator - (Vector2.{}, Vector2.{}));
+//     register_operator(script, "*", #procedure_of_call operator * (Vector2.{}, Vector2.{}));
+//     register_operator(script, "/", #procedure_of_call operator / (Vector2.{}, Vector2.{}));
     
-    register_operator(script, "*", #procedure_of_call operator * (Vector2.{}, cast(float)1.0));
-    register_operator(script, "/", #procedure_of_call operator / (Vector2.{}, cast(float)1.0));
-}
+//     register_operator(script, "*", #procedure_of_call operator * (Vector2.{}, cast(float)1.0));
+//     register_operator(script, "/", #procedure_of_call operator / (Vector2.{}, cast(float)1.0));
+// }
 
-
+/*
+    We need to specify the return type here so that we can look it up at runtime for the purpose of type-checking scripts.
+    It would probably be possible to remove the ened for this, but it would complicate certain sections of code.
+*/
 BUILTIN_OPERATIONS :: (
     struct { operator_ident: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
 ).[
@@ -79,6 +82,9 @@ exec_builtin_operation :: (oper_idx: int, left: Any, right: Any) -> (ret: Any, o
         
         FORMAT_STRING :: #string DONE
       case %1;
+        assert(left.type == type_info(%3));
+        assert(right.type == type_info(%4));
+        assert(ret.type == type_info(%2));
         (cast(*%2)ret.value_pointer).* = (cast(*%3)left.value_pointer).* %5 (cast(*%4)right.value_pointer).*;
         return ret, true;
 DONE;

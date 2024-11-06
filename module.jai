@@ -13,57 +13,144 @@
 #load "binary_op.jai";
 
 /*
-    Right now, it looks like we could probably just do typechecking as we construct the script. 
-    However, I'm not sure if that's the best long-term idea.
-    But, in any case it should ucrrently be so simple to do so, that there would be very little trouble to factor it out later.
-    So for now I will do it that way, even though that may be tentative.
-    Doing it this way for now also makes it easier to have a 'compile an run' sort of option that does it all in one call
+    Notes:
     
-    It may be better to just store indexes to variables, procedures, and operators on each node instead of duplicating the data on the node or using a pointer
-    main reason being for variables, so that we can sub out the variables' values before running the script, since presumably we may want to run a script multiple times and our memory could move around
+    todo: typecheck assignment statement and store left side as index to variable
+          allow assignment to declare a new variable (type inferred) if no matching name is provided as external variable   
+          this internally declared variable will act as a temporary that is in temp storage, so must be flagged as internal so that we can reallocate each time script is run
+          
+          allow left side of assignment to be an expression
+            this will require some concept of L-values
+            
+    how to parse other types of statements?
+    
+    begin parsing as expression
+        then if we hit a =, we know that what we just parsed needs to be an L value
+            means parse expression should flag each node or pass some value back up saying that it can be treated as l value
+            variable, and some operations (indexing is considered an operation) can be an L value
+        if we just hit a ;, then the expression needs to be a procedure_call, since that is the only expression that can also be a statement on its own
+        
+    for indexing operator, we may run into some trouble bc of our current typechecking model...
+        I wish I had just a bit more experience so I would not be short-sighted! but alas, you dont know what you dont know
+        we can't know return type of indexing operator (or which one to apply, i.e. [] vs *[]) until we know whether we are being used in a context wehere it needs to be an lvalue
+        perhaps we can just assume *[] and then simply deref in the case that we need to value itself?
+            but then in any case we will have to fix up the ast after the intial parse...
+    
+    indexing operator can probably be its own ast node type for now, that way we can just determine if something is an lvalue 
+        based on whether it is type variable or indexer
+        since we have all variables by reference at all times, any variable can be an lvalue
+        we will want to be able to have overloads on indexing operator, for matrix types or something probably
+            this will have its own overload set probably
+            
+            
+            
+    'subexpressions' rather than internal variable declarations
+    $ before 'variable' name means we are declaring a name for a common subexpression that may be used in later expressions/statements
+    while the usage within the script is essentailly the same as a loca variable would be, 
+        the distinction of calling it a common subexpression has a purpose in the AST analysis functions that I plan to add
+    when we search for certain patterns or forms of expressions, it aid in our analysis if the node is marked as a reference to a subexpression rather than simply as a variable value
+    that way we can avoid duplicating work by pulling out subexpressions, but still recognize that those expressions are common to multiple larger expressions
+    
+        $main_cycle    = time % 5;
+        $main_cycle_pi = main_cycle * PI;
+        
+        tilemaps[1].offset = Vec2.{ 3 * cos(main_cycle), 5 * sin(main_cycle) };
+        
+        
+    
+    if left of assignment is to a tilemap's position member
+        analyze expressions for vec x and y components
     
     
-    in the process of changin stuff to use indices...
-    problem iwht resolve proc, since we also need to get back flags (whether to swap args) to store on node
-    no biggie, but worth noting ig
+    we need to have some simple but versatile syntax for matching expressions and extracting them 
+    
+    match expression form
+    extract expression
+    extract literals
+    when extracting some expression, we want to be able to assert in format string that it is of correct form
+    
+    
+    identify certain forms of expressions with #
+        builtins
+            #num
+            #op
+            #var
+            #proc
+            #expr
+        will probably allow user to define more of these?
+    
+    identify exact expressions by name
+    this includes subexpressions declared with $ inside script
     
     
     
-    we currently handle procedure overloading because of operators, but I may actaully remove proc overloading 
-        on the one hand, could be useful for matrix operations
-        on the other hand, could complicate pattern matching on the ast for expression analysis
+    easier way to do certain things for certain subexpressions is just to parameterize jai procedures
+    then you can just trivially check an expression ast for the procedure call in question and extract procedure values
     
-    also, we need to add additional flag for operator now in order to support builtin operators
-    since we are doing the type checking while creating ast, we need to encapsulate the typechecking an execution for this nicely
+        $main_cycle = time % 5;
+        tilemaps[1].offset = ellipse(main_cycle, 1, 5);
+        tilemaps[2].offset = figure_eight(main_cycle, 3, 5);
+        
+    in above example, we could just pull out values from parameters and use to generate music elements
+    
+    
+    
+    Named_Expression :: struct { name: string; expression: AST.Expression; };
+    
+    get_expr_of_form :: (form: string) -> ([] int, bool) {
+        extracts expressions based on a format string
+        format string can use $syntax to denote subexpression to extract
+    }
+    
+    // here, I guess type matching on $1 and $2 is determined by provided 'extract' args
+    // but, it would be useful to be able to get other subexpression out rather than just values
+    extracted, match := get_expr_of_form(script, "$scalar(0) * sin(time % $time_scale(0))");
+    if match {
+        scalar_expr := get_name_expr(extracted, "scalar");
+        if script.nodes[scalar_expr.root].type == .NUMBER
+        
+    }
+    
+    
+    get_assignments_variable(name: string)
+    get_assignments_to_type(type: *Type_Info)
+    get_assignments_to_struct_member(base_type: *Type_Info, member: string)
+    
 */
 
 
 // need to remember how to not have to specify the count explicitly here
-operator_precedence_table : [4] struct { op: u8; prec: int; } : .[
-    .{ #char "+", 1 },
-    .{ #char "-", 1 },
-    .{ #char "*", 2 },
-    .{ #char "/", 2 },
+operator_precedence_table :: struct { op: string; prec: int; } .[
+    .{ "+", 1 },
+    .{ "-", 1 },
+    .{ "*", 2 },
+    .{ "/", 2 },
 ];
 
 Source_Location :: struct {
     line, char: int;
 }
 
-External_Variable :: struct {
+Script_Variable :: struct {
     name    : string;
     binding : Any;
 }
 
 Script :: struct {
     ast         : AST;
-    variables   : [..] External_Variable;
+    flags       : Flags;
+    variables   : [..] Script_Variable;
     procedures  : [..] Script_Procedure;
     operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
-    flags       : Flags;
     
     // TOOD: replace resizable arrays with views, use resizable in script constructor instead?
     // these really will not need to or even be able to change after ast has been created
+    // first, need to make sure that we are not appending to these in any procedures taking a Script rather than constructor
+    // maybe we just reference these dynamic arrays by pointer?
+    // hard call to make, since we probably want to have common arrays for many procedures/operators that we want to be accessible across multiple scripts
+    // maybe we even want to have common variables between scripts for things like global timers and such 
+    // maybe we just have global arrays or ones in context and a flag on script to allow access to these arrays
+    //      if we use multiple arrays, then we need more than just an index to refer to variables/procs/ops. need some kind of locator struct
     
     Flags :: enum_flags {
         AST_CONSTRUCTED;
@@ -88,14 +175,18 @@ set_variable :: (script: *Script, name: string, any: Any) {
             return;
         }
     }
-    
     array_add(*script.variables, .{ name, any });
 }
 
 
 Script_Constructor :: struct {
     using #as script : *Script;
-    tokenizer : Tokenizer;
+    tokenizer   : Tokenizer;
+    
+    // these will be copied to script after constructing ast
+    // variables   : [..] Script_Variable;
+    // procedures  : [..] Script_Procedure;
+    // operators   : [..] Script_Procedure;
 }
 
 construct_script_from_source_string :: (script: *Script, source: string) -> bool {
@@ -126,10 +217,15 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         if !ok || equals_token.type != .EQUALS 
             return false;
         
-        print("parsed identifier '%' for left side of assignment statement\n", ident_token.text);
-        stmt.assignment.left = ident_token.text;
+        dbg_print("parsed identifier '%' for left side of assignment statement\n", ident_token.text);
+        var_idx := resolve_variable(ctxt, ident_token.text);
+        if var_idx == -1 {
+            dbg_print("Error: unable to resolve variable '%'\n", ident_token.text);
+            return false;
+        }
+        stmt.assignment.left = var_idx;
         
-        print("parsing expression for right side of assignment statement\n");
+        dbg_print("parsing expression for right side of assignment statement\n");
         stmt.assignment.right.root = parse_expression(ctxt, 0);
         if stmt.assignment.right.root == -1  return false;
         
@@ -167,7 +263,7 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
 }
 
 resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
-    print("resolve_identifier(ident = '%')\n", ident);
+    dbg_print("resolve_identifier(ident = '%')\n", ident);
     
     token := peek_token(*tokenizer);
     // don't need to check if next token was invalid rn, only need to know if it was or wasn't an open paren
@@ -194,11 +290,11 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
             node_i := parse_expression(ctxt, 0);
             if node_i == -1  return -1;
             
-            print("added node % to param list\n", sprint_ast_node(ctxt, ast.nodes[node_i]));
+            dbg_print("added node % to param list\n", sprint_ast_node(ctxt, ast.nodes[node_i]));
             array_add(*param_nodes, node_i);
             
             token = peek_token(*tokenizer);
-            print("next token after expression in param list: %\n", sprint_token(token));
+            dbg_print("next token after expression in param list: %\n", sprint_token(token));
             if token.type != .COMMA  break;
             if !consume_token(*tokenizer)  return -1; // consume COMMA just peeked
         }
@@ -206,13 +302,13 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
         token, ok := get_token(*tokenizer);
         if !ok  return -1;
         if token.type != .CLOSE_PAREN {
-            print("Error, expected a close paren at the end of parameter list!\n");
+            dbg_print("Error, expected a close paren at the end of parameter list!\n");
             return -1;
         }
         
         node := array_add(*ast.nodes);
         node.type = .PROCEDURE_CALL;
-        node.procedure_call.params = param_nodes;
+        node.procedure_call.argument_nodes = param_nodes;
         
         argument_types := NewArray(param_nodes.count, *Type_Info,, temp);
         for param_nodes {
@@ -221,19 +317,19 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
             argument_types[it_index] = value_type;
         }
         
-        node.procedure_call.index = resolve_procedure_index(ctxt, ident, argument_types);
-        if node.procedure_call.index == -1  return -1;
+        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, ident, argument_types);
+        if node.procedure_call.procedure_index == -1  return -1;
         
         return ast.nodes.count - 1;
     }
     
-    print("Unreachable");
+    dbg_print("Unreachable");
     return -1;
 }
 
 // TODO: we really need to have a way to properly peek a token
 
-get_operator_precedence :: (op: u8) -> int {
+get_operator_precedence :: (op: string) -> int {
     for operator_precedence_table 
         if it.op == op
             return it.prec;
@@ -261,7 +357,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
     node_i := -1;
     if token.type == {
         case .OPEN_PAREN;
-            print("encountered open paren...\n");
+            dbg_print("encountered open paren...\n");
             node_i = parse_expression(ctxt, 0);
             if node_i == -1  return -1;
             
@@ -269,10 +365,10 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
             if !ok  return -1;
             
             if token.type != .CLOSE_PAREN {
-                print("Error, expected a closing paren!\n");
+                dbg_print("Error, expected a closing paren!\n");
                 return -1;
             }
-            print("consumed corresponding close paren\n");
+            dbg_print("consumed corresponding close paren\n");
     
         case .NUMBER;
             node := array_add(*ast.nodes);
@@ -288,7 +384,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
             node_i = resolve_identifier(ctxt, token.text);
             
         case;
-            print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
+            dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
             assert(false);
     }
     
@@ -308,12 +404,12 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> int {
 }
 
 parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> int {
-    print("parse_expression(min_prec = %)\n", min_prec); 
+    dbg_print("parse_expression(min_prec = %)\n", min_prec); 
 
     left_i := parse_leaf(ctxt);
     if left_i == -1  return -1;
     
-    print("parsed a leaf: %\n", sprint_ast_node(ctxt, ast.nodes[left_i]));
+    dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, ast.nodes[left_i]));
     
     while true {
         node_i := parse_increasing_precedence(ctxt, left_i, min_prec);
@@ -327,21 +423,21 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> int {
 }
 
 parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, min_prec: int) -> int {
-    print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left_i, min_prec); 
+    dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left_i, min_prec); 
 
     next_token := peek_token(*tokenizer);
     
     if !token_is_binary_operator(next_token) {
-        print("peeked token %, but it was not an operator. Returning node % to caller.\n",
+        dbg_print("peeked token %, but it was not an operator. Returning node % to caller.\n",
             sprint_token(next_token), 
             sprint_ast_node(ctxt, ast.nodes[left_i]), 
         );
         return left_i;
     }
     
-    next_token_prec := get_operator_precedence(next_token.text[0]);
+    next_token_prec := get_operator_precedence(next_token.text);
     if next_token_prec < min_prec {
-        print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
+        dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
             sprint_token(next_token), 
             next_token_prec,
             min_prec,
@@ -358,9 +454,9 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
     return create_binary_operation(ctxt, next_token.text, left_i, right_i);
 }
 
-// TODO: we will need to add logic here for builtin operators
+
 create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
-    print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
+    dbg_print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
     
     left_ti  := node_get_value_type(ctxt, ast.nodes[left_i ]);
     right_ti := node_get_value_type(ctxt, ast.nodes[right_i]);
@@ -370,25 +466,25 @@ create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: str
     oper_idx:, swap_args = resolve_builtin_operation(operator_ident, left_ti, right_ti);
     if oper_idx >= 0 {
         is_builtin = true;
-        print("is builtin, idx %\n", oper_idx);
+        dbg_print("operator is builtin, ");
     } else {
         oper_idx, swap_args = resolve_procedure_index(ctxt, operator_ident, .[ left_ti, right_ti ], true);
-        print("resolved to operator index %\n", oper_idx);
         if oper_idx == -1  return -1;
     }
+    dbg_print("resolved to operator index %\n", oper_idx);
     
     node := array_add(*ast.nodes);
     node.type = .OPERATION;
     node.operation = .{
         left  = left_i,
         right = right_i,
-        index = oper_idx,
+        operator_index = oper_idx,
     };
     
     if swap_args   node.operation.flags |= .SWAP_ARGS; 
     if is_builtin  node.operation.flags |= .IS_BUILTIN;  
     
-    print("operation flags: %\n", node.operation.flags);
+    dbg_print("operation flags: %\n", node.operation.flags);
     
     return ast.nodes.count - 1;
 }
