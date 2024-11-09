@@ -61,7 +61,7 @@ AST :: struct {
         type : Statement_Type;
         union {
             assignment : struct {
-                left  : int; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
+                left  : Expression; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
                 right : Expression;
             };
         }
@@ -124,14 +124,22 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
             return tprint(".VARIABLE: %", node_get_variable(script, node).name);
             
         case .OPERATION;
-            if node.operation.flags & .IS_BUILTIN {
-                return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
-            }
-            return tprint(".OPERATION: %", node_get_operation(script, node).name);
+            if script.flags & .AST_TYPECHECKED {
+                if node.operation.flags & .IS_BUILTIN {
+                    return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
+                }
+                return tprint(".OPERATION: %", node_get_operation(script, node).name);
+            } else {
+                return node.src_text;
+            } 
         
         case .PROCEDURE_CALL;
-            return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
-        
+            if script.flags & .AST_TYPECHECKED {
+                return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
+            } else {
+                return node.src_text;
+            } 
+            
         case;
             dbg_print("%: ??? ", node.type);
     }
@@ -185,7 +193,14 @@ node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
 
 
 execute_script :: (script: *Script) -> bool {
-    if !(script.flags & .AST_CONSTRUCTED)  return false;
+    if !(script.flags & .AST_CONSTRUCTED) {
+        dbg_print("Error: cannot execute script before AST has been constructed!\n");
+        return false;
+    }
+    if !(script.flags & .AST_TYPECHECKED) {
+        dbg_print("Error: cannot execute script before AST has been typechecked!\n");
+        return false;
+    }
     
     dbg_print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
@@ -208,7 +223,10 @@ execute_statement :: (
             return false;
         }
         
-        left_variable := script.variables[stmt.assignment.left];
+        assert(stmt.type == .ASSIGNMENT);
+        left_node     := script.ast.nodes[stmt.assignment.left.root];
+        assert(left_node.type == .VARIABLE);
+        left_variable := node_get_variable(script, left_node);
         assert(left_variable.binding.type == r_value.type);
         memcpy(left_variable.binding.value_pointer, r_value.value_pointer, left_variable.binding.type.runtime_size);
         
@@ -226,7 +244,7 @@ evaluate_expression :: inline (script: *Script, expr: *AST.Expression) -> (Any, 
 }
 
 // evaluates expression from the given node index
-// TODO: maybe rename to evaulate_expression_node?
+// TODO: we will not need to return an Any after we figure out pool allocator, only need to know stack position
 evaluate_expression_node :: (
     script : *Script, 
     expr   : *AST.Expression, 
@@ -240,6 +258,13 @@ evaluate_expression_node :: (
     }
     
     node := *script.ast.nodes[node_i];
+    dbg_print("evaluating node %: %\n", node_i, node.type);
+    
+    #if DEBUG {
+        context.dbg_print_indent += 1;
+        defer context.dbg_print_indent -= 1;
+    }
+    
     if node.type == {
         case .NUMBER;
             dbg_print("returning number literal: %\n", node.number);
@@ -269,7 +294,8 @@ evaluate_expression_node :: (
             right:, ok = evaluate_expression_node(script, expr, node.operation.right);
             if !ok  return Any.{}, false;
             
-            print("operation flags: %\n", node.operation.flags);
+            dbg_print("operator index: %\n", node.operation.operator_index);
+            dbg_print("operation flags: %\n", node.operation.flags);
             
             arguments := ifx (node.operation.flags & .SWAP_ARGS)
                 then Any.[ right, left ]
@@ -281,7 +307,7 @@ evaluate_expression_node :: (
                 if !ok  return Any.{}, false;
             }
             else {
-                procedure := node_get_operation(script, node);
+                procedure := node_get_procedure(script, node);
                 ti_proc := cast(*Type_Info_Procedure) procedure.type;
                 assert(ti_proc.return_types.count == 1);
                 ret = Dynamic_New_Any(ti_proc.return_types[0],, temp);
@@ -328,7 +354,12 @@ evaluate_expression_node :: (
 
 DEBUG :: true;
 
+#if DEBUG {#add_context dbg_print_indent: int;}
+
 dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -> bytes_printed: s64 {
-    #if DEBUG  return print(format_string, ..args, to_standard_error);
+    #if DEBUG  {
+        for 0..context.dbg_print_indent  print("  ");
+        return print(format_string, ..args, to_standard_error);
+    }
 }
 

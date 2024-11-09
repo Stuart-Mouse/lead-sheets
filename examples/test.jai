@@ -6,14 +6,10 @@
 #import "Lead_Sheets";
 
 main :: () {
-    // input := "Vec2(1, 2) * pow(2, sin(3.14159/2) + 2)";
     input := #string DONE
     r1 = -Vec2(3, 4) * 5;
     r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
     DONE;
-    // input := "r2 = 3 + pow(4, 2);";
-    // input := "r1 = 3 + pow(4, Vec2(2, 1));"; // should fail
-    // input := "r1 = 3 * z;";
     
     script: Script;
     
@@ -24,9 +20,10 @@ main :: () {
     
     r1: Vector2;
     r2: float;
-    x: s64 = 4;
-    y: u8  = 16;
-    z:= Vector2.{ 3, 5 };
+    
+    x :=  4.0;
+    y := 16.0;
+    z := Vector2.{ 3, 5 };
     
     set_variable(*script, "x", x);
     set_variable(*script, "y", y);
@@ -40,10 +37,17 @@ main :: () {
         return;
     }
     
+    print("\nTYPECHECKING SCRIPT\n");
+    if !typecheck_script(*script) {
+        print("failed to typecheck script!\n");
+        return;
+    }
+    
     print("\nEXECUTING SCRIPT\n");
     ok := execute_script(*script);
     if ok {
-        print("\nr1: %\n", r1);
+        print("\nRESULTS:\n");
+        print("r1: %\n", r1);
         print("r2: %\n", r2);
     } else {
         print("failed!\n");

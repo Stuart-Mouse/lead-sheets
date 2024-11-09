@@ -88,12 +88,21 @@ consume_token :: (using t: *Tokenizer) -> bool {
     return ok;
 }
 
-get_token :: (using t: *Tokenizer) -> (Script_Token, bool) {
+get_token :: inline (using t: *Tokenizer) -> (Script_Token, bool) {
     current_token := next_token;
     return current_token, consume_token(t);
 }
 
-peek_token :: (using t: *Tokenizer) -> Script_Token {
+// expect_token_type :: (using t: *Tokenizer, type: Script_Token_Type) -> bool {
+//     token := peek_token();
+//     if token.type == type {
+//         consume_token();
+//         return true;
+//     }
+//     return false;
+// }
+
+peek_token :: inline (using t: *Tokenizer) -> Script_Token {
     return next_token;
 }
 

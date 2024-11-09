@@ -8,66 +8,84 @@
 */
 
 Typechecking_Flags :: enum_flags {
-    EXPECT_LVALUE; // this should not get passed down syntax tree except through indexing operations
+    NONE :: 0;
+    EXPECT_LVALUE :: 1; // this should not get passed down syntax tree except through indexing operations
 }
 
-typecheck_node :: (using ctxt: *Script_Constructor, node_i: int, check_flags: Typechecking_Flags) -> *Type_Info {
-    node := ctxt.nodes[node_i];
+// TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
+typecheck_node :: (
+    using ctxt  : *Script, 
+    node_i      :  int, 
+    check_flags :  Typechecking_Flags = .NONE, 
+    expect_type : *Type_Info          = null
+) -> *Type_Info {
+    node := *ctxt.ast.nodes[node_i];
+    dbg_print("typechecking node %: % %\n", node_i, node.type, node.src_text);
+    
+    #if DEBUG {
+        context.dbg_print_indent += 1;
+        defer context.dbg_print_indent -= 1;
+    }
     
     if #complete node.type == {
       case .NUMBER;
-        if check_flags & .EXPECT_LVALUE  return null, false;
-        return type_info(float32), true;
+        if check_flags & .EXPECT_LVALUE  return null;
+        return type_info(float32);
         
       case .VARIABLE;
         // variable can be used as lvalue
         var_idx := resolve_variable(ctxt, node.src_text);
         if var_idx == -1 {
-            dbg_print("Unable to resolve variable '%'!\n", ident);
-            return -1;
+            dbg_print("Unable to resolve variable '%'!\n", node.src_text);
+            return null;
         }
         node.variable_index = var_idx;
         
         variable := variables[node.variable_index];
-        return variable.type, true;
+        return variable.binding.type;
         
       case .OPERATION;
-        if check_flags & .EXPECT_LVALUE  return null, false;
+        if check_flags & .EXPECT_LVALUE  return null;
         
-        left_ti  := typecheck_node(ctxt, ast.nodes[left_i ], check_flags);
-        right_ti := typecheck_node(ctxt, ast.nodes[right_i], check_flags);
+        left_ti  := typecheck_node(ctxt, node.operation.left,  check_flags);
+        if !left_ti   return null;
         
-        assert(left_ti  != null);
-        assert(right_ti != null);
+        right_ti := typecheck_node(ctxt, node.operation.right, check_flags);
+        if !right_ti  return null;
         
         swap_args, is_builtin := false;
-        oper_idx:, swap_args = resolve_builtin_operation(node.src_text, left_ti, right_ti);
-        if oper_idx >= 0 {
+        node.operation.operator_index, swap_args = resolve_builtin_operation(node.src_text, left_ti, right_ti);
+        if node.operation.operator_index >= 0 {
             is_builtin = true;
             dbg_print("operator is builtin, ");
         } else {
-            oper_idx, swap_args = resolve_procedure_index(ctxt, node.src_text, .[ left_ti, right_ti ], true);
-            if oper_idx == -1  return -1;
+            node.operation.operator_index, swap_args = resolve_procedure_index(ctxt, node.src_text, .[ left_ti, right_ti ], true);
+            if node.operation.operator_index == -1  return null;
         }
-        dbg_print("resolved to operator index %\n", oper_idx);
-            
-        if swap_args   node.operation.flags |= .SWAP_ARGS; 
-        if is_builtin  node.operation.flags |= .IS_BUILTIN;  
+        dbg_print("resolved to operator index %\n", node.operation.operator_index);
+        
+        if swap_args   node.operation.flags |= .SWAP_ARGS;
+        if is_builtin  node.operation.flags |= .IS_BUILTIN;
+        
+        dbg_print("opertion flags: %\n", node.operation.flags);
         
         return node_get_value_type(ctxt, node);
         
       case .PROCEDURE_CALL;
-        if check_flags & .EXPECT_LVALUE  return null, false;
+        if check_flags & .EXPECT_LVALUE  return null;
         
+        dbg_print("typechecking arguments...\n");
         argument_types := NewArray(node.procedure_call.argument_nodes.count, *Type_Info,, temp);
         for node.procedure_call.argument_nodes {
-            argument_type := typecheck_node(ctxt, ast.nodes[it]);
-            assert(argument_type != null);
+            argument_type := typecheck_node(ctxt, it);
+            if !argument_type  return null;
             argument_types[it_index] = argument_type;
         }
         
-        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, ident, argument_types);
+        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
         if node.procedure_call.procedure_index == -1  return null;
+        
+        
         
         return node_get_value_type(ctxt, node);
     }
@@ -75,13 +93,35 @@ typecheck_node :: (using ctxt: *Script_Constructor, node_i: int, check_flags: Ty
     return null;
 }
 
-typecheck_statement :: (using ctxt: *Script_Constructor, statement: *AST.Statement, check_flags: Typechecking_Flags) -> *Type_Info {
-    if #complete statment.type == {
+typecheck_statement :: (using ctxt: *Script, statement: *AST.Statement, check_flags: Typechecking_Flags) -> bool {
+    if #complete statement.type == {
       case .ASSIGNMENT;
-        right_ti := typecheck_node();
-        if !right_ti  return null;
-        
         // get type of left side
+        // we expect left side to be an lvalue
+        left_ti := typecheck_node(ctxt, statement.assignment.left.root, check_flags = .EXPECT_LVALUE);
+        if !left_ti  return false;
+        
+        // pass left type as 'expect_type' argument so that we can infer type of struct literals
+        right_ti := typecheck_node(ctxt, statement.assignment.right.root, expect_type = left_ti);
+        if !right_ti  return false;
+        
+        if left_ti != right_ti {
+            dbg_print("types on left and right side of assignment statement do not match! % != %\n", type_info_to_type(left_ti), type_info_to_type(right_ti));
+            return false;
+        }
+        
+        return true;
     }
-    return null;
+    return false;
 }
+
+typecheck_script :: (script: *Script) -> bool {
+    for *script.ast.statements {
+        if !typecheck_statement(script, it, .NONE)  return false;
+    }
+    
+    script.flags |= .AST_TYPECHECKED;
+    
+    return true;
+}
+

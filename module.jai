@@ -3,6 +3,7 @@
 #import "Math";
 #import "String";
 #import "Hash_Table";
+#import "Flat_Pool";
 
 #import "Data_Packer";
 #import "dyncall";
@@ -11,112 +12,8 @@
 #load "ast.jai";
 #load "procedure.jai";
 #load "binary_op.jai";
+#load "typecheck.jai";
 
-/*
-    Notes:
-    
-    todo: typecheck assignment statement and store left side as index to variable
-          allow assignment to declare a new variable (type inferred) if no matching name is provided as external variable   
-          this internally declared variable will act as a temporary that is in temp storage, so must be flagged as internal so that we can reallocate each time script is run
-          
-          allow left side of assignment to be an expression
-            this will require some concept of L-values
-            
-    how to parse other types of statements?
-    
-    begin parsing as expression
-        then if we hit a =, we know that what we just parsed needs to be an L value
-            means parse expression should flag each node or pass some value back up saying that it can be treated as l value
-            variable, and some operations (indexing is considered an operation) can be an L value
-        if we just hit a ;, then the expression needs to be a procedure_call, since that is the only expression that can also be a statement on its own
-        
-    for indexing operator, we may run into some trouble bc of our current typechecking model...
-        I wish I had just a bit more experience so I would not be short-sighted! but alas, you dont know what you dont know
-        we can't know return type of indexing operator (or which one to apply, i.e. [] vs *[]) until we know whether we are being used in a context wehere it needs to be an lvalue
-        perhaps we can just assume *[] and then simply deref in the case that we need to value itself?
-            but then in any case we will have to fix up the ast after the intial parse...
-    
-    indexing operator can probably be its own ast node type for now, that way we can just determine if something is an lvalue 
-        based on whether it is type variable or indexer
-        since we have all variables by reference at all times, any variable can be an lvalue
-        we will want to be able to have overloads on indexing operator, for matrix types or something probably
-            this will have its own overload set probably
-            
-            
-            
-    'subexpressions' rather than internal variable declarations
-    $ before 'variable' name means we are declaring a name for a common subexpression that may be used in later expressions/statements
-    while the usage within the script is essentailly the same as a loca variable would be, 
-        the distinction of calling it a common subexpression has a purpose in the AST analysis functions that I plan to add
-    when we search for certain patterns or forms of expressions, it aid in our analysis if the node is marked as a reference to a subexpression rather than simply as a variable value
-    that way we can avoid duplicating work by pulling out subexpressions, but still recognize that those expressions are common to multiple larger expressions
-    
-        $main_cycle    = time % 5;
-        $main_cycle_pi = main_cycle * PI;
-        
-        tilemaps[1].offset = Vec2.{ 3 * cos(main_cycle), 5 * sin(main_cycle) };
-        
-        
-    
-    if left of assignment is to a tilemap's position member
-        analyze expressions for vec x and y components
-    
-    
-    we need to have some simple but versatile syntax for matching expressions and extracting them 
-    
-    match expression form
-    extract expression
-    extract literals
-    when extracting some expression, we want to be able to assert in format string that it is of correct form
-    
-    
-    identify certain forms of expressions with #
-        builtins
-            #num
-            #op
-            #var
-            #proc
-            #expr
-        will probably allow user to define more of these?
-    
-    identify exact expressions by name
-    this includes subexpressions declared with $ inside script
-    
-    
-    
-    easier way to do certain things for certain subexpressions is just to parameterize jai procedures
-    then you can just trivially check an expression ast for the procedure call in question and extract procedure values
-    
-        $main_cycle = time % 5;
-        tilemaps[1].offset = ellipse(main_cycle, 1, 5);
-        tilemaps[2].offset = figure_eight(main_cycle, 3, 5);
-        
-    in above example, we could just pull out values from parameters and use to generate music elements
-    
-    
-    
-    Named_Expression :: struct { name: string; expression: AST.Expression; };
-    
-    get_expr_of_form :: (form: string) -> ([] int, bool) {
-        extracts expressions based on a format string
-        format string can use $syntax to denote subexpression to extract
-    }
-    
-    // here, I guess type matching on $1 and $2 is determined by provided 'extract' args
-    // but, it would be useful to be able to get other subexpression out rather than just values
-    extracted, match := get_expr_of_form(script, "$scalar(0) * sin(time % $time_scale(0))");
-    if match {
-        scalar_expr := get_name_expr(extracted, "scalar");
-        if script.nodes[scalar_expr.root].type == .NUMBER
-        
-    }
-    
-    
-    get_assignments_variable(name: string)
-    get_assignments_to_type(type: *Type_Info)
-    get_assignments_to_struct_member(base_type: *Type_Info, member: string)
-    
-*/
 
 
 // need to remember how to not have to specify the count explicitly here
@@ -143,28 +40,23 @@ Script :: struct {
     procedures  : [..] Script_Procedure;
     operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
     
-    // TOOD: replace resizable arrays with views, use resizable in script constructor instead?
-    // these really will not need to or even be able to change after ast has been created
-    // first, need to make sure that we are not appending to these in any procedures taking a Script rather than constructor
-    // maybe we just reference these dynamic arrays by pointer?
-    // hard call to make, since we probably want to have common arrays for many procedures/operators that we want to be accessible across multiple scripts
-    // maybe we even want to have common variables between scripts for things like global timers and such 
-    // maybe we just have global arrays or ones in context and a flag on script to allow access to these arrays
-    //      if we use multiple arrays, then we need more than just an index to refer to variables/procs/ops. need some kind of locator struct
+    pool: Flat_Pool;
+    // vm: *DCCallVM; // TODO: use common vm for all dyncall calls, will require changes to dyncall interface or custom code here in lead sheets
     
     Flags :: enum_flags {
         AST_CONSTRUCTED;
+        AST_TYPECHECKED;
     }
 }
 
 free_script :: (using script: *Script) {
     array_free(variables);
-    memset(*variables, 0, size_of(Resizable_Array));
     array_free(procedures);
-    memset(*procedures, 0, size_of(Resizable_Array));
     array_free(operators);
-    memset(*operators, 0, size_of(Resizable_Array));
     free_ast(*ast);
+    fini(*pool);
+    
+    script.* = .{};
 }
 
 // ensures no name conflicts
@@ -182,11 +74,6 @@ set_variable :: (script: *Script, name: string, any: Any) {
 Script_Constructor :: struct {
     using #as script : *Script;
     tokenizer   : Tokenizer;
-    
-    // these will be copied to script after constructing ast
-    // variables   : [..] Script_Variable;
-    // procedures  : [..] Script_Procedure;
-    // operators   : [..] Script_Procedure;
 }
 
 construct_script_from_source_string :: (script: *Script, source: string) -> bool {
@@ -201,41 +88,26 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     }
     
     parse_statement :: (using ctxt: *Script_Constructor) -> bool {
-        // for now, we only have assignement statements, so just do that
-        // this is all very much hardcoded for that one case
-        
         statement: AST.Statement;
-        
         statement.type == .ASSIGNMENT;
         
-        ident_token, ok := get_token(*tokenizer);
-        if !ok || ident_token.type != .IDENTIFIER {
-            return false;
-        }
+        dbg_print("parsing expression for left side of assignment statement\n");
+        statement.assignment.left.root = parse_expression(ctxt, 0);
+        if statement.assignment.left.root == -1  return false;
         
-        equals_token:, ok = get_token(*tokenizer);
+        equals_token, ok := get_token(*tokenizer);
         if !ok || equals_token.type != .EQUALS {
             return false;
         }
-        
-        // TODO: parse left side as an expression
-        // for now it should always be a variable, later can be any valid lvalue
-        
-        dbg_print("parsed identifier '%' for left side of assignment statement\n", ident_token.text);
-        var_idx := resolve_variable(ctxt, ident_token.text);
-        if var_idx == -1 {
-            dbg_print("Error: unable to resolve variable '%'\n", ident_token.text);
-            return false;
-        }
-        statement.assignment.left = var_idx;
         
         dbg_print("parsing expression for right side of assignment statement\n");
         statement.assignment.right.root = parse_expression(ctxt, 0);
         if statement.assignment.right.root == -1  return false;
         
         semicolon_token:, ok = get_token(*tokenizer);
-        if !ok || semicolon_token.type != .SEMICOLON 
+        if !ok || semicolon_token.type != .SEMICOLON {
             return false;
+        }
         
         array_add(*script.ast.statements, statement);
         
@@ -245,20 +117,20 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     while true {
         if !parse_statement(*constructor) {
             return false;
-        } 
+        }
         if peek_token(*constructor.tokenizer).type == .EOF {
             break;
         }
     }
     
     script.flags |= .AST_CONSTRUCTED;
-        
+    
     success = true;
     return true;
 }
 
-resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
-    for * script.variables {
+resolve_variable :: (script: *Script, ident: string) -> int {
+    for *script.variables {
         if it.name == ident {
             return it_index;
         }
@@ -275,7 +147,7 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
     if token.type != .OPEN_PAREN {  
         node := array_add(*ast.nodes);
         node.type = .VARIABLE;
-        node.src_text = operator_ident;
+        node.src_text = ident;
         return ast.nodes.count - 1;
     } 
     else {
@@ -304,7 +176,7 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
         
         node := array_add(*ast.nodes);
         node.type = .PROCEDURE_CALL;
-        node.src_text = operator_ident;
+        node.src_text = ident;
         node.procedure_call.argument_nodes = argument_nodes;
         return ast.nodes.count - 1;
     }
@@ -406,7 +278,7 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> int {
 
 parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, min_prec: int) -> int {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left_i, min_prec); 
-
+    
     next_token := peek_token(*tokenizer);
     
     if !token_is_binary_operator(next_token) {
