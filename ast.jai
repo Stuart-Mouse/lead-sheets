@@ -31,19 +31,19 @@ AST :: struct {
         type     : Node_Type;
         src_loc  : Source_Location;
         src_text : string; // need for identifiers before typechecking step
-        next_arg_node : int; // most sensible way to link argument nodes, prevents need for dynamic array
+        next_arg_node : *AST.Node; 
         
         union {
             variable_index: int; // index to variable in Script.variables array
             number: float32;
             procedure_call : struct {
                 procedure_index : int;
-                first_arg_node  : int;
+                first_arg_node  : *AST.Node;
                 arg_count       : int;
             };
             operation: struct {
                 operator_index : int; // index to either a builtin operator or an operator procedure
-                left, right    : int;
+                left, right    : *AST.Node;
                 flags          : Operation_Flags;
             };
         }
@@ -53,7 +53,7 @@ AST :: struct {
     }
     
     Expression :: struct {
-        root: int;
+        root: *AST.Node;
     }
     
     Statement_Type :: enum {
@@ -71,13 +71,13 @@ AST :: struct {
     
     // for now all nodes are stored in one big array
     // later maybe we put nodes in separate arrays for each statement ?
-    nodes      : [..] Node;
+    // nodes      : [..] Node;
     statements : [..] Statement;
 }
 
 free_ast :: (ast: *AST) {
-    array_free(ast.nodes);
-    memset(*ast.nodes, 0, size_of(Resizable_Array));
+    // array_free(ast.nodes);
+    // memset(*ast.nodes, 0, size_of(Resizable_Array));
 }
 
 // for now, void means invalid type ?
@@ -86,10 +86,10 @@ get_expression_type :: (expr: *AST.Expression) -> Type {
     return node_get_value_type(expr.nodes[expr.root]);
 }
 
-print_ast :: (script: *Script, node_i: int, parent_prec: int = 0) {
-    if node_i < 0 || node_i >= ast.nodes.count  return;
+print_ast :: (script: *Script, node: *AST.Node, parent_prec: int = 0) {
+    // if node_i < 0 || node_i >= ast.nodes.count  return;
     
-    node := *ast.nodes[node_i];
+    // node := *ast.nodes[node_i];
     if node.type == {
         case .NUMBER;
             dbg_print("%", node.number);
@@ -110,12 +110,14 @@ print_ast :: (script: *Script, node_i: int, parent_prec: int = 0) {
         case .PROCEDURE_CALL;
             dbg_print("%(", get_node_prcedure(script, node).name);
             
-            arg_node_i := node.procedure_call.first_arg_node;
-            while arg_node_i != -1 {
-                node := *ast.nodes[arg_node_i];
+            arg_node := node.procedure_call.first_arg_node;
+            arg_node_index := 0;
+            while arg_node != null {
                 dbg_print_ast(script, it);
-                if it_index != node.procedure_call.arg_count-1  dbg_print(",");
-                node_i = node.next_arg_node;
+                if arg_node_index != node.procedure_call.arg_count-1  dbg_print(",");
+                
+                arg_node = arg_node.next_arg_node;
+                arg_node_index += 1;
             }
             dbg_print(")");
     }
@@ -230,7 +232,7 @@ execute_statement :: (
         }
         
         assert(stmt.type == .ASSIGNMENT);
-        left_node     := script.ast.nodes[stmt.assignment.left.root];
+        left_node     := stmt.assignment.left.root;
         assert(left_node.type == .VARIABLE);
         left_variable := node_get_variable(script, left_node);
         assert(left_variable.binding.type == r_value.type);
@@ -254,17 +256,17 @@ evaluate_expression :: inline (script: *Script, expr: *AST.Expression) -> (Any, 
 evaluate_expression_node :: (
     script : *Script, 
     expr   : *AST.Expression, 
-    node_i : int
+    node   : *AST.Node
 ) -> (
     Any, bool
 ) {
-    if node_i < 0 || node_i >= script.ast.nodes.count {
-        dbg_print("Invalid node '%'\n", node_i);
-        return Any.{}, false;
-    }
+    // if node_i < 0 || node_i >= script.ast.nodes.count {
+    //     dbg_print("Invalid node '%'\n", node_i);
+    //     return Any.{}, false;
+    // }
     
-    node := *script.ast.nodes[node_i];
-    dbg_print("evaluating node %: %\n", node_i, node.type);
+    // node := *script.ast.nodes[node_i];
+    dbg_print("evaluating node %: %\n", node, node.type);
     
     #if DEBUG {
         context.dbg_print_indent += 1;
@@ -332,12 +334,11 @@ evaluate_expression_node :: (
             
         case .PROCEDURE_CALL;
             arguments := NewArray(node.procedure_call.arg_count, Any,, temp);
-            arg_node_i := node.procedure_call.first_arg_node;
-            
-            arg_idx := 0;
-            while arg_node_i != -1 {
-                arguments[arg_idx] = evaluate_expression_node(script, expr, arg_node_i);
-                arg_node_i = script.ast.nodes[arg_node_i].next_arg_node;
+            arg_node  := node.procedure_call.first_arg_node;
+            arg_idx   := 0;
+            while arg_node != null {
+                arguments[arg_idx] = evaluate_expression_node(script, expr, arg_node);
+                arg_node = arg_node.next_arg_node;
                 arg_idx += 1;
             }
             dbg_print("arguments: %\n", arguments);

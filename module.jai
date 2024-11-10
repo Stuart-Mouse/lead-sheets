@@ -40,7 +40,8 @@ Script :: struct {
     procedures  : [..] Script_Procedure;
     operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
     
-    pool: Flat_Pool;
+    pool      : Flat_Pool;
+    allocator : Allocator;
     // vm: *DCCallVM; // TODO: use common vm for all dyncall calls, will require changes to dyncall interface or custom code here in lead sheets
     
     Flags :: enum_flags {
@@ -57,6 +58,10 @@ free_script :: (using script: *Script) {
     fini(*pool);
     
     script.* = .{};
+}
+
+alloc_node :: (script: *Script) -> *AST.Node {
+    return New(AST.Node,, script.allocator);
 }
 
 // ensures no name conflicts
@@ -80,7 +85,11 @@ Script_Constructor :: struct {
 construct_script_from_source_string :: (script: *Script, source: string) -> bool {
     success: bool;
     defer if !success  free_script(script);
-        
+    
+    // setup allocator. maybe move this to init proc later?
+    script.allocator.proc = flat_pool_allocator_proc;
+    script.allocator.data = *script.pool;
+    
     constructor: Script_Constructor;
     constructor.script = script;
     constructor.tokenizer.file = source;
@@ -94,7 +103,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         
         dbg_print("parsing expression for left side of assignment statement\n");
         statement.assignment.left.root = parse_expression(ctxt, 0);
-        if statement.assignment.left.root == -1  return false;
+        if statement.assignment.left.root == null  return false;
         
         equals_token, ok := get_token(*tokenizer);
         if !ok || equals_token.type != .EQUALS {
@@ -103,7 +112,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         
         dbg_print("parsing expression for right side of assignment statement\n");
         statement.assignment.right.root = parse_expression(ctxt, 0);
-        if statement.assignment.right.root == -1  return false;
+        if statement.assignment.right.root == null  return false;
         
         semicolon_token:, ok = get_token(*tokenizer);
         if !ok || semicolon_token.type != .SEMICOLON {
@@ -139,61 +148,58 @@ resolve_variable :: (script: *Script, ident: string) -> int {
     return -1;
 }
 
-resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
+resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Node {
     dbg_print("resolve_identifier(ident = '%')\n", ident);
     
     token := peek_token(*tokenizer);
     // don't need to check if next token was invalid rn, only need to know if it was or wasn't an open paren
     
     if token.type != .OPEN_PAREN {  
-        node := array_add(*ast.nodes);
+        node := alloc_node(ctxt);
         node.type = .VARIABLE;
         node.src_text = ident;
-        return ast.nodes.count - 1;
+        return node;
     } 
     else {
-        if !consume_token(*tokenizer)  return -1; // consume OPEN_PAREN just peeked
+        if !consume_token(*tokenizer)  return null; // consume OPEN_PAREN just peeked
         
-        first_arg_node_i := -1;
-        prev_arg_node_i  := -1;
-        arg_count        :=  0;
+        first_arg_node : *AST.Node;
+        prev_arg_node  : *AST.Node;
+        arg_count      :=  0;
         while true {
-            node_i := parse_expression(ctxt, 0);
-            if node_i == -1  return -1;
+            node := parse_expression(ctxt, 0);
+            if node == null  return null;
             
-            if first_arg_node_i == -1  first_arg_node_i = node_i;
-            if prev_arg_node_i  != -1  ast.nodes[prev_arg_node_i].next_arg_node = node_i;
-            prev_arg_node_i = node_i;
+            if first_arg_node == null  first_arg_node = node;
+            if prev_arg_node  != null  prev_arg_node.next_arg_node = node;
+            prev_arg_node = node;
             arg_count += 1;
-            ast.nodes[node_i].next_arg_node = -1;
             
             token = peek_token(*tokenizer);
             dbg_print("next token after expression in param list: %\n", sprint_token(token));
             if token.type != .COMMA  break;
-            if !consume_token(*tokenizer)  return -1; // consume COMMA just peeked
+            if !consume_token(*tokenizer)  return null; // consume COMMA just peeked
         }
-        // ast.nodes[prev_arg_node_i].next_arg_node = -1; // set final arg node's 'next' to -1
         
         token, ok := get_token(*tokenizer);
-        if !ok  return -1;
+        if !ok  return null;
         if token.type != .CLOSE_PAREN {
             dbg_print("Error, expected a close paren at the end of parameter list!\n");
-            return -1;
+            return null;
         }
         
-        node := array_add(*ast.nodes);
+        node := alloc_node(ctxt);
         node.type = .PROCEDURE_CALL;
         node.src_text = ident;
-        node.procedure_call.first_arg_node = first_arg_node_i;
+        node.procedure_call.first_arg_node = first_arg_node;
         node.procedure_call.arg_count = arg_count;
-        return ast.nodes.count - 1;
+        return node;
     }
     
-    dbg_print("Unreachable");
-    return -1;
+    assert(false, "Unreachable");
+    return null;
 }
 
-// TODO: we really need to have a way to properly peek a token
 
 get_operator_precedence :: (op: string) -> int {
     for operator_precedence_table 
@@ -210,91 +216,95 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
            token.type == .DIV;
 }
 
-parse_leaf :: (using ctxt: *Script_Constructor) -> int {
+parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
     token, ok := get_token(*tokenizer);
-    if !ok  return -1;
+    if !ok  return null;
     
     do_unary_minus := token.type == .SUB;
     if do_unary_minus {
         token, ok = get_token(*tokenizer);
-        if !ok  return -1;
+        if !ok  return null;
     }
     
-    node_i := -1;
+    dbg_print("parsing leaf ");
+    if do_unary_minus  dbg_print("(with unary minus) ");
+    dbg_print("token: %\n", token);
+    
+    dbg_print("token.text was %\n", (cast(*Array_View_64)*token.text).*);
+    
+    node: *AST.Node;
     if token.type == {
         case .OPEN_PAREN;
             dbg_print("encountered open paren...\n");
-            node_i = parse_expression(ctxt, 0);
-            if node_i == -1  return -1;
+            node = parse_expression(ctxt, 0);
+            if node == null  return null;
             
             token, ok = get_token(*tokenizer);
-            if !ok  return -1;
+            if !ok  return null;
             
             if token.type != .CLOSE_PAREN {
                 dbg_print("Error, expected a closing paren!\n");
-                return -1;
+                return null;
             }
             dbg_print("consumed corresponding close paren\n");
             
         case .NUMBER;
-            node := array_add(*ast.nodes);
+            node = alloc_node(ctxt);
             node.type   = .NUMBER;
             node.number = token.number;
-            node_i = ast.nodes.count - 1;
+            assert(node != null);
             
         case .IDENTIFIER;
             // instead of resolving identifiers completely at AST contruction time, 
             // we only need to check if the identifier was a variable or a procedure
-            node_i = resolve_identifier(ctxt, token.text);
+            node = resolve_identifier(ctxt, token.text);
+            assert(node != null);
             
         case;
             dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
             assert(false);
     }
     
+    // makes a binary op of -1 * node
     if do_unary_minus {
-        // makes a binary op of -1 * node
-        neg := array_add(*ast.nodes);
+        neg := alloc_node(ctxt);
         neg.type   = .NUMBER;
         neg.number = -1;
-        neg_i := ast.nodes.count - 1;
-        
-        node_i = create_binary_operation(ctxt, "*", neg_i, node_i);
+        node = create_binary_operation(ctxt, "*", neg, node);
     }
     
-    return node_i;
+    return node;
 }
 
-parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> int {
+parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
 
-    left_i := parse_leaf(ctxt);
-    if left_i == -1  return -1;
+    left := parse_leaf(ctxt);
+    if left == null  return null;
     
-    dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, ast.nodes[left_i]));
+    dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, left));
     
     while true {
-        node_i := parse_increasing_precedence(ctxt, left_i, min_prec);
-        if node_i == -1      return -1;
-        if node_i == left_i  break;
-        
-        left_i = node_i;
+        node := parse_increasing_precedence(ctxt, left, min_prec);
+        if node == null  return null;
+        if node == left  break;
+        left = node;
     }
     
-    return left_i;
+    return left;
 }
 
-parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, min_prec: int) -> int {
-    dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left_i, min_prec); 
+parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node, min_prec: int) -> *AST.Node {
+    dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     
     next_token := peek_token(*tokenizer);
     
     if !token_is_binary_operator(next_token) {
         dbg_print("peeked token %, but it was not an operator. Returning node % to caller.\n",
             sprint_token(next_token), 
-            sprint_ast_node(ctxt, ast.nodes[left_i]), 
+            sprint_ast_node(ctxt, left), 
         );
-        return left_i;
+        return left;
     }
     
     next_token_prec := get_operator_precedence(next_token.text);
@@ -303,37 +313,33 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left_i: int, mi
             sprint_token(next_token), 
             next_token_prec,
             min_prec,
-            sprint_ast_node(ctxt, ast.nodes[left_i]), 
+            sprint_ast_node(ctxt, left), 
         );
-        return left_i;
+        return left;
     }
     
-    if !consume_token(*tokenizer)  return -1;
+    if !consume_token(*tokenizer)  return null;
     
-    right_i := parse_expression(ctxt, next_token_prec);
-    if right_i == -1  return -1;
+    right := parse_expression(ctxt, next_token_prec);
+    if right == null  return null;
     
-    return create_binary_operation(ctxt, next_token.text, left_i, right_i);
+    return create_binary_operation(ctxt, next_token.text, left, right);
 }
 
 
-create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left_i: int, right_i: int) -> int {
-    dbg_print("creating binary operation % % %\n", sprint_ast_node(ctxt, ast.nodes[left_i]), operator_ident, sprint_ast_node(ctxt, ast.nodes[right_i]));
-    
-    node := array_add(*ast.nodes);
+create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left: *AST.Node, right: *AST.Node) -> *AST.Node {
+    dbg_print("creating binary operation % % %\n", 
+    sprint_ast_node(ctxt, left), operator_ident, 
+    sprint_ast_node(ctxt, right));
+    node := alloc_node(ctxt);
     node.type = .OPERATION;
     node.src_text = operator_ident;
     node.operation = .{
-        left  = left_i,
-        right = right_i,
+        left  = left,
+        right = right,
     };
-    
-    return ast.nodes.count - 1;
+    return node;
 }
-
-
-
-
 
 
 

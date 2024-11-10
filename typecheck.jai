@@ -15,12 +15,12 @@ Typechecking_Flags :: enum_flags {
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
 typecheck_node :: (
     using ctxt  : *Script, 
-    node_i      :  int, 
+    node        : *AST.Node, 
     check_flags :  Typechecking_Flags = .NONE, 
     expect_type : *Type_Info          = null
 ) -> *Type_Info {
-    node := *ctxt.ast.nodes[node_i];
-    dbg_print("typechecking node %: % %\n", node_i, node.type, node.src_text);
+    // node := *ctxt.ast.nodes[node_i];
+    dbg_print("typechecking node %: % %\n", node, node.type, node.src_text);
     
     #if DEBUG {
         context.dbg_print_indent += 1;
@@ -76,16 +76,17 @@ typecheck_node :: (
         
         dbg_print("typechecking arguments...\n");
         dbg_print("arg_count: %\n", node.procedure_call.arg_count);
-        argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp);
         
-        arg_node_i := node.procedure_call.first_arg_node;
-        arg_idx := 0;
-        while arg_node_i != -1 {
-            argument_type := typecheck_node(ctxt, arg_node_i);
+        argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp);
+        arg_node := node.procedure_call.first_arg_node;
+        arg_idx  := 0;
+        while arg_node != null {
+            argument_type := typecheck_node(ctxt, arg_node);
             if !argument_type  return null;
             argument_types[arg_idx] = argument_type;
+            
             arg_idx += 1;
-            arg_node_i = ast.nodes[arg_node_i].next_arg_node;
+            arg_node = arg_node.next_arg_node;
         }
         
         node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
