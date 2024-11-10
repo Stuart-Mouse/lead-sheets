@@ -31,13 +31,15 @@ AST :: struct {
         type     : Node_Type;
         src_loc  : Source_Location;
         src_text : string; // need for identifiers before typechecking step
+        next_arg_node : int; // most sensible way to link argument nodes, prevents need for dynamic array
         
         union {
             variable_index: int; // index to variable in Script.variables array
             number: float32;
             procedure_call : struct {
                 procedure_index : int;
-                argument_nodes  : [..] int; // TODO: should make this not be a dynamic array later if possible. for now, its just convenient
+                first_arg_node  : int;
+                arg_count       : int;
             };
             operation: struct {
                 operator_index : int; // index to either a builtin operator or an operator procedure
@@ -107,9 +109,13 @@ print_ast :: (script: *Script, node_i: int, parent_prec: int = 0) {
             
         case .PROCEDURE_CALL;
             dbg_print("%(", get_node_prcedure(script, node).name);
-            for node.procedure_call.argument_nodes {
+            
+            arg_node_i := node.procedure_call.first_arg_node;
+            while arg_node_i != -1 {
+                node := *ast.nodes[arg_node_i];
                 dbg_print_ast(script, it);
-                if it_index != node.procedure_call.argument_nodes.count-1  dbg_print(",");
+                if it_index != node.procedure_call.arg_count-1  dbg_print(",");
+                node_i = node.next_arg_node;
             }
             dbg_print(")");
     }
@@ -325,9 +331,14 @@ evaluate_expression_node :: (
             return ret, true;
             
         case .PROCEDURE_CALL;
-            arguments := NewArray(node.procedure_call.argument_nodes.count, Any,, temp);
-            for node.procedure_call.argument_nodes {
-                arguments[it_index] = evaluate_expression_node(script, expr, it);
+            arguments := NewArray(node.procedure_call.arg_count, Any,, temp);
+            arg_node_i := node.procedure_call.first_arg_node;
+            
+            arg_idx := 0;
+            while arg_node_i != -1 {
+                arguments[arg_idx] = evaluate_expression_node(script, expr, arg_node_i);
+                arg_node_i = script.ast.nodes[arg_node_i].next_arg_node;
+                arg_idx += 1;
             }
             dbg_print("arguments: %\n", arguments);
             

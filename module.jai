@@ -72,8 +72,9 @@ set_variable :: (script: *Script, name: string, any: Any) {
 
 
 Script_Constructor :: struct {
-    using #as script : *Script;
-    tokenizer   : Tokenizer;
+    using #as script: *Script;
+    
+    tokenizer: Tokenizer;
 }
 
 construct_script_from_source_string :: (script: *Script, source: string) -> bool {
@@ -153,19 +154,25 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
     else {
         if !consume_token(*tokenizer)  return -1; // consume OPEN_PAREN just peeked
         
-        argument_nodes: [..] int; // TODO: later we will allocate this array somewhere contiguous with other script constants
+        first_arg_node_i := -1;
+        prev_arg_node_i  := -1;
+        arg_count        :=  0;
         while true {
             node_i := parse_expression(ctxt, 0);
             if node_i == -1  return -1;
             
-            dbg_print("added node % to param list\n", sprint_ast_node(ctxt, ast.nodes[node_i]));
-            array_add(*argument_nodes, node_i);
+            if first_arg_node_i == -1  first_arg_node_i = node_i;
+            if prev_arg_node_i  != -1  ast.nodes[prev_arg_node_i].next_arg_node = node_i;
+            prev_arg_node_i = node_i;
+            arg_count += 1;
+            ast.nodes[node_i].next_arg_node = -1;
             
             token = peek_token(*tokenizer);
             dbg_print("next token after expression in param list: %\n", sprint_token(token));
             if token.type != .COMMA  break;
             if !consume_token(*tokenizer)  return -1; // consume COMMA just peeked
         }
+        // ast.nodes[prev_arg_node_i].next_arg_node = -1; // set final arg node's 'next' to -1
         
         token, ok := get_token(*tokenizer);
         if !ok  return -1;
@@ -177,7 +184,8 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> int {
         node := array_add(*ast.nodes);
         node.type = .PROCEDURE_CALL;
         node.src_text = ident;
-        node.procedure_call.argument_nodes = argument_nodes;
+        node.procedure_call.first_arg_node = first_arg_node_i;
+        node.procedure_call.arg_count = arg_count;
         return ast.nodes.count - 1;
     }
     

@@ -75,17 +75,21 @@ typecheck_node :: (
         if check_flags & .EXPECT_LVALUE  return null;
         
         dbg_print("typechecking arguments...\n");
-        argument_types := NewArray(node.procedure_call.argument_nodes.count, *Type_Info,, temp);
-        for node.procedure_call.argument_nodes {
-            argument_type := typecheck_node(ctxt, it);
+        dbg_print("arg_count: %\n", node.procedure_call.arg_count);
+        argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp);
+        
+        arg_node_i := node.procedure_call.first_arg_node;
+        arg_idx := 0;
+        while arg_node_i != -1 {
+            argument_type := typecheck_node(ctxt, arg_node_i);
             if !argument_type  return null;
-            argument_types[it_index] = argument_type;
+            argument_types[arg_idx] = argument_type;
+            arg_idx += 1;
+            arg_node_i = ast.nodes[arg_node_i].next_arg_node;
         }
         
         node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
         if node.procedure_call.procedure_index == -1  return null;
-        
-        
         
         return node_get_value_type(ctxt, node);
     }
