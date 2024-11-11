@@ -35,6 +35,7 @@ typecheck_node :: (
     if #complete node.type == {
       case .NUMBER;
         if check_flags & .EXPECT_LVALUE  return null, 0;
+        node.value_type = type_info(float32);
         return type_info(float32), size_of(float32);
         
       case .VARIABLE;
@@ -47,16 +48,17 @@ typecheck_node :: (
             return null, 0;
         }
         
-        node_type := variables[node.variable_index].binding.type;
+        node.value_type = variables[node.variable_index].binding.type;
         
         // TODO: should not do this if lvalue
-        if is_numeric_type(node_type)  node_type = type_info(float32);
+        // if is_numeric_type(node_type)  node_type = type_info(float32);
         
-        stack_required := node_type.runtime_size;
+        stack_required := node.value_type.runtime_size;
         // if check_flags & .EXPECT_LVALUE {
         //     stack_required = size_of(*void);
+        //     node.flags |= .L_VALUE;
         // }
-        return node_type, stack_required;
+        return node.value_type, stack_required;
         
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null, 0;
@@ -71,21 +73,23 @@ typecheck_node :: (
         node.operation.operator_index, swap_args = resolve_builtin_operation(node.src_text, left_type, right_type);
         if node.operation.operator_index >= 0 {
             is_builtin = true;
+            node.value_type = cast(*Type_Info) BUILTIN_OPERATIONS[node.operation.operator_index].ret;
             dbg_print("operator is builtin, ");
         } else {
             node.operation.operator_index, swap_args = resolve_procedure_index(ctxt, node.src_text, .[ left_type, right_type ], true);
             if node.operation.operator_index == -1  return null, 0;
+            procedure := *operators[node.operation.operator_index];
+            node.value_type = procedure.type.return_types[0];
         }
         dbg_print("resolved to operator index %\n", node.operation.operator_index);
         
         if swap_args   node.operation.flags |= .SWAP_ARGS;
         if is_builtin  node.operation.flags |= .IS_BUILTIN;
         
-        dbg_print("opertion flags: %\n", node.operation.flags);
+        dbg_print("operation flags: %\n", node.operation.flags);
         
-        node_type := node_get_value_type(ctxt, node);
-        stack_required := node_type.runtime_size + left_stack_required + right_stack_required;
-        return node_type, stack_required;
+        stack_required := node.value_type.runtime_size + left_stack_required + right_stack_required;
+        return node.value_type, stack_required;
         
       case .PROCEDURE_CALL;
         if check_flags & .EXPECT_LVALUE  return null, 0;
@@ -110,9 +114,11 @@ typecheck_node :: (
         node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
         if node.procedure_call.procedure_index == -1  return null, 0;
         
-        node_type := node_get_value_type(ctxt, node);
-        stack_required += node_type.runtime_size;
-        return node_type, stack_required;
+        procedure := *procedures[node.procedure_call.procedure_index];
+        node.value_type = procedure.type.return_types[0];
+        
+        stack_required += node.value_type.runtime_size;
+        return node.value_type, stack_required;
     }
     
     return null, 0;
