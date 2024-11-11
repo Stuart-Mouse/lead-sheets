@@ -354,27 +354,16 @@ evaluate_expression_node :: (
             ret := Any.{ node_get_value_type(script, node), sp };
             sp  += ret.type.runtime_size; 
             
-            arguments := NewArray(node.procedure_call.arg_count, Any,, temp);
-            arg_node  := node.procedure_call.first_arg_node;
-            arg_idx   := 0;
+            arg_node := node.procedure_call.first_arg_node;
             while arg_node != null {
-                arguments[arg_idx] = evaluate_expression_node(script, expr, arg_node, sp);
+                evaluate_expression_node(script, expr, arg_node, sp);
+                sp += node_get_value_type(script, arg_node).runtime_size; 
                 arg_node = arg_node.next_arg_node;
-                
-                sp += arguments[arg_idx].type.runtime_size; 
-                arg_idx += 1;
             }
-            dbg_print("arguments: %\n", arguments);
             
             procedure := node_get_procedure(script, node);
-            
-            ti_proc := cast(*Type_Info_Procedure) procedure.type;
-            assert(ti_proc.return_types.count == 1);
-            
-            if !setup_and_exec_vm_jai(make_procedure_any(procedure), arguments, .[ ret ]) {
-                return Any.{}, false;
-            }
-            
+            do_dyncall(script.dyncall_vm, procedure, stack_pointer);
+                        
             return ret, true;
     }
     
@@ -382,16 +371,19 @@ evaluate_expression_node :: (
     return Any.{}, false;
 }
 
-do_dyncall :: (script: *Script, procedure: *Script_Procedure, stack_pointer: *void) -> bool {
+do_dyncall :: (vm: *DCCallVM, procedure: *Script_Procedure, stack_pointer: *void) -> bool {
     dcReset(vm);
     
     ti_proc := procedure.type;
+    assert(ti_proc.return_types.count == 1);
     
     if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
         dcArgPointer(vm, *context);
     }
     
-    ret := Any.{ node_get_value_type(script, node), sp };
+    ret := Any.{ ti_proc.return_types[0], stack_pointer };
+    
+    jai_call :: true;
     
     arg_ptr := stack_pointer + ret.type.runtime_size;
     for arg_type: ti_proc.argument_types {
@@ -457,11 +449,12 @@ do_dyncall :: (script: *Script, procedure: *Script_Procedure, stack_pointer: *vo
         
         arg_ptr += arg_type.runtime_size;
     }
-        
     
+    dcArgPointer(vm, ret.value_pointer);
+    dcCallVoid(vm, xx procedure.ptr);
     
+    return true;
 }
-
 
 
 /*
@@ -469,7 +462,7 @@ do_dyncall :: (script: *Script, procedure: *Script_Procedure, stack_pointer: *vo
     
     (DONE) for first step, we can just pass 'stack_pointer' argument to evaluate_expression_node so that it knows where to store data behind the Any it returns
     second step we can remove the need to return the Any, since the parent node will just know where the value is and its type
-    remove need for passing types to dyncall
+    (DONE) remove need for passing Any's to dyncall
     
     each node places its result at the address pointed to by stack pointer
     no plans to do multiple returns, so we don't need to think about complications of mutliple returns
@@ -479,7 +472,6 @@ do_dyncall :: (script: *Script, procedure: *Script_Procedure, stack_pointer: *vo
     
     
 */
-
 
 
 #scope_module
