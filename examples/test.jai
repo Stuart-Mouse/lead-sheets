@@ -37,12 +37,6 @@ main :: () {
         return;
     }
     
-    print("\nTYPECHECKING SCRIPT\n");
-    if !typecheck_script(*script) {
-        print("failed to typecheck script!\n");
-        return;
-    }
-    
     print("\nEXECUTING SCRIPT\n");
     ok := execute_script(*script);
     if ok {

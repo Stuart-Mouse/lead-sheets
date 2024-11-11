@@ -72,10 +72,7 @@ resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, rig
 }
 
 
-exec_builtin_operation :: (oper_idx: int, left: Any, right: Any) -> (ret: Any, ok: bool) {
-    ret_ti := cast(*Type_Info) BUILTIN_OPERATIONS[oper_idx].ret;
-    ret := Dynamic_New_Any(ret_ti,, temp);
-    
+exec_builtin_operation :: (oper_idx: int, left: Any, right: Any, ret: Any) -> bool {
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;
@@ -86,7 +83,7 @@ exec_builtin_operation :: (oper_idx: int, left: Any, right: Any) -> (ret: Any, o
         assert(right.type == type_info(%4));
         assert(ret.type == type_info(%2));
         (cast(*%2)ret.value_pointer).* = (cast(*%3)left.value_pointer).* %5 (cast(*%4)right.value_pointer).*;
-        return ret, true;
+        return true;
 DONE;
         
         append(*builder, "    if oper_idx == {\n");
@@ -98,5 +95,36 @@ DONE;
         return builder_to_string(*builder);
     }
     
-    return Any.{}, false;
+    return false;
 }
+
+
+// exec_builtin_operation :: (oper_idx: int, left: Any, right: Any) -> (ret: Any, ok: bool) {
+//     ret_ti := cast(*Type_Info) BUILTIN_OPERATIONS[oper_idx].ret;
+//     ret := Dynamic_New_Any(ret_ti,, temp);
+    
+//     // generate switch case for all builtin operations
+//     #insert -> string {
+//         builder: String_Builder;
+        
+//         FORMAT_STRING :: #string DONE
+//       case %1;
+//         assert(left.type == type_info(%3));
+//         assert(right.type == type_info(%4));
+//         assert(ret.type == type_info(%2));
+//         (cast(*%2)ret.value_pointer).* = (cast(*%3)left.value_pointer).* %5 (cast(*%4)right.value_pointer).*;
+//         return ret, true;
+// DONE;
+        
+//         append(*builder, "    if oper_idx == {\n");
+//         for BUILTIN_OPERATIONS {
+//             print_to_builder(*builder, FORMAT_STRING, it_index, it.ret, it.left, it.right, it.operator_ident);
+//         }
+//         append(*builder, "    }\n");
+        
+//         return builder_to_string(*builder);
+//     }
+    
+//     return Any.{}, false;
+// }
+

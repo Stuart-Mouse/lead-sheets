@@ -36,13 +36,20 @@ Script_Variable :: struct {
 Script :: struct {
     ast         : AST;
     flags       : Flags;
+    
+    // TODO: we may actually not need to store these on script as dynamic arrays after all
+    //       these can go on script constructor, then we actually should copy only what we need onto node
+    //       we will still want to have slice for variables, but we can duplicate the Any's for variables actually used into script's pool
     variables   : [..] Script_Variable;
     procedures  : [..] Script_Procedure;
     operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
     
-    pool      : Flat_Pool;
-    allocator : Allocator;
-    // vm: *DCCallVM; // TODO: use common vm for all dyncall calls, will require changes to dyncall interface or custom code here in lead sheets
+    pool       : Flat_Pool;
+    allocator  : Allocator;
+    
+    stack_base : *void;
+    stack_size : int;
+    dyncall_vm : *DCCallVM;
     
     Flags :: enum_flags {
         AST_CONSTRUCTED;
@@ -50,12 +57,15 @@ Script :: struct {
     }
 }
 
+STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
+
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
     array_free(operators);
     free_ast(*ast);
     fini(*pool);
+    dcFree(script.dyncall_vm);
     
     script.* = .{};
 }
@@ -97,33 +107,6 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         return false;
     }
     
-    parse_statement :: (using ctxt: *Script_Constructor) -> bool {
-        statement: AST.Statement;
-        statement.type == .ASSIGNMENT;
-        
-        dbg_print("parsing expression for left side of assignment statement\n");
-        statement.assignment.left.root = parse_expression(ctxt, 0);
-        if statement.assignment.left.root == null  return false;
-        
-        equals_token, ok := get_token(*tokenizer);
-        if !ok || equals_token.type != .EQUALS {
-            return false;
-        }
-        
-        dbg_print("parsing expression for right side of assignment statement\n");
-        statement.assignment.right.root = parse_expression(ctxt, 0);
-        if statement.assignment.right.root == null  return false;
-        
-        semicolon_token:, ok = get_token(*tokenizer);
-        if !ok || semicolon_token.type != .SEMICOLON {
-            return false;
-        }
-        
-        array_add(*script.ast.statements, statement);
-        
-        return true;
-    }
-    
     while true {
         if !parse_statement(*constructor) {
             return false;
@@ -134,6 +117,28 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     }
     
     script.flags |= .AST_CONSTRUCTED;
+    
+    dbg_print("\nTYPECHECKING SCRIPT\n");
+    stack_required, ok := typecheck_script(*constructor);
+    if !ok {
+        print("failed to typecheck script!\n");
+        return false;
+    }
+    
+    script.stack_size = stack_required;
+    script.stack_base = get(*script.pool, stack_required + size_of(type_of(STACK_SENTINEL_VALUE)));
+    
+    dbg_print("stack size: %\n", script.stack_size);
+    dbg_print("stack base: %\n", script.stack_base);
+    
+    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + stack_required);
+    sentinel.* = STACK_SENTINEL_VALUE;
+    
+    
+    // allocate dyncall vm that will be reused
+    script.dyncall_vm = dcNewCallVM(2048);
+    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
+    dcReset(script.dyncall_vm);
     
     success = true;
     return true;
@@ -226,43 +231,37 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         if !ok  return null;
     }
     
-    dbg_print("parsing leaf ");
-    if do_unary_minus  dbg_print("(with unary minus) ");
-    dbg_print("token: %\n", token);
-    
-    dbg_print("token.text was %\n", (cast(*Array_View_64)*token.text).*);
-    
     node: *AST.Node;
     if token.type == {
-        case .OPEN_PAREN;
-            dbg_print("encountered open paren...\n");
-            node = parse_expression(ctxt, 0);
-            if node == null  return null;
+      case .OPEN_PAREN;
+        dbg_print("encountered open paren...\n");
+        node = parse_expression(ctxt, 0);
+        if node == null  return null;
+        
+        token, ok = get_token(*tokenizer);
+        if !ok  return null;
+        
+        if token.type != .CLOSE_PAREN {
+            dbg_print("Error, expected a closing paren!\n");
+            return null;
+        }
+        dbg_print("consumed corresponding close paren\n");
             
-            token, ok = get_token(*tokenizer);
-            if !ok  return null;
+      case .NUMBER;
+        node = alloc_node(ctxt);
+        node.type   = .NUMBER;
+        node.number = token.number;
+        assert(node != null);
             
-            if token.type != .CLOSE_PAREN {
-                dbg_print("Error, expected a closing paren!\n");
-                return null;
-            }
-            dbg_print("consumed corresponding close paren\n");
+      case .IDENTIFIER;
+        // instead of resolving identifiers completely at AST contruction time, 
+        // we only need to check if the identifier was a variable or a procedure
+        node = resolve_identifier(ctxt, token.text);
+        assert(node != null);
             
-        case .NUMBER;
-            node = alloc_node(ctxt);
-            node.type   = .NUMBER;
-            node.number = token.number;
-            assert(node != null);
-            
-        case .IDENTIFIER;
-            // instead of resolving identifiers completely at AST contruction time, 
-            // we only need to check if the identifier was a variable or a procedure
-            node = resolve_identifier(ctxt, token.text);
-            assert(node != null);
-            
-        case;
-            dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
-            assert(false);
+      case;
+        dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
+        assert(false);
     }
     
     // makes a binary op of -1 * node
@@ -341,6 +340,32 @@ create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: str
     return node;
 }
 
+parse_statement :: (using ctxt: *Script_Constructor) -> bool {
+    statement: AST.Statement;
+    statement.type == .ASSIGNMENT;
+    
+    dbg_print("parsing expression for left side of assignment statement\n");
+    statement.assignment.left.root = parse_expression(ctxt, 0);
+    if statement.assignment.left.root == null  return false;
+    
+    equals_token, ok := get_token(*tokenizer);
+    if !ok || equals_token.type != .EQUALS {
+        return false;
+    }
+    
+    dbg_print("parsing expression for right side of assignment statement\n");
+    statement.assignment.right.root = parse_expression(ctxt, 0);
+    if statement.assignment.right.root == null  return false;
+    
+    semicolon_token:, ok = get_token(*tokenizer);
+    if !ok || semicolon_token.type != .SEMICOLON {
+        return false;
+    }
+    
+    array_add(*script.ast.statements, statement);
+    
+    return true;
+}
 
 
 get_numeric_value_as_f32 :: (any: Any) -> (float32, bool) {
