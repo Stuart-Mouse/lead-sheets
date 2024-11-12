@@ -12,7 +12,6 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     ti_proc := cast(*Type_Info_Procedure) procedure.type;
     assert(ti_proc.return_types.count == 1);
     assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
-    // TODO: is not C call
     
     array_add(*script.procedures, .{
         name = name,

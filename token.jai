@@ -1,7 +1,7 @@
 
 Script_Token_Type :: enum {
-    INVALID;
-    EOF;
+    EOF         :: 0;
+    ERROR       :: 1;
     
     OPEN_PAREN  :: #char "(";
     CLOSE_PAREN :: #char ")";
@@ -58,57 +58,46 @@ sprint_token :: (token: Script_Token) -> string {
     return builder_to_string(*sb);
 }
 
-// get_next_token :: (using ctxt: *Script_Constructor) -> (Script_Token, bool) {
-//     if token_index >= tokens.count 
-//         return .{}, false;
-    
-//     ret := tokens[token_index];
-//     token_index += 1;
-//     return ret, true;
-// }
-
-// peek_next_token :: (using ctxt: *Script_Constructor) -> (Script_Token, bool) {
-//     if token_index >= tokens.count 
-//         return .{}, false;
-    
-//     ret := tokens[token_index];
-//     return ret, true;
-// }
-
+// NOTE: need to call consume_token once to init tokenizer for proper usage
+// otherwise, first token will appear to be .EOF
 
 Tokenizer :: struct {
     file       : string;
     next_token : Script_Token;
 }
 
-consume_token :: (using t: *Tokenizer) -> bool {
-    if next_token.type == .EOF  return true;
-    ok: bool;
-    next_token, ok = lex_next_token(t);
-    return ok;
+get_token_or_return :: (using t: *Tokenizer, code: Code) -> Script_Token #expand {
+    token := get_token(t);
+    if token.type == .ERROR  `return #insert code;
+    return token;
 }
 
-get_token :: inline (using t: *Tokenizer) -> (Script_Token, bool) {
+get_token :: inline (using t: *Tokenizer) -> Script_Token {
+    // do not try to lex any more after hitting error token
+    if next_token.type == .ERROR  return next_token; 
+    
     current_token := next_token;
-    return current_token, consume_token(t);
+    next_token = lex_next_token(t);
+    return current_token;
 }
-
-// expect_token_type :: (using t: *Tokenizer, type: Script_Token_Type) -> bool {
-//     token := peek_token();
-//     if token.type == type {
-//         consume_token();
-//         return true;
-//     }
-//     return false;
-// }
 
 peek_token :: inline (using t: *Tokenizer) -> Script_Token {
     return next_token;
 }
 
-lex_next_token :: (using t: *Tokenizer) -> (Script_Token, bool) {
+// consumes token if it was expected type, else it was just peeked
+expect_token_type :: (using t: *Tokenizer, type: Script_Token_Type) -> bool {
+    token := peek_token(t);
+    if token.type == type {
+        get_token(t);
+        return true;
+    }
+    return false;
+}
+
+lex_next_token :: (using t: *Tokenizer) -> Script_Token {
     if !skip_whitespace_and_comments(*file) || !file
-        return .{ type = .EOF }, true;
+        return .{ type = .EOF };
     
     // single-character tokens
     if is_any(file[0], "+-*/(),;=") {
@@ -117,17 +106,17 @@ lex_next_token :: (using t: *Tokenizer) -> (Script_Token, bool) {
             text = slice(file, 0, 1),
         };
         advance(*file);
-        return ret, true;
+        return ret;
     }
     
     // parse an identifier
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
-        if !advance(*file)  return .{ type = .INVALID }, false;
+        if !advance(*file)  return .{ type = .ERROR };
         
         while file && is_alnum(file[0]) {
             str.count += 1;
-            if !advance(*file)  return .{ type = .INVALID }, false;
+            if !advance(*file)  return .{ type = .ERROR };
         }
         
         // TODO: Check if the identifier is a reserved word
@@ -135,29 +124,27 @@ lex_next_token :: (using t: *Tokenizer) -> (Script_Token, bool) {
         return .{
             type = .IDENTIFIER,
             text = str,
-        }, true;
+        };
     }
     
     // parse a number
     if is_digit(file[0]) {
         str: string = .{ 1, *file[0] };
-        if !advance(*file)  return .{ type = .INVALID }, false;
+        if !advance(*file)  return .{ type = .ERROR };
         
         while file && (is_digit(file[0]) || file[0] == #char ".") {
             str.count += 1;
-            if !advance(*file)  return .{ type = .INVALID }, false;
+            if !advance(*file)  return .{ type = .ERROR };
         }
         
         val, ok, rem := string_to_float(str);
         return .{
             type   = .NUMBER,
             number = val,
-        }, true;
+        };
     }
     
-    print("Unhandled token: '%'\n", file);
-    assert(false);
-    return .{ type = .INVALID }, false;
+    return .{ type = .ERROR };
 }
 
 /* 
@@ -187,7 +174,7 @@ tokenize :: (text: string) -> ([..] Script_Token, bool) {
     }
     
     success = true;
-    return tokens, true;
+    return tokens;
 }
 
 

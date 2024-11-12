@@ -103,17 +103,11 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     constructor: Script_Constructor;
     constructor.script = script;
     constructor.tokenizer.file = source;
-    if !consume_token(*constructor.tokenizer) {
-        return false;
-    }
+    if get_token(*constructor.tokenizer).type == .ERROR  return false;
     
     while true {
-        if !parse_statement(*constructor) {
-            return false;
-        }
-        if peek_token(*constructor.tokenizer).type == .EOF {
-            break;
-        }
+        if !parse_statement(*constructor)  return false;
+        if expect_token_type(*constructor.tokenizer, .EOF)  break;
     }
     
     script.flags |= .AST_CONSTRUCTED;
@@ -134,7 +128,6 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + stack_required);
     sentinel.* = STACK_SENTINEL_VALUE;
     
-    
     // allocate dyncall vm that will be reused
     script.dyncall_vm = dcNewCallVM(2048);
     dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
@@ -153,21 +146,10 @@ resolve_variable :: (script: *Script, ident: string) -> int {
     return -1;
 }
 
-resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Node {
-    dbg_print("resolve_identifier(ident = '%')\n", ident);
+parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Node {
+    dbg_print("parse_identifier(ident = '%')\n", ident);
     
-    token := peek_token(*tokenizer);
-    // don't need to check if next token was invalid rn, only need to know if it was or wasn't an open paren
-    
-    if token.type != .OPEN_PAREN {  
-        node := alloc_node(ctxt);
-        node.type = .VARIABLE;
-        node.src_text = ident;
-        return node;
-    } 
-    else {
-        if !consume_token(*tokenizer)  return null; // consume OPEN_PAREN just peeked
-        
+    if expect_token_type(*tokenizer, .OPEN_PAREN) {
         first_arg_node : *AST.Node;
         prev_arg_node  : *AST.Node;
         arg_count      :=  0;
@@ -180,15 +162,10 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.N
             prev_arg_node = node;
             arg_count += 1;
             
-            token = peek_token(*tokenizer);
-            dbg_print("next token after expression in param list: %\n", sprint_token(token));
-            if token.type != .COMMA  break;
-            if !consume_token(*tokenizer)  return null; // consume COMMA just peeked
+            if !expect_token_type(*tokenizer, .COMMA)  break;
         }
         
-        token, ok := get_token(*tokenizer);
-        if !ok  return null;
-        if token.type != .CLOSE_PAREN {
+        if !expect_token_type(*tokenizer, .CLOSE_PAREN) {
             dbg_print("Error, expected a close paren at the end of parameter list!\n");
             return null;
         }
@@ -201,8 +178,11 @@ resolve_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.N
         return node;
     }
     
-    assert(false, "Unreachable");
-    return null;
+    // else identifier must refer to a variable
+    node := alloc_node(ctxt);
+    node.type = .VARIABLE;
+    node.src_text = ident;
+    return node;
 }
 
 
@@ -222,13 +202,11 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
 }
 
 parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
-    token, ok := get_token(*tokenizer);
-    if !ok  return null;
+    token := get_token_or_return(*tokenizer, null);
     
     do_unary_minus := token.type == .SUB;
     if do_unary_minus {
-        token, ok = get_token(*tokenizer);
-        if !ok  return null;
+        token = get_token_or_return(*tokenizer, null);
     }
     
     node: *AST.Node;
@@ -238,26 +216,24 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         node = parse_expression(ctxt, 0);
         if node == null  return null;
         
-        token, ok = get_token(*tokenizer);
-        if !ok  return null;
+        token = get_token_or_return(*tokenizer, null);
         
         if token.type != .CLOSE_PAREN {
             dbg_print("Error, expected a closing paren!\n");
             return null;
         }
         dbg_print("consumed corresponding close paren\n");
-            
+        
       case .NUMBER;
         node = alloc_node(ctxt);
         node.type   = .NUMBER;
         node.number = token.number;
-        assert(node != null);
-            
+        
       case .IDENTIFIER;
         // instead of resolving identifiers completely at AST contruction time, 
         // we only need to check if the identifier was a variable or a procedure
-        node = resolve_identifier(ctxt, token.text);
-        assert(node != null);
+        node = parse_identifier(ctxt, token.text);
+        if node == null  return null;
             
       case;
         dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
@@ -317,7 +293,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
         return left;
     }
     
-    if !consume_token(*tokenizer)  return null;
+    get_token_or_return(*tokenizer, null);
     
     right := parse_expression(ctxt, next_token_prec);
     if right == null  return null;
@@ -345,22 +321,16 @@ parse_statement :: (using ctxt: *Script_Constructor) -> bool {
     statement.type == .ASSIGNMENT;
     
     dbg_print("parsing expression for left side of assignment statement\n");
-    statement.assignment.left.root = parse_expression(ctxt, 0);
-    if statement.assignment.left.root == null  return false;
+    statement.assignment.left = parse_expression(ctxt, 0);
+    if statement.assignment.left == null  return false;
     
-    equals_token, ok := get_token(*tokenizer);
-    if !ok || equals_token.type != .EQUALS {
-        return false;
-    }
+    if !expect_token_type(*tokenizer, .EQUALS)  return false;
     
     dbg_print("parsing expression for right side of assignment statement\n");
-    statement.assignment.right.root = parse_expression(ctxt, 0);
-    if statement.assignment.right.root == null  return false;
+    statement.assignment.right = parse_expression(ctxt, 0);
+    if statement.assignment.right == null  return false;
     
-    semicolon_token:, ok = get_token(*tokenizer);
-    if !ok || semicolon_token.type != .SEMICOLON {
-        return false;
-    }
+    if !expect_token_type(*tokenizer, .SEMICOLON)  return false;
     
     array_add(*script.ast.statements, statement);
     

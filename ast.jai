@@ -33,10 +33,6 @@ AST :: struct {
         Flags :: enum_flags { L_VALUE; };
     }
     
-    Expression :: struct {
-        root: *AST.Node;
-    }
-    
     Statement_Type :: enum {
         ASSIGNMENT;
     }
@@ -44,8 +40,8 @@ AST :: struct {
         type : Statement_Type;
         union {
             assignment : struct {
-                left  : Expression; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
-                right : Expression;
+                left  : *AST.Node; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
+                right : *AST.Node;
             };
         }
     }
@@ -59,11 +55,6 @@ AST :: struct {
 free_ast :: (ast: *AST) {
     // array_free(ast.nodes);
     // memset(*ast.nodes, 0, size_of(Resizable_Array));
-}
-
-// for now, void means invalid type ?
-get_expression_type :: (expr: *AST.Expression) -> Type { 
-    return expr.root.type;
 }
 
 print_ast :: (script: *Script, node: *AST.Node, parent_prec: int = 0) {
@@ -172,7 +163,7 @@ execute_script :: (script: *Script) -> bool {
     dbg_print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
         dbg_print("executing statement #%\n", it_index);
-        if !execute_statement(script, it)  return false;
+        if !execute_statement(script, it, script.stack_base)  return false;
     }
     
     sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
@@ -186,26 +177,23 @@ execute_script :: (script: *Script) -> bool {
 
 execute_statement :: (
     script : *Script, 
-    stmt   : *AST.Statement
+    statement   : *AST.Statement,
+    stack_pointer: *void
 ) -> bool {
-    if stmt.type == {
+    if statement.type == {
       case .ASSIGNMENT;
-        dbg_print("statement type is %\n", stmt.type);
-        if !evaluate_expression(script, *stmt.assignment.right, script.stack_base) {
-            dbg_print("failed to evaluate statement!\n");
+        if !evaluate_node(script, statement.assignment.left, stack_pointer) {
+            dbg_print("failed to evaluate left side of assignment statement!\n");
+            return false;
+        }
+        if !evaluate_node(script, statement.assignment.right, stack_pointer + size_of(*void)) {
+            dbg_print("failed to evaluate right side of assignment statement!\n");
             return false;
         }
         
-        r_value := Any.{ stmt.assignment.right.root.value_type, script.stack_base };
-        
-        // right now getting left side as variable is hardcoded
-        // TODO: this must change once we have indexing
-        assert(stmt.type == .ASSIGNMENT);
-        left_node     := stmt.assignment.left.root;
-        assert(left_node.type == .VARIABLE);
-        left_variable := node_get_variable(script, left_node);
-        assert(left_variable.binding.type == r_value.type);
-        memcpy(left_variable.binding.value_pointer, r_value.value_pointer, left_variable.binding.type.runtime_size);
+        l_value_ptr := (cast(**void)stack_pointer).*;
+        r_value_ptr := stack_pointer + size_of(*void);
+        memcpy(l_value_ptr, r_value_ptr, statement.assignment.right.value_type.runtime_size);
         
         return true;
         
@@ -214,19 +202,10 @@ execute_statement :: (
     }
 }
 
-// evaluates expression from the root node
-evaluate_expression :: inline (script: *Script, expr: *AST.Expression, stack_pointer: *void) -> bool {
-    return evaluate_expression_node(script, expr, expr.root, stack_pointer); // TODO: assumption that we can use stack base for every expression may not hold in future!
-}
-
-// evaluates expression from the given node index
-// TODO: we will not need to return an Any after we figure out pool allocator, only need to know stack position
-evaluate_expression_node :: (
+evaluate_node :: (
     script : *Script, 
-    expr   : *AST.Expression, // TODO: remove
     node   : *AST.Node,
     stack_pointer: *void
-    // TODO: flags for lvalue?
 ) -> bool {
     dbg_print("evaluating node %: %\n", node, node.type);
     dbg_print("stack_pointer offset: %\n", stack_pointer - script.stack_base);
@@ -237,79 +216,67 @@ evaluate_expression_node :: (
     }
     
     if node.type == {
-        case .NUMBER;
-            // dbg_print("returning number literal: %\n", node.number);
-            ret := Any.{ type_info(float32), stack_pointer };
-            memcpy(ret.value_pointer, *node.number, size_of(float32));
+      case .NUMBER;
+        memcpy(stack_pointer, *node.number, size_of(float32));
+        return true;
+        
+      case .VARIABLE;
+        variable := node_get_variable(script, node);
+        if node.flags & .L_VALUE {
+            memcpy(stack_pointer, *variable.binding.value_pointer, size_of(*void));
             return true;
-            
-        case .VARIABLE;
-            variable := node_get_variable(script, node);
-            ret: Any = ---;
-            
-            // if is_numeric_type(variable.binding.type) {
-            //     ret = Any.{ type_info(float32), stack_pointer };
-            //     f32_value, ok := get_numeric_value_as_f32(variable.binding);
-            //     if !ok  assert(false);
-            //     (cast(*float32)ret.value_pointer).* = f32_value;
-            // } else {
-                ret = Any.{ variable.binding.type, stack_pointer };
-                memcpy(ret.value_pointer, variable.binding.value_pointer, variable.binding.type.runtime_size);
-            // }
-            
-            // dbg_print("returning variable '%': %\n", variable.name, ret);
-            return true;
-            
-        case .OPERATION;
-            sp  := stack_pointer;
-            ret := Any.{ node.value_type, sp };
-            
-            sp += ret.type.runtime_size;
-            left := sp;
-            if !evaluate_expression_node(script, expr, node.operation.left, sp)
+        }
+        
+        // TODO: add back in code for adapting variable to internal type
+        memcpy(stack_pointer, variable.binding.value_pointer, variable.binding.type.runtime_size);
+        return true;
+        
+      case .OPERATION;
+        sp := stack_pointer;
+        
+        sp += node.value_type.runtime_size;
+        left := sp;
+        if !evaluate_node(script, node.operation.left, sp)
+            return false;
+        
+        sp += node.operation.left.value_type.runtime_size;
+        right := sp;
+        if !evaluate_node(script, node.operation.right, sp)
+            return false;
+        
+        if (node.operation.flags & .SWAP_ARGS) {
+            left, right = right, left;
+        }
+        
+        if node.operation.flags & .IS_BUILTIN {
+            if !execute_builtin_operation(node.operation.operator_index, left, right, stack_pointer)
                 return false;
-            
-            sp += node.operation.left.value_type.runtime_size;
-            right := sp;
-            if !evaluate_expression_node(script, expr, node.operation.right, sp)
-                return false;
-            
-            // dbg_print("operator index: %\n", node.operation.operator_index);
-            // dbg_print("operation flags: %\n", node.operation.flags);
-            
-            if (node.operation.flags & .SWAP_ARGS) {
-                left, right = right, left;
-            }
-            
-            if node.operation.flags & .IS_BUILTIN {
-                if !execute_builtin_operation(node.operation.operator_index, left, right, ret.value_pointer)
-                    return false;
-            } else {
-                procedure := node_get_operation(script, node);
-                if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer)
-                    return false;
-            }
-            
-            // dbg_print("returning result of operation '%': %\n", node_get_operation(script, node).name, ret);
-            return true;
-            
-        case .PROCEDURE_CALL;
-            sp  := stack_pointer;
-            ret := Any.{ node.value_type, sp };
-            sp  += ret.type.runtime_size; 
-            
-            arg_node := node.procedure_call.first_arg_node;
-            while arg_node != null {
-                evaluate_expression_node(script, expr, arg_node, sp);
-                sp += arg_node.value_type.runtime_size; 
-                arg_node = arg_node.next_arg_node;
-            }
-            
-            procedure := node_get_procedure(script, node);
+        } else {
+            procedure := node_get_operation(script, node);
             if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer)
                 return false;
-            
-            return true;
+        }
+        
+        return true;
+        
+      case .PROCEDURE_CALL;
+        sp := stack_pointer;
+        sp += node.value_type.runtime_size; 
+        
+        arg_node := node.procedure_call.first_arg_node;
+        while arg_node != null {
+            evaluate_node(script, arg_node, sp);
+            sp += arg_node.value_type.runtime_size; 
+            arg_node = arg_node.next_arg_node;
+        }
+        
+        procedure := node_get_procedure(script, node);
+        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer) {
+            log("Failed while trying to call procedure '%'!", procedure.name);
+            return false;
+        }
+        
+        return true;
     }
     
     assert(false);
@@ -321,15 +288,16 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     
     assert(proc_type.return_types.count == 1);
     
-    if !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
+    jai_call :: true;
+    assert(proc_type.procedure_flags & .IS_C_CALL == 0);
+    
+    if !jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
         dcArgPointer(vm, *context);
     }
     
-    ret := Any.{ proc_type.return_types[0], stack_pointer };
+    return_type := proc_type.return_types[0];
     
-    jai_call :: true;
-    
-    arg_ptr := stack_pointer + ret.type.runtime_size;
+    arg_ptr := stack_pointer + return_type.runtime_size;
     for arg_type: proc_type.argument_types {
         if arg_type.type == {
           case .POINTER;
@@ -394,7 +362,7 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
         arg_ptr += arg_type.runtime_size;
     }
     
-    dcArgPointer(vm, ret.value_pointer);
+    dcArgPointer(vm, stack_pointer);
     dcCallVoid(vm, xx proc_ptr);
     
     return true;
@@ -404,7 +372,7 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
 /*
     Notes about executing scripts
     
-    (DONE) for first step, we can just pass 'stack_pointer' argument to evaluate_expression_node so that it knows where to store data behind the Any it returns
+    (DONE) for first step, we can just pass 'stack_pointer' argument to evaluate_node so that it knows where to store data behind the Any it returns
     (DONE) second step we can remove the need to return the Any, since the parent node will just know where the value is and its type
     (DONE) remove need for passing Any's to dyncall
     (DONE) store resolved value_type on node itself
@@ -414,6 +382,16 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     we can remove all redundancies if we actually generate a bytecode for execution
         but I am not quite ready to do this yet until some other things are implemented
             majorly, we need to figure out if/for, lvalues, indexing, statement-level organization
+    
+    we may want to rmeove the Expression type, and also just treat statements as a type of AST node
+    that way we can just allocate statement nodes in the pool same as expression nodes
+    
+    thinking about how we do stack pointer
+        right now it kind of grows up
+        I thought for a moment maybe we could assign stack offsets / dst any on each node if we grew down instead, but that's not quite right
+        we could potentially assign stack positions for each node's result value on first typecheck pass, but it would be wonky and we'd end up with gaps in the stack
+        so it seems better to just do as we have done
+    
     
     
 */

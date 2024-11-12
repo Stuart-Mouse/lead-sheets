@@ -64,3 +64,39 @@ DONE;
     return false;
 }
 
+// this version takes only a single pointer (pointing to ret, left, and right, in that order)
+// thi swill be used during execution of bytecode, since we can safely presume that return value and arguments will be in proper location
+execute_builtin_operation :: (oper_idx: int, stack_ptr_ptr: **void, swap_args := false) -> bool {
+    pop :: inline (stack_ptr_ptr: **void, T: Type) -> *T {
+        stack_ptr_ptr.* -= size_of(T);
+        return cast(*T) stack_ptr_ptr.*;
+    }
+    
+    // generate switch case for all builtin operations
+    #insert -> string {
+        builder: String_Builder;
+        
+        FORMAT_STRING :: #string DONE
+      case %1;
+        right := pop(stack_ptr_ptr, %4);
+        left  := pop(stack_ptr_ptr, %3);
+        if swap_args  left, right = xx right, xx left;
+        ret   := cast(*%2) stack_ptr_ptr.*;
+        ret.*  = left.* %5 right.*;
+        return true;
+DONE;
+        
+        append(*builder, "    if oper_idx == {\n");
+        for BUILTIN_OPERATIONS {
+            print_to_builder(*builder, FORMAT_STRING, it_index, it.ret, it.left, it.right, it.operator_ident);
+        }
+        append(*builder, "    }\n");
+        
+        return builder_to_string(*builder);
+    }
+    
+    assert(false, "unreachable");
+    return false;
+}
+
+

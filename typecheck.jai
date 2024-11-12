@@ -50,14 +50,13 @@ typecheck_node :: (
         
         node.value_type = variables[node.variable_index].binding.type;
         
-        // TODO: should not do this if lvalue
-        // if is_numeric_type(node_type)  node_type = type_info(float32);
+        // TODO: add common method for adapting variable type/value to internal
         
         stack_required := node.value_type.runtime_size;
-        // if check_flags & .EXPECT_LVALUE {
-        //     stack_required = size_of(*void);
-        //     node.flags |= .L_VALUE;
-        // }
+        if check_flags & .EXPECT_LVALUE {
+            stack_required = size_of(*void);
+            node.flags |= .L_VALUE;
+        }
         return node.value_type, stack_required;
         
       case .OPERATION;
@@ -136,11 +135,11 @@ typecheck_statement :: (
       case .ASSIGNMENT;
         // get type of left side
         // we expect left side to be an lvalue
-        left_type, left_stack_required := typecheck_node(ctxt, statement.assignment.left.root, check_flags = .EXPECT_LVALUE);
+        left_type, left_stack_required := typecheck_node(ctxt, statement.assignment.left, check_flags = .EXPECT_LVALUE);
         if !left_type  return 0, false;
         
         // pass left type as 'expect_type' argument so that we can infer type of struct literals
-        right_type, right_stack_required := typecheck_node(ctxt, statement.assignment.right.root, expect_type = left_type);
+        right_type, right_stack_required := typecheck_node(ctxt, statement.assignment.right, expect_type = left_type);
         if !right_type  return 0, false;
         
         if left_type != right_type {
