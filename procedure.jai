@@ -124,7 +124,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
             print("%(", name);
             for ti_proc.argument_types {
                 if it_index != 0  print(", ");
-                print("%", type_info_to_type(it));
+                print("%", as_type(it));
             }
             print(")\n");
             
@@ -140,8 +140,8 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
                 print(
                     "Type mismatch on argument %: expected %, got %\n\n", 
                     it.details.arg_type.index, 
-                    type_info_to_type(it.details.arg_type.expected), 
-                    type_info_to_type(it.details.arg_type.provided)
+                    as_type(it.details.arg_type.expected), 
+                    as_type(it.details.arg_type.provided)
                 );
             }
         }
@@ -152,7 +152,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
     print("Argument types were: ");
     for argument_types {
         if it_index != 0  print(", ");
-        print("%", type_info_to_type(it));
+        print("%", as_type(it));
     }
     print("\n");
     

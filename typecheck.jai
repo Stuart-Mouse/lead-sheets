@@ -39,9 +39,6 @@ typecheck_node :: (
         return type_info(float32), size_of(float32);
         
       case .VARIABLE;
-        // variable can be used as lvalue
-        // TODO: when we implement stack system, we will need to push pointer to value instead of value itself based on whether we need lvalue or rvalue
-        
         node.variable_index = resolve_variable(ctxt, node.src_text);
         if node.variable_index == -1 {
             dbg_print("Unable to resolve variable '%'!\n", node.src_text);
@@ -98,7 +95,7 @@ typecheck_node :: (
         
         stack_required := 0;
         argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp); // TODO
-        arg_node := node.procedure_call.first_arg_node;
+        arg_node := node.procedure_call.arg_nodes;
         arg_idx  := 0;
         while arg_node != null {
             argument_type := typecheck_node(ctxt, arg_node);
@@ -107,7 +104,7 @@ typecheck_node :: (
             stack_required += argument_type.runtime_size;
             
             arg_idx += 1;
-            arg_node = arg_node.next_arg_node;
+            arg_node = arg_node.next;
         }
         
         node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
@@ -118,6 +115,14 @@ typecheck_node :: (
         
         stack_required += node.value_type.runtime_size;
         return node.value_type, stack_required;
+        
+      case .SUBSCRIPT;
+        dbg_print("ERROR: unimplemented case for .SUBSCRIPT\n");
+        return null, 0;
+        
+      case .MEMBER;
+        dbg_print("ERROR: unimplemented case for .MEMBER\n");
+        return null, 0;
     }
     
     return null, 0;
@@ -143,7 +148,7 @@ typecheck_statement :: (
         if !right_type  return 0, false;
         
         if left_type != right_type {
-            dbg_print("types on left and right side of assignment statement do not match! % != %\n", type_info_to_type(left_type), type_info_to_type(right_type));
+            dbg_print("types on left and right side of assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
             return 0, false;
         }
         

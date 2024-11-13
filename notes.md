@@ -202,12 +202,47 @@ arena allocator for all script data
             stack space calculation done during typecheck second pass
             
 
-remove need for typechecking in dyncall
-    do this after above, since we would like arguments to be contiguous here first
+now that we have cleaned up the parser a bit
+    would be useful to have a mode of expression parsing that does not even go to ast
+        would have to resolve identifiers on the spot
+            could do in callback
+        would have to lean heavily on temp storage or pool to allocate intermediate values
+        would have to do all type checking entirely dynamically
+    this would be very handy for the gon expression parsing though
+        since then we can just use a callback that identifies and evaluates node references
+        problem though, we can't know what all nodes are referenced in order to check for circular dependencies until after we parse out expressions
+        
+first order of business should be just adding indexers
+
+indexers will encompass both struct member access and array indexing
+because both of these can return valid lvalues, and are essentially the same operations of offsetting a pointer by some amount
+
+how that pointer is offset and where that base pointer is located depends on base type
+so for a struct, it just means offsetting from base value_pointer
+for an array, it depends further on array type
 
 
+lvalue vs rvalue
+for lvalue, indexer will result in different type coming out than going in
+we could optimize out indexers on constants / literals, but we will need to keep them on variables, since base pointer of variable is liable to change
 
-while not strictly necessary at this point, it would at least be good to try lowering to a bytecode at some point
-even if its just a bytecode for a very high-level virtual machine
+we will do arrays after struct members, bc arrays will bring all kinds of complications
+for example, will we allow appending to arrays?
+    probably, yes
+        but only dynamic arrays
+will we allow access to array members as if we are accessing Array_View_64
+    almost certainly not
+how will we handle user passing arrays to jai procs?
+    if we want to be able to pass e.g. a resizable array to an array_add in script
+    then we will have to be able to treat the any as an lvalue
+        also woul dhave to propogate up the typechecking that we need an lvalue,
+        but that is not something we do!
+        not only that, but we actually cant even handle polymorphic procedures as script procs
+        so we would have to have a builtin proc for array add
+        then maybe we could do the whole thing up propogating up that we need an lvalue
+    this will require changes to dyncall, maybe?
+        nah, just alterations to our custom typechecking
+        we will actually have to entirely rewrite the typechecking to take the ast nodes instead of just `Any`s or `*Type_Info`s
+        but that was needed anyhow
 
 

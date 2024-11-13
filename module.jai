@@ -24,10 +24,6 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
     .{ "/", 2 },
 ];
 
-Source_Location :: struct {
-    line, char: int;
-}
-
 Script_Variable :: struct {
     name    : string;
     binding : Any;
@@ -65,7 +61,7 @@ free_script :: (using script: *Script) {
     array_free(operators);
     free_ast(*ast);
     fini(*pool);
-    dcFree(script.dyncall_vm);
+    if script.dyncall_vm  dcFree(script.dyncall_vm);
     
     script.* = .{};
 }
@@ -88,8 +84,13 @@ set_variable :: (script: *Script, name: string, any: Any) {
 
 Script_Constructor :: struct {
     using #as script: *Script;
-    
     tokenizer: Tokenizer;
+
+    // May do something like this in order to extend parser / tokenizer for in other modules
+    // resolve_identifier: struct { 
+    //     proc: (string, *void) -> Any;
+    //     data: *void;
+    // }
 }
 
 construct_script_from_source_string :: (script: *Script, source: string) -> bool {
@@ -103,7 +104,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     constructor: Script_Constructor;
     constructor.script = script;
     constructor.tokenizer.file = source;
-    if get_token(*constructor.tokenizer).type == .ERROR  return false;
+    init_tokenizer(*constructor.tokenizer);
     
     while true {
         if !parse_statement(*constructor)  return false;
@@ -137,8 +138,8 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     return true;
 }
 
-resolve_variable :: (script: *Script, ident: string) -> int {
-    for *script.variables {
+resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
+    for *variables {
         if it.name == ident {
             return it_index;
         }
@@ -153,16 +154,18 @@ parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Nod
         first_arg_node : *AST.Node;
         prev_arg_node  : *AST.Node;
         arg_count      :=  0;
-        while true {
-            node := parse_expression(ctxt, 0);
-            if node == null  return null;
-            
-            if first_arg_node == null  first_arg_node = node;
-            if prev_arg_node  != null  prev_arg_node.next_arg_node = node;
-            prev_arg_node = node;
-            arg_count += 1;
-            
-            if !expect_token_type(*tokenizer, .COMMA)  break;
+        if peek_token(*tokenizer).type != .CLOSE_PAREN {
+            while true {
+                node := parse_expression(ctxt, 0);
+                if node == null  return null;
+                
+                if first_arg_node == null  first_arg_node = node;
+                if prev_arg_node  != null  prev_arg_node.next = node;
+                prev_arg_node = node;
+                arg_count += 1;
+                
+                if !expect_token_type(*tokenizer, .COMMA)  break;
+            }
         }
         
         if !expect_token_type(*tokenizer, .CLOSE_PAREN) {
@@ -173,12 +176,13 @@ parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Nod
         node := alloc_node(ctxt);
         node.type = .PROCEDURE_CALL;
         node.src_text = ident;
-        node.procedure_call.first_arg_node = first_arg_node;
+        node.procedure_call.arg_nodes = first_arg_node;
         node.procedure_call.arg_count = arg_count;
         return node;
     }
     
     // else identifier must refer to a variable
+    
     node := alloc_node(ctxt);
     node.type = .VARIABLE;
     node.src_text = ident;
@@ -274,6 +278,36 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
     
     next_token := peek_token(*tokenizer);
     
+    // TODO: 
+    // if token.type
+    //     while indexers := true {
+    //         token := peek_token(*tokenizer);
+    //         if token.type == {
+    //           case .DOT;
+    //             get_token(*tokenizer);
+                
+    //             identifier := get_token(*tokenizer);
+    //             if token.type != .IDENTIFIER {
+    //                 dbg_print("ERROR: expected identifier, got %\n", token);
+    //                 return null;
+    //             }
+                
+    //             node = alloc_node(ctxt);
+    //             node.type = .MEMBER;
+    //             node.indexer = .{
+    //                 base       = base,
+    //                 identifier = identifier.text,
+    //             };
+                
+    //           case .OPEN_BRACKET;
+    //             dbg_print("ERROR: bracket indexers not yet implemented\n");
+    //             return null;
+                
+    //           case;
+    //             break indexers;
+    //         }
+    //     }
+    
     if !token_is_binary_operator(next_token) {
         dbg_print("peeked token %, but it was not an operator. Returning node % to caller.\n",
             sprint_token(next_token), 
@@ -338,85 +372,9 @@ parse_statement :: (using ctxt: *Script_Constructor) -> bool {
 }
 
 
-get_numeric_value_as_f32 :: (any: Any) -> (float32, bool) {
-    if any.type.type == {
-        case .INTEGER;
-            ti_int := cast(*Type_Info_Integer) any.type;
-            if ti_int.signed {
-                if any.type.runtime_size == {
-                    case 1; return xx (cast(*s8 )any.value_pointer).*, true;
-                    case 2; return xx (cast(*s16)any.value_pointer).*, true;
-                    case 4; return xx (cast(*s32)any.value_pointer).*, true;
-                    case 8; return xx (cast(*s64)any.value_pointer).*, true;
-                    case  ; return 0, false;
-                }
-            } else {
-                if any.type.runtime_size == {
-                    case 1; return xx (cast(*u8 )any.value_pointer).*, true;
-                    case 2; return xx (cast(*u16)any.value_pointer).*, true;
-                    case 4; return xx (cast(*u32)any.value_pointer).*, true;
-                    case 8; return xx (cast(*u64)any.value_pointer).*, true;
-                    case  ; return 0, false;
-                }
-            }
-        case .FLOAT;
-            if any.type.runtime_size == {
-                case 4; return xx (cast(*float32)any.value_pointer).*, true;
-                case 8; return xx (cast(*float64)any.value_pointer).*, true;
-                case  ; return 0, false;
-            }
-    }
-    return 0, false;
-}
-
-set_numeric_value_from_f32 :: (any: Any, value: float32) -> bool {
-    if any.type.type == {
-        case .INTEGER;
-            ti_int := cast(*Type_Info_Integer) any.type;
-            if ti_int.signed {
-                if any.type.runtime_size == {
-                    case 1; (cast(*s8 )any.value_pointer).* = xx value; return true;
-                    case 2; (cast(*s16)any.value_pointer).* = xx value; return true;
-                    case 4; (cast(*s32)any.value_pointer).* = xx value; return true;
-                    case 8; (cast(*s64)any.value_pointer).* = xx value; return true;
-                    case  ; return false;
-                }
-            } else {
-                if any.type.runtime_size == {
-                    case 1; (cast(*u8 )any.value_pointer).* = xx value; return true;
-                    case 2; (cast(*u16)any.value_pointer).* = xx value; return true;
-                    case 4; (cast(*u32)any.value_pointer).* = xx value; return true;
-                    case 8; (cast(*u64)any.value_pointer).* = xx value; return true;
-                    case  ; return false;
-                }
-            }
-        case .FLOAT;
-            if any.type.runtime_size == {
-                case 4; (cast(*float32)any.value_pointer).* = xx value; return true;
-                case 8; (cast(*float64)any.value_pointer).* = xx value; return true;
-                case  ; return false;
-            }
-    }
-    return false;
-}
-
-
-
 #scope_module
 
-advance :: inline (file: *string, amount := 1) -> bool {
-    _amount := min(amount, file.count);
-    file.data  += _amount;
-    file.count -= _amount;
-    return file.count > 0;
-}
-
 memzero :: (t: *$T) { memset(t, 0, size_of(T)); };
-
-
-array_find_where :: (array: []$T, $$cond: (T, *void) -> bool, data: *void) -> int #expand {
-    for array  if cond(it, data)  return it_index;
-}
 
 is_numeric_type :: (t: Type) -> bool {
     ti := cast(*Type_Info)t;
@@ -426,8 +384,6 @@ is_numeric_type :: (t: Type) -> bool {
 is_numeric_type :: (ti: *Type_Info) -> bool {
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
-
-type_from_info :: inline (ti: *Type_Info) -> Type { return (cast(*Type)*ti).*; }
 
 
 // copied from how_to/170_modify.jai
@@ -459,6 +415,6 @@ Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
 }
 
 
-type_info_to_type :: inline (ti: *Type_Info) -> Type {
+as_type :: inline (ti: *Type_Info) -> Type {
     return (cast(*Type)*ti).*;
 }

@@ -1,44 +1,54 @@
 
 Script_Token_Type :: enum {
-    EOF         :: 0;
-    ERROR       :: 1;
+    EOF           :: 0;
+    ERROR         :: 1;
     
-    OPEN_PAREN  :: #char "(";
-    CLOSE_PAREN :: #char ")";
+    OPEN_PAREN    :: #char "(";
+    CLOSE_PAREN   :: #char ")";
     
-    COMMA       :: #char ",";
-    SEMICOLON   :: #char ";";
-    EQUALS      :: #char "=";
+    OPEN_BRACE    :: #char "{";
+    CLOSE_BRACE   :: #char "}";
     
-    ADD         :: #char "+";
-    SUB         :: #char "-";
-    MUL         :: #char "*";
-    DIV         :: #char "/";
+    OPEN_BRACKET  :: #char "[";
+    CLOSE_BRACKET :: #char "]";
     
-    IDENTIFIER  :: 256;
+    DOT           :: #char ".";
+    COMMA         :: #char ",";    
+    SEMICOLON     :: #char ";";
+    EQUALS        :: #char "=";
+    
+    ADD           :: #char "+";
+    SUB           :: #char "-";
+    MUL           :: #char "*";
+    DIV           :: #char "/";
+    
+    IDENTIFIER    :: 256;
     NUMBER;
 }
 
 Script_Token :: struct {
-    type : Script_Token_Type;
+    type: Script_Token_Type;
     union {
-        text   : string;
-        number : float32;
+        text:   string;
+        number: float32;
     };
     
     src_loc: Source_Location;
 }
 
+Source_Location :: struct {
+    line, char: int;
+}
 
 // we should just always store token text probably? would simplify printing token, and negligible memory usage extra
 print_token :: (token: Script_Token) {
     print("%: ", token.type);
     
     if token.type == {
-        case;
-            print("%\n", token.text);
-        case .NUMBER;
-            print("%\n", token.number);
+      case;
+        print("%\n", token.text);
+      case .NUMBER;
+        print("%\n", token.number);
     }
 }
 
@@ -49,10 +59,10 @@ sprint_token :: (token: Script_Token) -> string {
     print_to_builder(*sb, "%: ", token.type);
 
     if token.type == {
-        case;
-            print_to_builder(*sb, "%", token.text);
-        case .NUMBER;
-            print_to_builder(*sb, "%", token.number);
+      case;
+        print_to_builder(*sb, "%", token.text);
+      case .NUMBER;
+        print_to_builder(*sb, "%", token.number);
     }
     
     return builder_to_string(*sb);
@@ -62,8 +72,14 @@ sprint_token :: (token: Script_Token) -> string {
 // otherwise, first token will appear to be .EOF
 
 Tokenizer :: struct {
-    file       : string;
-    next_token : Script_Token;
+    file            : string;
+    next_token      : Script_Token;
+    cursor_location : Source_Location;
+}
+
+init_tokenizer :: (using t: *Tokenizer) {
+    cursor_location = .{ line = 1, char = 1 };
+    get_token(t);
 }
 
 get_token_or_return :: (using t: *Tokenizer, code: Code) -> Script_Token #expand {
@@ -73,8 +89,10 @@ get_token_or_return :: (using t: *Tokenizer, code: Code) -> Script_Token #expand
 }
 
 get_token :: inline (using t: *Tokenizer) -> Script_Token {
-    // do not try to lex any more after hitting error token
-    if next_token.type == .ERROR  return next_token; 
+    if next_token.type == .ERROR {
+        dbg_print("TOKENIZER ERROR: % (line %, char %)\n", next_token.text, next_token.src_loc.line, next_token.src_loc.char);
+        return next_token;
+    }
     
     current_token := next_token;
     next_token = lex_next_token(t);
@@ -96,55 +114,63 @@ expect_token_type :: (using t: *Tokenizer, type: Script_Token_Type) -> bool {
 }
 
 lex_next_token :: (using t: *Tokenizer) -> Script_Token {
-    if !skip_whitespace_and_comments(*file) || !file
+    if !skip_whitespace_and_comments(t)
         return .{ type = .EOF };
     
+    src_loc := cursor_location;
+    make_error_token :: (error_string: string = "") -> Script_Token #expand { 
+        return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
+    }
+    
     // single-character tokens
-    if is_any(file[0], "+-*/(),;=") {
+    if is_any(file[0], "+-*/(),;=.") {
         ret := Script_Token.{
-            type = cast(Script_Token_Type) file[0], // character value for single-char tokens can be cast directly to token type
-            text = slice(file, 0, 1),
+            type    = cast(Script_Token_Type) file[0], // character value for single-char tokens can be cast directly to token type
+            text    = slice(file, 0, 1),
+            src_loc = src_loc
         };
-        advance(*file);
+        advance(t);
         return ret;
     }
     
     // parse an identifier
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
-        if !advance(*file)  return .{ type = .ERROR };
+        if !advance(t)  return make_error_token("Unexpected EOF while parsing identifier.");
         
         while file && is_alnum(file[0]) {
             str.count += 1;
-            if !advance(*file)  return .{ type = .ERROR };
+            if !advance(t)  return make_error_token("Unexpected EOF while parsing identifier.");
         }
         
         // TODO: Check if the identifier is a reserved word
         
         return .{
-            type = .IDENTIFIER,
-            text = str,
+            type    = .IDENTIFIER,
+            text    = str,
+            src_loc = src_loc
         };
     }
     
     // parse a number
     if is_digit(file[0]) {
         str: string = .{ 1, *file[0] };
-        if !advance(*file)  return .{ type = .ERROR };
+        if !advance(t)  return make_error_token();
         
         while file && (is_digit(file[0]) || file[0] == #char ".") {
             str.count += 1;
-            if !advance(*file)  return .{ type = .ERROR };
+            if !advance(t)  return make_error_token("Unexpected EOF while parsing number.");
         }
         
         val, ok, rem := string_to_float(str);
         return .{
-            type   = .NUMBER,
-            number = val,
+            type    = .NUMBER,
+            number  = val,
+            src_loc = src_loc
         };
     }
     
-    return .{ type = .ERROR };
+    return make_error_token("Unexpected character encountered.");
 }
 
 /* 
@@ -179,16 +205,15 @@ tokenize :: (text: string) -> ([..] Script_Token, bool) {
 
 
 // cycles between skipping whitespace and comments until next character is neither
-// TODO: add *int param to increment line count 
-skip_whitespace_and_comments :: (file: *string) -> bool {
+skip_whitespace_and_comments :: (using t: *Tokenizer) -> bool {
     if file.count == 0 return false;
     while true {
-        while is_whitespace(file.*[0]) {
-            if !advance(file) return false;
+        while is_whitespace(file[0]) {
+            if !advance(t) return false;
         }
-        if file.*[0] == #char "#" {
-            while file.*[0] != #char "\n" {
-                if !advance(file) return false;
+        if file[0] == #char "#" {
+            while file[0] != #char "\n" {
+                if !advance(t) return false;
             }
         }
         else return true;
@@ -201,4 +226,25 @@ is_whitespace :: inline (char: u8) -> bool {
       || char == #char "\t"
       || char == #char "\r"
       || char == #char "\n";
+}
+
+
+#scope_module
+
+advance :: inline (using t: *Tokenizer, amount := 1) -> bool {
+    _amount := min(amount, file.count);
+    
+    for 0.._amount-1 {
+        if file[it] == #char "\n" {
+            cursor_location.line += 1;
+            cursor_location.char  = 1;
+        } else {
+            cursor_location.char += 1;
+        }
+    }
+    
+    file.data  += _amount;
+    file.count -= _amount;
+    
+    return file.count > 0; // return false when we hit EOF
 }

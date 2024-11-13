@@ -6,31 +6,47 @@ AST :: struct {
         VARIABLE;
         OPERATION;
         PROCEDURE_CALL;
+        MEMBER;
+        SUBSCRIPT;
     }
     Node :: struct {
-        type          : Node_Type;
-        src_loc       : Source_Location;
-        src_text      : string;     // need for identifiers before typechecking step
-        next_arg_node : *AST.Node;  // TODO: maybe rename to just next_node, since we could also use this for other purposes
-        value_type    : *Type_Info;
+        type       : Node_Type;
+        value_type : *Type_Info;
+        
+        src_loc  : Source_Location;
+        src_text : string;     // need for identifiers before typechecking step
+        
+        // usage is context dependent
+        // for procedure arguments, points to next argument node
+        next  : *AST.Node;
+        flags : Flags;
+        Flags :: enum_flags { L_VALUE; };
         
         union {
-            variable_index: int; // index to variable in Script.variables array
-            number: float32;
+            variable_index  : int; // index to variable in Script.variables array 
+            number          : float32;
+            
             procedure_call: struct {
                 procedure_index : int; // cannot remove yet, as this would destroy ability to print ast
-                first_arg_node  : *AST.Node;
+                arg_nodes       : *AST.Node;
                 arg_count       : int;
-            };
+            }
             operation: struct {
                 operator_index : int; // index to either a builtin operator or an operator procedure
                 left, right    : *AST.Node;
                 flags          : Operation_Flags;
-            };
+            }
+            member: struct {
+                base        : *AST.Node;  // the thing being indexed
+                offset      : int;        // resolved at typechecking phase. evaluation only needs to apply this to base depending on type of base
+                identifier  : string;     // TOOD: maybe could just use src_text?
+            }
+            subscript: struct {
+                base    : *AST.Node;
+                offset  : int;
+                index   : int;
+            }
         }
-        
-        flags: Flags;
-        Flags :: enum_flags { L_VALUE; };
     }
     
     Statement_Type :: enum {
@@ -57,42 +73,50 @@ free_ast :: (ast: *AST) {
     // memset(*ast.nodes, 0, size_of(Resizable_Array));
 }
 
-print_ast :: (script: *Script, node: *AST.Node, parent_prec: int = 0) {
-    // if node_i < 0 || node_i >= ast.nodes.count  return;
-    
-    // node := *ast.nodes[node_i];
-    if node.type == {
-      case .NUMBER;
-        dbg_print("%", node.number);
-        
-      case .VARIABLE;
-        dbg_print("%", get_node_variable(script, node).name);
-        
-      case .OPERATION;
-        prec := get_operator_precedence(get_node_operation(script, node).name[0]);
-        do_parens := ifx prec < parent_prec then true;
-        
-        if do_parens  dbg_print("(");
-        dbg_print_ast(script, node.operation.left, prec);
-        dbg_print(get_node_operation(script, node).name);
-        dbg_print_ast(script, node.operation.right, prec);
-        if do_parens  dbg_print(")");
-        
-      case .PROCEDURE_CALL;
-        dbg_print("%(", get_node_prcedure(script, node).name);
-        
-        arg_node := node.procedure_call.first_arg_node;
-        arg_node_index := 0;
-        while arg_node != null {
-            dbg_print_ast(script, it);
-            if arg_node_index != node.procedure_call.arg_count-1  dbg_print(",");
-            
-            arg_node = arg_node.next_arg_node;
-            arg_node_index += 1;
-        }
-        dbg_print(")");
+for_expansion :: (node: *AST.Node, body: Code, flags: For_Flags) #expand {
+    `it := node;
+    `it_index := 0;
+    while it != null {
+        #insert body;
+        it = it.next;
+        it_index += 1;
     }
 }
+
+// print_ast :: (script: *Script, node: *AST.Node, parent_prec: int = 0) {
+//     // if node_i < 0 || node_i >= ast.nodes.count  return;
+    
+//     // node := *ast.nodes[node_i];
+//     if node.type == {
+//       case .NUMBER;
+//         dbg_print("%", node.number);
+        
+//       case .VARIABLE;
+//         dbg_print("%", get_node_variable(script, node).name);
+        
+//       case .OPERATION;
+//         prec := get_operator_precedence(get_node_operation(script, node).name[0]);
+//         do_parens := ifx prec < parent_prec then true;
+        
+//         if do_parens  dbg_print("(");
+//         dbg_print_ast(script, node.operation.left, prec);
+//         dbg_print(get_node_operation(script, node).name);
+//         dbg_print_ast(script, node.operation.right, prec);
+//         if do_parens  dbg_print(")");
+        
+//       case .PROCEDURE_CALL;
+//         dbg_print("%(", get_node_prcedure(script, node).name);
+        
+//         for node.procedure_call.arg_nodes {
+//             dbg_print_ast(script, it);
+//             if arg_node_index != node.procedure_call.arg_count-1  dbg_print(",");
+            
+//             arg_node = arg_node.next         ;
+//             arg_node_index += 1;
+//         }
+//         dbg_print(")");
+//     }
+// }
 
 sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
     if node.type == {
@@ -148,7 +172,18 @@ node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
     return *script.operators[node.operation.operator_index];
 }
 
+/*
+    TODO: we should differentiate execute and evaluate procs
+    the procs here should be labelled execute, since they work primarily through side effects
+        i.e., they push/pop things on the preallocated stack and rely on typecheck phase to have been done correctly
 
+    by contrast, I will probably reintroduce some evaluate procs that basically do things the old way of dynamically typechecking and returning Any's
+    these may be useful in the case of scripts that only need to be run once, e.g. evaluating expresions in gon files or seomthing
+    
+    as it stands, I think the execute procs will probably have decent enough performance characteristics that going to a bytecode will probabyl not be worth it for a good while
+    it will be much easier to debug things using the old ast walking method, and because we are typechecked, it's really more like a fat ass bytecode with horrible cache misses
+    but we would still have bad cache misses in bytecode with procedure calls anyhow because of the type info navigation that's required
+*/
 
 execute_script :: (script: *Script) -> bool {
     if !(script.flags & .AST_CONSTRUCTED) {
@@ -182,11 +217,11 @@ execute_statement :: (
 ) -> bool {
     if statement.type == {
       case .ASSIGNMENT;
-        if !evaluate_node(script, statement.assignment.left, stack_pointer) {
+        if !execute_node(script, statement.assignment.left, stack_pointer) {
             dbg_print("failed to evaluate left side of assignment statement!\n");
             return false;
         }
-        if !evaluate_node(script, statement.assignment.right, stack_pointer + size_of(*void)) {
+        if !execute_node(script, statement.assignment.right, stack_pointer + size_of(*void)) {
             dbg_print("failed to evaluate right side of assignment statement!\n");
             return false;
         }
@@ -202,7 +237,7 @@ execute_statement :: (
     }
 }
 
-evaluate_node :: (
+execute_node :: (
     script : *Script, 
     node   : *AST.Node,
     stack_pointer: *void
@@ -236,12 +271,12 @@ evaluate_node :: (
         
         sp += node.value_type.runtime_size;
         left := sp;
-        if !evaluate_node(script, node.operation.left, sp)
+        if !execute_node(script, node.operation.left, sp)
             return false;
         
         sp += node.operation.left.value_type.runtime_size;
         right := sp;
-        if !evaluate_node(script, node.operation.right, sp)
+        if !execute_node(script, node.operation.right, sp)
             return false;
         
         if (node.operation.flags & .SWAP_ARGS) {
@@ -263,11 +298,9 @@ evaluate_node :: (
         sp := stack_pointer;
         sp += node.value_type.runtime_size; 
         
-        arg_node := node.procedure_call.first_arg_node;
-        while arg_node != null {
-            evaluate_node(script, arg_node, sp);
-            sp += arg_node.value_type.runtime_size; 
-            arg_node = arg_node.next_arg_node;
+        for node.procedure_call.arg_nodes {
+            execute_node(script, it, sp);
+            sp += it.value_type.runtime_size; 
         }
         
         procedure := node_get_procedure(script, node);
@@ -372,7 +405,7 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
 /*
     Notes about executing scripts
     
-    (DONE) for first step, we can just pass 'stack_pointer' argument to evaluate_node so that it knows where to store data behind the Any it returns
+    (DONE) for first step, we can just pass 'stack_pointer' argument to execute_node so that it knows where to store data behind the Any it returns
     (DONE) second step we can remove the need to return the Any, since the parent node will just know where the value is and its type
     (DONE) remove need for passing Any's to dyncall
     (DONE) store resolved value_type on node itself
