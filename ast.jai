@@ -30,16 +30,18 @@ AST :: struct {
                 procedure_index : int; // cannot remove yet, as this would destroy ability to print ast
                 arg_nodes       : *AST.Node;
                 arg_count       : int;
+                dst             : *void;
             }
             operation: struct {
-                operator_index : int; // index to either a builtin operator or an operator procedure
-                left, right    : *AST.Node;
-                flags          : Operation_Flags;
+                operator_index  : int; // index to either a builtin operator or an operator procedure
+                left, right     : *AST.Node;
+                flags           : Operation_Flags;
+                dst             : *void;
             }
             member: struct {
-                base        : *AST.Node;  // the thing being indexed
-                offset      : int;        // resolved at typechecking phase. evaluation only needs to apply this to base depending on type of base
-                identifier  : string;     // TOOD: maybe could just use src_text?
+                base        : *AST.Node;
+                offset      : int;
+                identifier  : string;
             }
             subscript: struct {
                 base    : *AST.Node;
@@ -228,12 +230,25 @@ execute_statement :: (
         
         l_value_ptr := (cast(**void)stack_pointer).*;
         r_value_ptr := stack_pointer + size_of(*void);
-        memcpy(l_value_ptr, r_value_ptr, statement.assignment.right.value_type.runtime_size);
+        
+        if statement.assignment.right.value_type.type == .STRUCT {
+            r_value_ptr = (cast(**void)r_value_ptr).*;
+        }
+        
+        memcpy(l_value_ptr, r_value_ptr, get_stack_required(statement.assignment.right.value_type));
         
         return true;
         
       case;
         return false;
+    }
+}
+
+get_stack_required :: inline (ti: *Type_Info) -> int {
+    if ti.type == .STRUCT {
+        return size_of(*void);
+    } else {
+        return ti.runtime_size;
     }
 }
 
@@ -258,6 +273,13 @@ execute_node :: (
       case .VARIABLE;
         variable := node_get_variable(script, node);
         if node.flags & .L_VALUE {
+            // (cast(**void)stack_pointer).* = *variable.binding.value_pointer;
+            memcpy(stack_pointer, *variable.binding.value_pointer, size_of(*void));
+            return true;
+        }
+        
+        if node.value_type.type == .STRUCT {
+            // (cast(**void)stack_pointer).* = *variable.binding.value_pointer;
             memcpy(stack_pointer, *variable.binding.value_pointer, size_of(*void));
             return true;
         }
@@ -268,39 +290,73 @@ execute_node :: (
         
       case .OPERATION;
         sp := stack_pointer;
+        dbg_print("operation: %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node);
         
-        sp += node.value_type.runtime_size;
+        dst := sp;
+        if node.value_type.type == .STRUCT {
+            // write pointer to struct onto stack as return value
+            (cast(**void)dst).* = node.operation.dst; 
+            // replace dst for operation with pointer to actual struct value
+            dst = node.operation.dst;
+        }
+        sp += get_stack_required(node.value_type);
+        
         left := sp;
-        if !execute_node(script, node.operation.left, sp)
+        if !execute_node(script, node.operation.left, sp) {
             return false;
+        }
+        sp += get_stack_required(node.operation.left.value_type);
         
-        sp += node.operation.left.value_type.runtime_size;
         right := sp;
-        if !execute_node(script, node.operation.right, sp)
+        if !execute_node(script, node.operation.right, sp) {
             return false;
+        }
+        
+        // account for extra indirection if left or right are structs
+        if node.operation.left.value_type.type == .STRUCT {
+            dbg_print("adjusting left operand ptr for binary op % on node %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node.operation.left);
+            dbg_print("left type is %\n", as_type(node.operation.left.value_type));
+            dbg_print("% (%) -> %\n", left, left-script.stack_base, (cast(**void)left).*);
+            left = (cast(**void)left).*;
+        }
+        if node.operation.right.value_type.type == .STRUCT {
+            dbg_print("adjusting right operand ptr for binary op % on node %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node.operation.right);
+            dbg_print("right type is %\n", as_type(node.operation.right.value_type));
+            dbg_print("% (%) -> %\n", right, right-script.stack_base, (cast(**void)right).*);
+            right = (cast(**void)right).*;
+        }
         
         if (node.operation.flags & .SWAP_ARGS) {
+            dbg_print("swapping operands\n");
             left, right = right, left;
         }
         
         if node.operation.flags & .IS_BUILTIN {
-            if !execute_builtin_operation(node.operation.operator_index, left, right, stack_pointer)
+            if !execute_builtin_operation(node.operation.operator_index, left, right, dst) {
                 return false;
+            }
         } else {
             procedure := node_get_operation(script, node);
-            if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer)
+            if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer) {
                 return false;
+            }
         }
         
         return true;
         
       case .PROCEDURE_CALL;
+        dbg_print("procedure: %\n", node_get_procedure(script, node).name);
         sp := stack_pointer;
-        sp += node.value_type.runtime_size; 
+        
+        if node.value_type.type == .STRUCT {
+            // write pointer to struct onto stack as return value
+            (cast(**void)sp).* = node.procedure_call.dst; 
+        }
+        sp += get_stack_required(node.value_type);
         
         for node.procedure_call.arg_nodes {
             execute_node(script, it, sp);
-            sp += it.value_type.runtime_size; 
+            sp += get_stack_required(it.value_type);
         }
         
         procedure := node_get_procedure(script, node);
@@ -310,6 +366,9 @@ execute_node :: (
         }
         
         return true;
+        
+      case .MEMBER;
+        
     }
     
     assert(false);
@@ -360,42 +419,52 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
             
           case .STRUCT;
             if jai_call {
-                dcArgPointer(vm, arg_ptr); 
+                dcArgPointer(vm, (cast(**void)arg_ptr).*); 
             } else {
                 ag := find_or_make_and_register_DCaggr(cast(*Type_Info_Struct)arg_type);
                 if !ag  return false;
-                dcArgAggr(vm, ag, arg_ptr);
+                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
             }
             
-          case .ARRAY;
-            ti_array := cast(*Type_Info_Array) arg_type;
-            if ti_array.array_type == {
-              case .VIEW;
-                ag := find_or_make_and_register_DCaggr(type_info(Array_View_64));
-                if !ag  return false;
-                dcArgAggr(vm, ag, arg_ptr);
+          case; assert(false, "ERROR: Unimplemented case, unsupported type.");
+          // case .ARRAY;
+          //   ti_array := cast(*Type_Info_Array) arg_type;
+          //   if ti_array.array_type == {
+          //     case .VIEW;
+          //       ag := find_or_make_and_register_DCaggr(type_info(Array_View_64));
+          //       if !ag  return false;
+          //       dcArgAggr(vm, ag, arg_ptr);
                 
-              case .RESIZABLE;
-                ag := find_or_make_and_register_DCaggr(type_info(Resizable_Array));
-                if !ag  return false;
-                dcArgAggr(vm, ag, arg_ptr);
+          //     case .RESIZABLE;
+          //       ag := find_or_make_and_register_DCaggr(type_info(Resizable_Array));
+          //       if !ag  return false;
+          //       dcArgAggr(vm, ag, arg_ptr);
                 
-              case;
-                if !jai_call {
-                    log("Error: cannot pass a fixed array to a #c_call procedure!\n");
-                    return false;
-                }
+          //     case;
+          //       if !jai_call {
+          //           log("Error: cannot pass a fixed array to a #c_call procedure!\n");
+          //           return false;
+          //       }
                 
-                ag := find_or_make_and_register_DCaggr(xx ti_array);
-                if !ag  return false;
-                dcArgAggr(vm, ag, arg_ptr);
-            }
+          //       ag := find_or_make_and_register_DCaggr(xx ti_array);
+          //       if !ag  return false;
+          //       dcArgAggr(vm, ag, arg_ptr);
+          //   }
         }
         
-        arg_ptr += arg_type.runtime_size;
+        if arg_type.type == .STRUCT {
+            arg_ptr += size_of(*void);
+        } else {
+            arg_ptr += arg_type.runtime_size;
+        }
     }
     
-    dcArgPointer(vm, stack_pointer);
+    if return_type.type == .STRUCT {
+        dcArgPointer(vm, (cast(**void)stack_pointer).*);
+    } else {
+        dcArgPointer(vm, stack_pointer);
+    }
+    
     dcCallVoid(vm, xx proc_ptr);
     
     return true;

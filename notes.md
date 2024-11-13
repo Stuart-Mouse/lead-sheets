@@ -246,3 +246,20 @@ how will we handle user passing arrays to jai procs?
         but that was needed anyhow
 
 
+in order to be able to do member accesses on structs properly, we need to stop pushing structs themselves onto the stack as values
+    instead, store struct values in constant section of script before stack space
+    then only push and pop pointers to structs on the script stack
+
+when we do a member access, we will pop a struct pointer, and place back down either a register-sized primitive value or a pointer to a different struct 
+
+
+`[ nodes | variables and constants (values) | stack space ... sentinel bytes ]`
+need somewhere to place an actual array of Any's metadata for variables and constants in script
+could do another pass of ast to allocate after we have all values down
+```
+nodes       : [] AST.Node;
+values      : [] u8;
+externals   : [] Script_Variable;
+locals      : [] Local_Variable;
+```
+

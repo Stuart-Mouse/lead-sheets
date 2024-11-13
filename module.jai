@@ -182,7 +182,6 @@ parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Nod
     }
     
     // else identifier must refer to a variable
-    
     node := alloc_node(ctxt);
     node.type = .VARIABLE;
     node.src_text = ident;
@@ -208,6 +207,7 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
 parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
     token := get_token_or_return(*tokenizer, null);
     
+    // TODO: refactor unary minus to use an actual unary operation
     do_unary_minus := token.type == .SUB;
     if do_unary_minus {
         token = get_token_or_return(*tokenizer, null);
@@ -216,7 +216,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
     node: *AST.Node;
     if token.type == {
       case .OPEN_PAREN;
-        dbg_print("encountered open paren...\n");
+        // dbg_print("encountered open paren...\n");
         node = parse_expression(ctxt, 0);
         if node == null  return null;
         
@@ -226,7 +226,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
             dbg_print("Error, expected a closing paren!\n");
             return null;
         }
-        dbg_print("consumed corresponding close paren\n");
+        // dbg_print("consumed corresponding close paren\n");
         
       case .NUMBER;
         node = alloc_node(ctxt);
@@ -255,84 +255,109 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
     return node;
 }
 
+
+/*
+    Notes on parse_expression and parse_increasing_precedence
+    
+    TODO: include link to stream where Jon talks about this
+    
+    these two procedures trade off back and forth in a somewhat unintuitive manner in order to construct an AST where operator precedence is respected
+    this works based on an observation that when we construct the proper tree for either increasing or decreasing operator precedence 
+    depending on wehter we are appending nodes linearly or recursively
+    
+    when we navigate a tree and execute it, we do it in (I think) postorder
+    we evaluate left, then right, then self, then return up tree
+    so if a node is left of self, it necessarily has higher precedence, or is in parens (bc it is executed first)
+    
+    parse_increasing_precedence is only relevant when parsing binary operators...?
+        if so, maybe we can factor things a bit more intuitively
+        
+*/
+
 parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
-
+    
+    // left is also sort of the root node of expression, when re 
+    // the reason we call it left is because if it is part of a binary operation, it will be the left side
+    
     left := parse_leaf(ctxt);
     if left == null  return null;
     
     dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, left));
     
+    // going iteratively, precedence can only increase
     while true {
         node := parse_increasing_precedence(ctxt, left, min_prec);
         if node == null  return null;
-        if node == left  break;
+        
+        // op prec was below min_prec, or we could not parse next token.
+        // not having being able to parse is fine though, 
+        //     as it's probably just the end of the expression.
+        // in any case, the caller should know what to expect.
+        //     for example, note how parse_expression is called 
+        //     after hitting open paren in parse_leaf.
+        if node == left  break; 
+        
+        // 'node' has replaced 'left' as the root node
+        // original 'left' is now a child of 'node'
         left = node;
     }
     
+    // left is returned as root node of expression
+    // could be just a leaf, could be binary op, could be indexer
     return left;
 }
 
+// If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node, min_prec: int) -> *AST.Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     
     next_token := peek_token(*tokenizer);
     
-    // TODO: 
-    // if token.type
-    //     while indexers := true {
-    //         token := peek_token(*tokenizer);
-    //         if token.type == {
-    //           case .DOT;
-    //             get_token(*tokenizer);
-                
-    //             identifier := get_token(*tokenizer);
-    //             if token.type != .IDENTIFIER {
-    //                 dbg_print("ERROR: expected identifier, got %\n", token);
-    //                 return null;
-    //             }
-                
-    //             node = alloc_node(ctxt);
-    //             node.type = .MEMBER;
-    //             node.indexer = .{
-    //                 base       = base,
-    //                 identifier = identifier.text,
-    //             };
-                
-    //           case .OPEN_BRACKET;
-    //             dbg_print("ERROR: bracket indexers not yet implemented\n");
-    //             return null;
-                
-    //           case;
-    //             break indexers;
-    //         }
+    // should this go here or up in main loop of parse_expression?
+    // will require some refactoring to hoist up there
+    // if next_token.type == {
+    //   case .DOT;
+    //     get_token(*tokenizer);
+        
+    //     identifier := get_token(*tokenizer);
+    //     if identifier.type != .IDENTIFIER {
+    //         dbg_print("ERROR: expected identifier, got %\n", identifier);
+    //         return null;
     //     }
+        
+    //     node := alloc_node(ctxt);
+    //     node.type = .MEMBER;
+    //     node.member = .{
+    //         base       = left,
+    //         identifier = identifier.text,
+    //     };
+    //     return node;
+        
+    //   // case .BRACKET;
+    // }
     
-    if !token_is_binary_operator(next_token) {
-        dbg_print("peeked token %, but it was not an operator. Returning node % to caller.\n",
-            sprint_token(next_token), 
-            sprint_ast_node(ctxt, left), 
-        );
-        return left;
+    if token_is_binary_operator(next_token) {
+        get_token(*tokenizer);
+        
+        next_token_prec := get_operator_precedence(next_token.text);
+        if next_token_prec < min_prec {
+            dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
+                sprint_token(next_token), 
+                next_token_prec,
+                min_prec,
+                sprint_ast_node(ctxt, left), 
+            );
+            return left;
+        }
+        
+        right := parse_expression(ctxt, next_token_prec);
+        if right == null  return null;
+        
+        return create_binary_operation(ctxt, next_token.text, left, right);
     }
     
-    next_token_prec := get_operator_precedence(next_token.text);
-    if next_token_prec < min_prec {
-        dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
-            sprint_token(next_token), 
-            next_token_prec,
-            min_prec,
-            sprint_ast_node(ctxt, left), 
-        );
-        return left;
-    }
-    
-    get_token_or_return(*tokenizer, null);
-    
-    right := parse_expression(ctxt, next_token_prec);
-    if right == null  return null;
-    
-    return create_binary_operation(ctxt, next_token.text, left, right);
+    return left;    
 }
 
 
@@ -370,6 +395,13 @@ parse_statement :: (using ctxt: *Script_Constructor) -> bool {
     
     return true;
 }
+
+
+// Local_Variable :: struct {
+//     local_type: enum { CONSTANT; SUBEXPR_VAL; INTERMEDIATE; EXT_VAR; };
+//     value: Any;
+// }
+
 
 
 #scope_module

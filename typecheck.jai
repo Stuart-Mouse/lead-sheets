@@ -47,9 +47,7 @@ typecheck_node :: (
         
         node.value_type = variables[node.variable_index].binding.type;
         
-        // TODO: add common method for adapting variable type/value to internal
-        
-        stack_required := node.value_type.runtime_size;
+        stack_required := get_stack_required(node.value_type);
         if check_flags & .EXPECT_LVALUE {
             stack_required = size_of(*void);
             node.flags |= .L_VALUE;
@@ -84,7 +82,12 @@ typecheck_node :: (
         
         dbg_print("operation flags: %\n", node.operation.flags);
         
-        stack_required := node.value_type.runtime_size + left_stack_required + right_stack_required;
+        if node.value_type.type == .STRUCT {
+            node.operation.dst = Dynamic_New(node.value_type,, ctxt.allocator);
+            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.operation.dst, node);
+        }
+        
+        stack_required := get_stack_required(node.value_type) + left_stack_required + right_stack_required;
         return node.value_type, stack_required;
         
       case .PROCEDURE_CALL;
@@ -113,7 +116,12 @@ typecheck_node :: (
         procedure := *procedures[node.procedure_call.procedure_index];
         node.value_type = procedure.type.return_types[0];
         
-        stack_required += node.value_type.runtime_size;
+        if node.value_type.type == .STRUCT {
+            node.procedure_call.dst = Dynamic_New(node.value_type,, ctxt.allocator);
+            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.procedure_call.dst, node);
+        }
+        
+        stack_required += get_stack_required(node.value_type);
         return node.value_type, stack_required;
         
       case .SUBSCRIPT;
@@ -121,8 +129,21 @@ typecheck_node :: (
         return null, 0;
         
       case .MEMBER;
-        dbg_print("ERROR: unimplemented case for .MEMBER\n");
-        return null, 0;
+        base_type := typecheck_node(ctxt, node.member.base);
+        if base_type.type != .STRUCT  return null, 0;
+        
+        member_ti := get_field(xx base_type, node.member.identifier);
+        if member_ti == null  return null, 0;
+        
+        node.value_type    = member_ti.type;
+        node.member.offset = member_ti.offset_in_bytes;
+        
+        stack_required := get_stack_required(node.value_type);
+        if check_flags & .EXPECT_LVALUE {
+            stack_required = size_of(*void);
+            node.flags |= .L_VALUE;
+        }
+        return node.value_type, stack_required;
     }
     
     return null, 0;
