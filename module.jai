@@ -45,6 +45,9 @@ Script :: struct {
     
     stack_base : *void;
     stack_size : int;
+    
+    stack_ptr  : *void; // state by execution procs
+    
     dyncall_vm : *DCCallVM;
     
     Flags :: enum_flags {
@@ -68,6 +71,35 @@ free_script :: (using script: *Script) {
 
 alloc_node :: (script: *Script) -> *AST.Node {
     return New(AST.Node,, script.allocator);
+}
+
+// the by_ptr arguments are primarily to ease code gen for the builtin binary ops
+// but it also allows us to more breifly capture the pattern of checking if the value is a struct 
+// by_ptr should always be true for aggregate (struct/array) types, or really any type larger than a register
+// these have to be macros so that we can modify the stack pointer and get the address of the value pointer itself
+
+PTR_SIZE :: size_of(*void);
+
+stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) {
+    if by_ptr {
+        memcpy(stack_ptr.*, value_pointer, PTR_SIZE);
+    } else {
+        if value_pointer.* != null {
+            memcpy(stack_ptr.*, value_pointer.*, PTR_SIZE);
+        } else {
+            dbg_print("WARNING: value_pointer.* was null!\n");
+        }
+    }
+    stack_ptr.* += PTR_SIZE;
+}
+
+stack_pop :: (stack_ptr: **void, $$by_ptr := false) -> *void {
+    stack_ptr.* -= PTR_SIZE;
+    if by_ptr {
+        return (cast(**void)(stack_ptr.*)).*;
+    } else {
+        return stack_ptr.*;
+    }
 }
 
 // ensures no name conflicts
@@ -120,13 +152,14 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         return false;
     }
     
-    script.stack_size = stack_required;
-    script.stack_base = get(*script.pool, stack_required + size_of(type_of(STACK_SENTINEL_VALUE)));
+    // script.stack_size = stack_required;
+    script.stack_size = 1024;
+    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
     
     dbg_print("stack size: %\n", script.stack_size);
     dbg_print("stack base: %\n", script.stack_base);
     
-    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + stack_required);
+    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
     sentinel.* = STACK_SENTINEL_VALUE;
     
     // allocate dyncall vm that will be reused

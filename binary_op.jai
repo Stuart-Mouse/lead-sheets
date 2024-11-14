@@ -64,33 +64,47 @@ DONE;
     return false;
 }
 
-// this version takes only a single pointer (pointing to ret, left, and right, in that order)
-// thi swill be used during execution of bytecode, since we can safely presume that return value and arguments will be in proper location
-execute_builtin_operation :: (oper_idx: int, stack_ptr_ptr: **void, swap_args := false) -> bool {
-    pop :: inline (stack_ptr_ptr: **void, T: Type) -> *T {
-        stack_ptr_ptr.* -= size_of(T);
-        return cast(*T) stack_ptr_ptr.*;
-    }
-    
+execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) -> bool {
+
+    dbg_print("stack_ptr: %\n", (cast(**void)stack_ptr).*);
+
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;
         
-        FORMAT_STRING :: #string DONE
-      case %1;
-        right := pop(stack_ptr_ptr, %4);
-        left  := pop(stack_ptr_ptr, %3);
-        if swap_args  left, right = xx right, xx left;
-        ret   := cast(*%2) stack_ptr_ptr.*;
-        ret.*  = left.* %5 right.*;
-        return true;
-DONE;
+//         FORMAT_STRING :: #string DONE
+//       case %1;
+//         right := pop_value(stack_ptr, %4);
+//         left  := pop_value(stack_ptr, %3);
+//         ret   := pop_value(stack_ptr, %2);
+//         ret.*  = left.* %5 right.*;
+//         return true;
+// DONE;
         
-        append(*builder, "    if oper_idx == {\n");
+        append(*builder, "if oper_idx == {\n");
         for BUILTIN_OPERATIONS {
-            print_to_builder(*builder, FORMAT_STRING, it_index, it.ret, it.left, it.right, it.operator_ident);
+            left_is_aggr  := (cast(*Type_Info)it.left ).type == .STRUCT;
+            right_is_aggr := (cast(*Type_Info)it.right).type == .STRUCT;
+            ret_is_aggr   := (cast(*Type_Info)it.ret  ).type == .STRUCT;
+            
+            print_to_builder(*builder, "case %;\n", it_index);
+            print_to_builder(*builder, "  dbg_print(\"op: % % %\\n\");\n", it.left, it.operator_ident, it.right);
+            
+            print_to_builder(*builder, "  right := cast(*%) stack_pop(stack_ptr, %);\n", it.right, right_is_aggr);
+            print_to_builder(*builder, "  left  := cast(*%) stack_pop(stack_ptr, %);\n", it.left, left_is_aggr);
+            print_to_builder(*builder, "  ret   := cast(*%) stack_pop(stack_ptr, %);\n", it.ret, ret_is_aggr);
+            
+            print_to_builder(*builder, "  dbg_print(\"left  (%%): % %%\\n\", left,  left.*);\n", it.left);
+            print_to_builder(*builder, "  dbg_print(\"right (%%): % %%\\n\", right, right.*);\n", it.right);
+            
+            print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.operator_ident);
+            print_to_builder(*builder, "  dbg_print(\"ret   (%%): % %%\\n\", ret,   ret.*);\n", it.ret);
+            
+            print_to_builder(*builder, "  stack_push(stack_ptr, xx *ret, %);\n", ret_is_aggr);
+            
+            append(*builder, "  return true;\n");
         }
-        append(*builder, "    }\n");
+        append(*builder, "}\n");
         
         return builder_to_string(*builder);
     }
@@ -98,5 +112,4 @@ DONE;
     assert(false, "unreachable");
     return false;
 }
-
 

@@ -20,7 +20,7 @@ AST :: struct {
         // for procedure arguments, points to next argument node
         next  : *AST.Node;
         flags : Flags;
-        Flags :: enum_flags { L_VALUE; };
+        Flags :: enum_flags { L_VALUE; UNARY_OP; };
         
         union {
             variable_index  : int; // index to variable in Script.variables array 
@@ -196,11 +196,12 @@ execute_script :: (script: *Script) -> bool {
         dbg_print("Error: cannot execute script before AST has been typechecked!\n");
         return false;
     }
-    
+        
     dbg_print("executing script with % statements\n", script.ast.statements.count);
     for * script.ast.statements {
         dbg_print("executing statement #%\n", it_index);
-        if !execute_statement(script, it, script.stack_base)  return false;
+        script.stack_ptr = script.stack_base;
+        if !execute_statement(script, it)  return false;
     }
     
     sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
@@ -212,30 +213,34 @@ execute_script :: (script: *Script) -> bool {
     return true;
 }
 
-execute_statement :: (
-    script : *Script, 
-    statement   : *AST.Statement,
-    stack_pointer: *void
-) -> bool {
+execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
     if statement.type == {
       case .ASSIGNMENT;
-        if !execute_node(script, statement.assignment.left, stack_pointer) {
+        if !execute_node(script, statement.assignment.left) {
             dbg_print("failed to evaluate left side of assignment statement!\n");
             return false;
         }
-        if !execute_node(script, statement.assignment.right, stack_pointer + size_of(*void)) {
+        if !execute_node(script, statement.assignment.right) {
             dbg_print("failed to evaluate right side of assignment statement!\n");
             return false;
         }
         
-        l_value_ptr := (cast(**void)stack_pointer).*;
-        r_value_ptr := stack_pointer + size_of(*void);
+        l_type := statement.assignment.left.value_type;
+        r_type := statement.assignment.right.value_type;
         
-        if statement.assignment.right.value_type.type == .STRUCT {
-            r_value_ptr = (cast(**void)r_value_ptr).*;
-        }
+        // r_value_ptr: *void;
+        // if statement.assignment.right.value_type.type == .STRUCT {
+        //     r_value_ptr = pop_value(*script.stack_ptr, **void);
+        // } else {
+        //     r_value_ptr = pop_ptr(*script.stack_ptr, r_size);
+        // }
+        r_value_ptr := stack_pop(*script.stack_ptr, r_type.type == .STRUCT);
+        l_value_ptr := stack_pop(*script.stack_ptr, true);
         
-        memcpy(l_value_ptr, r_value_ptr, get_stack_required(statement.assignment.right.value_type));
+        dbg_print("l_value_ptr: % (%)\n", l_value_ptr, Any.{l_type, l_value_ptr});
+        dbg_print("r_value_ptr: % (%)\n", r_value_ptr, Any.{r_type, r_value_ptr});
+        
+        memcpy(l_value_ptr, r_value_ptr, r_type.runtime_size);
         
         return true;
         
@@ -252,118 +257,113 @@ get_stack_required :: inline (ti: *Type_Info) -> int {
     }
 }
 
-execute_node :: (
-    script : *Script, 
-    node   : *AST.Node,
-    stack_pointer: *void
-) -> bool {
+// push_ptr :: inline (stack_ptr: **void, value_ptr: *void, size: int) {
+//     memcpy(stack_ptr.*, value_ptr, size);
+//     stack_ptr.* += size;
+// }
+
+// push_value :: inline (stack_ptr: **void, value_ptr: *$T) {
+//     memcpy(stack_ptr.*, value_ptr, size_of(T));
+//     stack_ptr.* += size_of(T);
+// }
+
+// // be careful when using, as if you push again before using the value pointed to, it will be overwritten
+// pop_ptr :: inline (stack_ptr: **void, size: int) -> *void {
+//     stack_ptr.* -= size;
+//     return stack_ptr.*;
+// }
+
+// pop_value :: inline (stack_ptr: **void, $T: Type) -> T {
+//     stack_ptr.* -= size_of(T);
+//     return (cast(*T)stack_ptr.*).*;
+// }
+
+
+execute_node :: (script : *Script, node: *AST.Node) -> bool {
     dbg_print("evaluating node %: %\n", node, node.type);
-    dbg_print("stack_pointer offset: %\n", stack_pointer - script.stack_base);
     
     #if DEBUG {
         context.dbg_print_indent += 1;
         defer context.dbg_print_indent -= 1;
     }
     
+    dbg_print("stack_pointer offset: %  (%)\n", script.stack_ptr - script.stack_base, script.stack_ptr);
+    
     if node.type == {
       case .NUMBER;
-        memcpy(stack_pointer, *node.number, size_of(float32));
+        stack_push(*script.stack_ptr, xx **node.number);
+        dbg_print("returning number %\n", node.number);
         return true;
         
       case .VARIABLE;
         variable := node_get_variable(script, node);
-        if node.flags & .L_VALUE {
-            // (cast(**void)stack_pointer).* = *variable.binding.value_pointer;
-            memcpy(stack_pointer, *variable.binding.value_pointer, size_of(*void));
-            return true;
-        }
-        
-        if node.value_type.type == .STRUCT {
-            // (cast(**void)stack_pointer).* = *variable.binding.value_pointer;
-            memcpy(stack_pointer, *variable.binding.value_pointer, size_of(*void));
-            return true;
-        }
+        // if node.flags & .L_VALUE 
+        // || node.value_type.type == .STRUCT {
+        //     stack_push(*script.stack_ptr, *variable.binding.value_pointer);
+        //     return true;        
+        // }
         
         // TODO: add back in code for adapting variable to internal type
-        memcpy(stack_pointer, variable.binding.value_pointer, variable.binding.type.runtime_size);
+        // memcpy(stack_pointer, variable.binding.value_pointer, variable.binding.type.runtime_size);
+        stack_push(*script.stack_ptr, *variable.binding.value_pointer, (node.flags & .L_VALUE) || (node.value_type.type == .STRUCT));
         return true;
         
       case .OPERATION;
-        sp := stack_pointer;
-        dbg_print("operation: %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node);
+        // TODO: in typecheck, actually store pop size for proceudre calls
+        stack_ptr_before := script.stack_ptr;
         
-        dst := sp;
-        if node.value_type.type == .STRUCT {
-            // write pointer to struct onto stack as return value
-            (cast(**void)dst).* = node.operation.dst; 
-            // replace dst for operation with pointer to actual struct value
-            dst = node.operation.dst;
-        }
-        sp += get_stack_required(node.value_type);
+        // if node.value_type.type == .STRUCT {
+        //     push_value(*script.stack_ptr, *node.operation.dst);
+        // } else {
+        //     script.stack_ptr += node.value_type.runtime_size;
+        // }
+        stack_push(*script.stack_ptr, *node.operation.dst, node.value_type.type == .STRUCT);
         
-        left := sp;
-        if !execute_node(script, node.operation.left, sp) {
-            return false;
-        }
-        sp += get_stack_required(node.operation.left.value_type);
+        stack_ptr_after := script.stack_ptr;
         
-        right := sp;
-        if !execute_node(script, node.operation.right, sp) {
-            return false;
-        }
+        if !execute_node(script, node.operation.left )  return false;
+        if !execute_node(script, node.operation.right)  return false;
         
-        // account for extra indirection if left or right are structs
-        if node.operation.left.value_type.type == .STRUCT {
-            dbg_print("adjusting left operand ptr for binary op % on node %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node.operation.left);
-            dbg_print("left type is %\n", as_type(node.operation.left.value_type));
-            dbg_print("% (%) -> %\n", left, left-script.stack_base, (cast(**void)left).*);
-            left = (cast(**void)left).*;
-        }
-        if node.operation.right.value_type.type == .STRUCT {
-            dbg_print("adjusting right operand ptr for binary op % on node %\n", BUILTIN_OPERATIONS[node.operation.operator_index], node.operation.right);
-            dbg_print("right type is %\n", as_type(node.operation.right.value_type));
-            dbg_print("% (%) -> %\n", right, right-script.stack_base, (cast(**void)right).*);
-            right = (cast(**void)right).*;
-        }
-        
-        if (node.operation.flags & .SWAP_ARGS) {
-            dbg_print("swapping operands\n");
-            left, right = right, left;
-        }
-        
-        if node.operation.flags & .IS_BUILTIN {
-            if !execute_builtin_operation(node.operation.operator_index, left, right, dst) {
-                return false;
-            }
+        // TODO: replace operation nodes with a procedure call node if it is not a builtin operator
+        if node.operation.flags & .IS_BUILTIN {        
+            if !execute_builtin_operation(node.operation.operator_index, *script.stack_ptr)  return false;
         } else {
             procedure := node_get_operation(script, node);
-            if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer) {
-                return false;
-            }
+            if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_ptr_before)  return false;
+            script.stack_ptr = stack_ptr_after;
         }
         
         return true;
         
       case .PROCEDURE_CALL;
-        dbg_print("procedure: %\n", node_get_procedure(script, node).name);
-        sp := stack_pointer;
+        // dbg_print("procedure: %\n", node_get_procedure(script, node).name);
+        sp_before := script.stack_ptr;
+        // if node.value_type.type == .STRUCT {
+        //     push_value(*script.stack_ptr, *node.procedure_call.dst);
+        // } else {
+        //     script.stack_ptr += node.value_type.runtime_size;
+        // }
+        stack_push(*script.stack_ptr, *node.procedure_call.dst, node.value_type.type == .STRUCT);
         
-        if node.value_type.type == .STRUCT {
-            // write pointer to struct onto stack as return value
-            (cast(**void)sp).* = node.procedure_call.dst; 
-        }
-        sp += get_stack_required(node.value_type);
+        sp_after := script.stack_ptr;
         
         for node.procedure_call.arg_nodes {
-            execute_node(script, it, sp);
-            sp += get_stack_required(it.value_type);
+            if !execute_node(script, it)  return false;
         }
         
         procedure := node_get_procedure(script, node);
-        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_pointer) {
+        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, sp_before) {
             log("Failed while trying to call procedure '%'!", procedure.name);
             return false;
         }
+        
+        dbg_print("sp before: %\n", sp_before);
+        dbg_print("sp after: %\n", sp_after);
+        dbg_print("returning result of procedure: %\n", Any.{ node.value_type, node.procedure_call.dst });
+        dbg_print("sp before.*: %\n", (cast(**void)sp_before).*);
+        dbg_print("node.procedure_call.dst: %\n", node.procedure_call.dst);
+        
+        script.stack_ptr = sp_after;
         
         return true;
         
@@ -375,6 +375,10 @@ execute_node :: (
     return false;
 }
 
+/*
+    Because we know that all arguments will be contiguous on the stack, we simply bump the stack pointer for each argument and push.
+    Of course, we still need to know the argument types, so we need the *Type_Info_Procedure.
+*/
 do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, stack_pointer: *void) -> bool {
     dcReset(vm);
     
@@ -389,8 +393,17 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     
     return_type := proc_type.return_types[0];
     
+    dbg_print("calling proc %\n", as_type(proc_type));
+    
+    #if DEBUG {
+        context.dbg_print_indent += 1;
+        defer context.dbg_print_indent -= 1;
+    }
+    
+    dbg_print("args: ");
+    
     arg_ptr := stack_pointer + return_type.runtime_size;
-    for arg_type: proc_type.argument_types {
+    for arg_type: proc_type.argument_types {    
         if arg_type.type == {
           case .POINTER;
             dcArgPointer(vm, (cast(*DCpointer)arg_ptr).*);
@@ -453,11 +466,15 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
         }
         
         if arg_type.type == .STRUCT {
+            dbg_print("% ", Any.{arg_type, (cast(**void)arg_ptr).*});
             arg_ptr += size_of(*void);
         } else {
-            arg_ptr += arg_type.runtime_size;
+            dbg_print("% ", Any.{arg_type, arg_ptr});
+            arg_ptr += size_of(*void);
         }
     }
+    
+    dbg_print("\n");
     
     if return_type.type == .STRUCT {
         dcArgPointer(vm, (cast(**void)stack_pointer).*);
@@ -470,33 +487,6 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     return true;
 }
 
-
-/*
-    Notes about executing scripts
-    
-    (DONE) for first step, we can just pass 'stack_pointer' argument to execute_node so that it knows where to store data behind the Any it returns
-    (DONE) second step we can remove the need to return the Any, since the parent node will just know where the value is and its type
-    (DONE) remove need for passing Any's to dyncall
-    (DONE) store resolved value_type on node itself
-    
-    we can't remove certain redundancies from ast node because they are required for printing ast
-    
-    we can remove all redundancies if we actually generate a bytecode for execution
-        but I am not quite ready to do this yet until some other things are implemented
-            majorly, we need to figure out if/for, lvalues, indexing, statement-level organization
-    
-    we may want to rmeove the Expression type, and also just treat statements as a type of AST node
-    that way we can just allocate statement nodes in the pool same as expression nodes
-    
-    thinking about how we do stack pointer
-        right now it kind of grows up
-        I thought for a moment maybe we could assign stack offsets / dst any on each node if we grew down instead, but that's not quite right
-        we could potentially assign stack positions for each node's result value on first typecheck pass, but it would be wonky and we'd end up with gaps in the stack
-        so it seems better to just do as we have done
-    
-    
-    
-*/
 
 
 #scope_module

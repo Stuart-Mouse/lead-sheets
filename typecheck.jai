@@ -77,7 +77,13 @@ typecheck_node :: (
         }
         dbg_print("resolved to operator index %\n", node.operation.operator_index);
         
-        if swap_args   node.operation.flags |= .SWAP_ARGS;
+        if swap_args {
+            node.operation.flags |= .SWAP_ARGS;
+            // just swap left and right sides of binary operator
+            // potentially this could create inconsistency in evaluation order if calling procedure with side effects
+            // but that's probably not a real concern...
+            node.operation.left, node.operation.right = node.operation.right, node.operation.left;
+        }
         if is_builtin  node.operation.flags |= .IS_BUILTIN;
         
         dbg_print("operation flags: %\n", node.operation.flags);
@@ -129,21 +135,24 @@ typecheck_node :: (
         return null, 0;
         
       case .MEMBER;
-        base_type := typecheck_node(ctxt, node.member.base);
-        if base_type.type != .STRUCT  return null, 0;
+        dbg_print("ERROR: unimplemented case for .SUBSCRIPT\n");
+        return null, 0;
         
-        member_ti := get_field(xx base_type, node.member.identifier);
-        if member_ti == null  return null, 0;
+        // base_type := typecheck_node(ctxt, node.member.base);
+        // if base_type.type != .STRUCT  return null, 0;
         
-        node.value_type    = member_ti.type;
-        node.member.offset = member_ti.offset_in_bytes;
+        // member_ti := get_field(xx base_type, node.member.identifier);
+        // if member_ti == null  return null, 0;
         
-        stack_required := get_stack_required(node.value_type);
-        if check_flags & .EXPECT_LVALUE {
-            stack_required = size_of(*void);
-            node.flags |= .L_VALUE;
-        }
-        return node.value_type, stack_required;
+        // node.value_type    = member_ti.type;
+        // node.member.offset = member_ti.offset_in_bytes;
+        
+        // stack_required := get_stack_required(node.value_type);
+        // if check_flags & .EXPECT_LVALUE {
+        //     stack_required = size_of(*void);
+        //     node.flags |= .L_VALUE;
+        // }
+        // return node.value_type, stack_required;
     }
     
     return null, 0;

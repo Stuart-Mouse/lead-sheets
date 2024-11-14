@@ -257,9 +257,28 @@ when we do a member access, we will pop a struct pointer, and place back down ei
 need somewhere to place an actual array of Any's metadata for variables and constants in script
 could do another pass of ast to allocate after we have all values down
 ```
-nodes       : [] AST.Node;
-values      : [] u8;
-externals   : [] Script_Variable;
-locals      : [] Local_Variable;
+nodes               : [] AST.Node;
+struct/array values : [] u8;
+stack               : [] u8;
+externals           : [] Script_Variable;
+locals              : [] Local_Variable;
 ```
+
+Maybe we should have a value union on node for all register-size values?
+
+also, maybe we should just make push/pop on stack work explicitly only for register-size values
+    that way we can just be sure that alignment of values is not sucky
+    we probably also want to do some alignment on values allocated in local variables segment
+    this would elminate need for the get_stack_required proc, since all items would use exactly 8 bytes of stack
+
+if everything is register size, our binary op proc also gets simpler
+
+one issue though, is that for binops and procs we either have to push empty space, or we have to push a pointer to dst
+and the pointer given to the binary op execution proc mus tbe given either the stack dst or the value dst
+we can't do a pop-then-push thing for binary op or proc call, since there's no way around providing ptr to return val in struct case
+    
+    this complication makes it where we can simply use a push
+
+if all items on stack are the same size, then we easily can know how far to set back stack pointer for proc call case
+    arg_count + 1 (for return value);
 

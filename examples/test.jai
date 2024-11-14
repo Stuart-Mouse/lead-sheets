@@ -12,6 +12,10 @@ main :: () {
     r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
     DONE;
     
+    // input := "r1 = z;";
+    // input := "r1 = Vec2(3, 4) * 2;";
+    // input := "r2 = x;";
+    
     script: Script;
     
     register_procedure(*script, "Vec2", (x: float, y: float) -> Vector2 { return .{ x, y }; });
