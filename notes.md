@@ -282,3 +282,13 @@ we can't do a pop-then-push thing for binary op or proc call, since there's no w
 if all items on stack are the same size, then we easily can know how far to set back stack pointer for proc call case
     arg_count + 1 (for return value);
 
+
+Unfortunately, its not completely trivial to desugar overloaded operators directly into procedure calls
+we should be able to do this no problem once we are in bytecode, but for executing from AST it creates problems
+    not that we couldn't do it, but it seems like it would create some unnecessary complexity
+
+...unless we just decide to put operator overlaods into the same array as script procedures
+    maybe this is the way to go since it would allow us to make this transformation in the typechecking step
+        and this would allow us to simplify code in several places
+
+also, since we will need to change how procedures are typechecked anywyas, this may be an even bigger help to simplify in the first place

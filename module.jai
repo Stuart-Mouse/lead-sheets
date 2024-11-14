@@ -146,8 +146,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     script.flags |= .AST_CONSTRUCTED;
     
     dbg_print("\nTYPECHECKING SCRIPT\n");
-    stack_required, ok := typecheck_script(*constructor);
-    if !ok {
+    if !typecheck_script(*constructor) {
         print("failed to typecheck script!\n");
         return false;
     }

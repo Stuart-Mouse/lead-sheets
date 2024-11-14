@@ -19,8 +19,6 @@ BUILTIN_OPERATIONS :: (
     .{ "/", Vector2, float,   Vector2, false },
 ];
 
-Operation_Flags :: enum_flags { SWAP_ARGS; IS_BUILTIN; };
-
 resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, right_type: *Type_Info) -> (index: int, swap_args: bool) {
     // TODO: could be faster if we generate a switch case, but not going to worry about that for now
     for BUILTIN_OPERATIONS {

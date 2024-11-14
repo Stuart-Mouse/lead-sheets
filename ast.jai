@@ -20,7 +20,7 @@ AST :: struct {
         // for procedure arguments, points to next argument node
         next  : *AST.Node;
         flags : Flags;
-        Flags :: enum_flags { L_VALUE; UNARY_OP; };
+        Flags :: enum_flags { L_VALUE; UNARY_OP; IS_BUILTIN; SWAP_ARGS; };
         
         union {
             variable_index  : int; // index to variable in Script.variables array 
@@ -35,7 +35,6 @@ AST :: struct {
             operation: struct {
                 operator_index  : int; // index to either a builtin operator or an operator procedure
                 left, right     : *AST.Node;
-                flags           : Operation_Flags;
                 dst             : *void;
             }
             member: struct {
@@ -130,7 +129,7 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
         
       case .OPERATION;
         if script.flags & .AST_TYPECHECKED {
-            if node.operation.flags & .IS_BUILTIN {
+            if node.flags & .IS_BUILTIN {
                 return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
             }
             return tprint(".OPERATION: %", node_get_operation(script, node).name);
@@ -170,7 +169,7 @@ node_get_procedure :: (script: *Script, node: AST.Node) -> *Script_Procedure {
 // TODO: probably rename to node_get_operation_procedure
 node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
     assert(node.type == .OPERATION);
-    assert(node.operation.flags & .IS_BUILTIN == 0);
+    assert(node.flags & .IS_BUILTIN == 0);
     return *script.operators[node.operation.operator_index];
 }
 
@@ -325,7 +324,7 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         if !execute_node(script, node.operation.right)  return false;
         
         // TODO: replace operation nodes with a procedure call node if it is not a builtin operator
-        if node.operation.flags & .IS_BUILTIN {        
+        if node.flags & .IS_BUILTIN {        
             if !execute_builtin_operation(node.operation.operator_index, *script.stack_ptr)  return false;
         } else {
             procedure := node_get_operation(script, node);
