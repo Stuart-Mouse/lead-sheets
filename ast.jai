@@ -401,7 +401,7 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     
     dbg_print("args: ");
     
-    arg_ptr := stack_pointer + return_type.runtime_size;
+    arg_ptr := stack_pointer + PTR_SIZE;
     for arg_type: proc_type.argument_types {    
         if arg_type.type == {
           case .POINTER;
