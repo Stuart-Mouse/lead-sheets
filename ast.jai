@@ -20,7 +20,7 @@ AST :: struct {
         // for procedure arguments, points to next argument node
         next  : *AST.Node;
         flags : Flags;
-        Flags :: enum_flags { L_VALUE; UNARY_OP; IS_BUILTIN; SWAP_ARGS; };
+        Flags :: enum_flags { L_VALUE; UNARY_OP; OVERLOAD_OP; };
         
         union {
             variable_index  : int; // index to variable in Script.variables array 
@@ -43,9 +43,8 @@ AST :: struct {
                 identifier  : string;
             }
             subscript: struct {
-                base    : *AST.Node;
-                offset  : int;
-                index   : int;
+                base          : *AST.Node;
+                indexing_expr : *AST.Node;
             }
         }
     }
@@ -63,10 +62,8 @@ AST :: struct {
         }
     }
     
-    // for now all nodes are stored in one big array
-    // later maybe we put nodes in separate arrays for each statement ?
-    // nodes      : [..] Node;
-    statements : [..] Statement;
+    // TODO: turn statements into a type of node. no reason for them to be an entirely separate struct
+    statements: [..] Statement;
 }
 
 free_ast :: (ast: *AST) {
@@ -129,10 +126,7 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
         
       case .OPERATION;
         if script.flags & .AST_TYPECHECKED {
-            if node.flags & .IS_BUILTIN {
-                return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
-            }
-            return tprint(".OPERATION: %", node_get_operation(script, node).name);
+            return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
         } else {
             return node.src_text;
         }
@@ -172,6 +166,10 @@ node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
     assert(node.flags & .IS_BUILTIN == 0);
     return *script.operators[node.operation.operator_index];
 }
+
+
+
+// TODO: move execute procs to their own file, reimplement evaluate procs in their own file as well
 
 /*
     TODO: we should differentiate execute and evaluate procs
@@ -227,13 +225,7 @@ execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
         l_type := statement.assignment.left.value_type;
         r_type := statement.assignment.right.value_type;
         
-        // r_value_ptr: *void;
-        // if statement.assignment.right.value_type.type == .STRUCT {
-        //     r_value_ptr = pop_value(*script.stack_ptr, **void);
-        // } else {
-        //     r_value_ptr = pop_ptr(*script.stack_ptr, r_size);
-        // }
-        r_value_ptr := stack_pop(*script.stack_ptr, r_type.type == .STRUCT);
+        r_value_ptr := stack_pop(*script.stack_ptr, is_aggr(r_type));
         l_value_ptr := stack_pop(*script.stack_ptr, true);
         
         dbg_print("l_value_ptr: % (%)\n", l_value_ptr, Any.{l_type, l_value_ptr});
@@ -247,36 +239,6 @@ execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
         return false;
     }
 }
-
-get_stack_required :: inline (ti: *Type_Info) -> int {
-    if ti.type == .STRUCT {
-        return size_of(*void);
-    } else {
-        return ti.runtime_size;
-    }
-}
-
-// push_ptr :: inline (stack_ptr: **void, value_ptr: *void, size: int) {
-//     memcpy(stack_ptr.*, value_ptr, size);
-//     stack_ptr.* += size;
-// }
-
-// push_value :: inline (stack_ptr: **void, value_ptr: *$T) {
-//     memcpy(stack_ptr.*, value_ptr, size_of(T));
-//     stack_ptr.* += size_of(T);
-// }
-
-// // be careful when using, as if you push again before using the value pointed to, it will be overwritten
-// pop_ptr :: inline (stack_ptr: **void, size: int) -> *void {
-//     stack_ptr.* -= size;
-//     return stack_ptr.*;
-// }
-
-// pop_value :: inline (stack_ptr: **void, $T: Type) -> T {
-//     stack_ptr.* -= size_of(T);
-//     return (cast(*T)stack_ptr.*).*;
-// }
-
 
 execute_node :: (script : *Script, node: *AST.Node) -> bool {
     dbg_print("evaluating node %: %\n", node, node.type);
@@ -296,78 +258,103 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         
       case .VARIABLE;
         variable := node_get_variable(script, node);
-        // if node.flags & .L_VALUE 
-        // || node.value_type.type == .STRUCT {
-        //     stack_push(*script.stack_ptr, *variable.binding.value_pointer);
-        //     return true;        
-        // }
-        
-        // TODO: add back in code for adapting variable to internal type
-        // memcpy(stack_pointer, variable.binding.value_pointer, variable.binding.type.runtime_size);
-        stack_push(*script.stack_ptr, *variable.binding.value_pointer, (node.flags & .L_VALUE) || (node.value_type.type == .STRUCT));
+        by_ptr: bool = (node.flags & .L_VALUE) || (is_aggr(node.value_type));
+        stack_push(*script.stack_ptr, *variable.binding.value_pointer, by_ptr);
         return true;
         
       case .OPERATION;
-        // TODO: in typecheck, actually store pop size for proceudre calls
-        stack_ptr_before := script.stack_ptr;
-        
-        // if node.value_type.type == .STRUCT {
-        //     push_value(*script.stack_ptr, *node.operation.dst);
-        // } else {
-        //     script.stack_ptr += node.value_type.runtime_size;
-        // }
-        stack_push(*script.stack_ptr, *node.operation.dst, node.value_type.type == .STRUCT);
-        
-        stack_ptr_after := script.stack_ptr;
+        stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
         
         if !execute_node(script, node.operation.left )  return false;
         if !execute_node(script, node.operation.right)  return false;
         
-        // TODO: replace operation nodes with a procedure call node if it is not a builtin operator
-        if node.flags & .IS_BUILTIN {        
-            if !execute_builtin_operation(node.operation.operator_index, *script.stack_ptr)  return false;
-        } else {
-            procedure := node_get_operation(script, node);
-            if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, stack_ptr_before)  return false;
-            script.stack_ptr = stack_ptr_after;
-        }
+        // TODO: maybe use the simpler version of execute_builtin_operation, but with this more dynamic stack popping
+        //       this is probably a little bit slower, but it may be worth it to reduce code bloat
+        //       the other benefit(?) of going this way is that we could do the swap args swizzle here, rather than swap them at the ast level
+        // op    := BUILTIN_OPERATIONS[node.operation.operator_index];
+        // right := stack_pop    (*script.stack_ptr, is_aggr(op.right));
+        // left  := stack_pop    (*script.stack_ptr, is_aggr(op.left ));
+        // ret   := stack_get_top( script.stack_ptr, is_aggr(op.ret  ));
+        // if !execute_builtin_operation(node.operation.operator_index, left, right, ret)  return false;
+        
+        execute_builtin_operation(node.operation.operator_index, *script.stack_ptr);
         
         return true;
         
       case .PROCEDURE_CALL;
-        // dbg_print("procedure: %\n", node_get_procedure(script, node).name);
-        sp_before := script.stack_ptr;
-        // if node.value_type.type == .STRUCT {
-        //     push_value(*script.stack_ptr, *node.procedure_call.dst);
-        // } else {
-        //     script.stack_ptr += node.value_type.runtime_size;
-        // }
-        stack_push(*script.stack_ptr, *node.procedure_call.dst, node.value_type.type == .STRUCT);
+        // TODO: this will have to be refactored just a bit later for bytecode (to push result ptr after popping args)
+        //       but its fine for now and adding array subscripts / struct member access is more pressing
         
-        sp_after := script.stack_ptr;
+        return_ptr := script.stack_ptr;
+        stack_push(*script.stack_ptr, *node.procedure_call.dst, is_aggr(node.value_type));
+        arg_ptr := script.stack_ptr;
         
         for node.procedure_call.arg_nodes {
             if !execute_node(script, it)  return false;
         }
         
         procedure := node_get_procedure(script, node);
-        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, sp_before) {
+        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, arg_ptr, return_ptr) {
             log("Failed while trying to call procedure '%'!", procedure.name);
             return false;
         }
         
-        dbg_print("sp before: %\n", sp_before);
-        dbg_print("sp after: %\n", sp_after);
-        dbg_print("returning result of procedure: %\n", Any.{ node.value_type, node.procedure_call.dst });
-        dbg_print("sp before.*: %\n", (cast(**void)sp_before).*);
-        dbg_print("node.procedure_call.dst: %\n", node.procedure_call.dst);
-        
-        script.stack_ptr = sp_after;
-        
+        script.stack_ptr = arg_ptr;
         return true;
         
       case .MEMBER;
+        if !execute_node(script, node.member.base)  return false;  
         
+        base_ptr := stack_pop(*script.stack_ptr, true);
+        stack_push(*script.stack_ptr, *(base_ptr + node.member.offset), is_aggr(node.value_type) || (node.flags & .L_VALUE == .L_VALUE));
+        return true;
+        
+      case .SUBSCRIPT;
+        if !execute_node(script, node.subscript.base)  return false;      
+        if !execute_node(script, node.subscript.indexing_expr)  return false;      
+        
+        dbg_print("val: %\n", Any.{ type_info(float), script.stack_ptr-8 });
+
+        index_ptr := stack_pop(*script.stack_ptr);
+        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
+        
+        base_ptr  := stack_pop(*script.stack_ptr, true);
+        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
+                
+        ti_array := cast(*Type_Info_Array) node.subscript.base.value_type;
+        indexing_type := node.subscript.indexing_expr.value_type;
+        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
+        
+        // get index as s64
+        // TODO: maybe improve this
+        //       for bytecode, could do an instruction for inplace type cast
+        index: s64;
+        if !remap_int(index, Any.{ indexing_type, index_ptr })
+            dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
+        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
+        
+        
+        // TODO: better method of doing runtime indexing checks ?
+        arr_count: int;
+        if ti_array.array_type == {
+          case .FIXED;
+            arr_count = ti_array.array_count;
+            
+          case .RESIZABLE; #through;
+          case .VIEW; 
+            raw_array := cast(*Array_View_64) base_ptr;
+            arr_count  = raw_array.count;
+            base_ptr   = raw_array.data;
+        }
+        
+        dbg_print("index: %\n", index);
+        if index < 0 || index >= arr_count {
+            log("Runtime Error: array index '%' was out of bounds [0 - %)!", index, arr_count);
+            return false;
+        }
+        
+        stack_push(*script.stack_ptr, *(base_ptr + (index * node.value_type.runtime_size)), is_aggr(node.value_type) || (node.flags & .L_VALUE == .L_VALUE));
+        return true;
     }
     
     assert(false);
@@ -378,7 +365,7 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
     Because we know that all arguments will be contiguous on the stack, we simply bump the stack pointer for each argument and push.
     Of course, we still need to know the argument types, so we need the *Type_Info_Procedure.
 */
-do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, stack_pointer: *void) -> bool {
+do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, arg_ptr: *void, return_ptr: *void) -> bool {
     dcReset(vm);
     
     assert(proc_type.return_types.count == 1);
@@ -401,7 +388,6 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     
     dbg_print("args: ");
     
-    arg_ptr := stack_pointer + PTR_SIZE;
     for arg_type: proc_type.argument_types {    
         if arg_type.type == {
           case .POINTER;
@@ -438,33 +424,34 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
                 dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
             }
             
+          case .ARRAY;
+            ti_array := cast(*Type_Info_Array) arg_type;
+            if ti_array.array_type == {
+              case .VIEW;
+                ag := find_or_make_and_register_DCaggr(type_info(Array_View_64));
+                if !ag  return false;
+                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
+                
+              case .RESIZABLE;
+                ag := find_or_make_and_register_DCaggr(type_info(Resizable_Array));
+                if !ag  return false;
+                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
+                
+              case;
+                if !jai_call {
+                    log("Error: cannot pass a fixed array to a #c_call procedure!\n");
+                    return false;
+                }
+                
+                ag := find_or_make_and_register_DCaggr(xx ti_array);
+                if !ag  return false;
+                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
+            }
+            
           case; assert(false, "ERROR: Unimplemented case, unsupported type.");
-          // case .ARRAY;
-          //   ti_array := cast(*Type_Info_Array) arg_type;
-          //   if ti_array.array_type == {
-          //     case .VIEW;
-          //       ag := find_or_make_and_register_DCaggr(type_info(Array_View_64));
-          //       if !ag  return false;
-          //       dcArgAggr(vm, ag, arg_ptr);
-                
-          //     case .RESIZABLE;
-          //       ag := find_or_make_and_register_DCaggr(type_info(Resizable_Array));
-          //       if !ag  return false;
-          //       dcArgAggr(vm, ag, arg_ptr);
-                
-          //     case;
-          //       if !jai_call {
-          //           log("Error: cannot pass a fixed array to a #c_call procedure!\n");
-          //           return false;
-          //       }
-                
-          //       ag := find_or_make_and_register_DCaggr(xx ti_array);
-          //       if !ag  return false;
-          //       dcArgAggr(vm, ag, arg_ptr);
-          //   }
         }
         
-        if arg_type.type == .STRUCT {
+        if is_aggr(arg_type) {
             dbg_print("% ", Any.{arg_type, (cast(**void)arg_ptr).*});
             arg_ptr += size_of(*void);
         } else {
@@ -475,29 +462,21 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     
     dbg_print("\n");
     
-    if return_type.type == .STRUCT {
-        dcArgPointer(vm, (cast(**void)stack_pointer).*);
+    if is_aggr(return_type) {
+        dcArgPointer(vm, (cast(**void)return_ptr).*);
     } else {
-        dcArgPointer(vm, stack_pointer);
+        dcArgPointer(vm, return_ptr);
     }
     
     dcCallVoid(vm, xx proc_ptr);
     
+    if is_aggr(return_type) {
+        dbg_print("returning result of procedure: %\n", Any.{ return_type, (cast(**void)return_ptr).* });
+    } else {
+        dbg_print("returning result of procedure: %\n", Any.{ return_type, return_ptr });
+    }
+    
     return true;
 }
 
-
-
-#scope_module
-
-DEBUG :: true;
-
-#if DEBUG {#add_context dbg_print_indent: int;}
-
-dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -> bytes_printed: s64 {
-    #if DEBUG {
-        for 0..context.dbg_print_indent  print("  ");
-        return print(format_string, ..args, to_standard_error);
-    }
-}
 

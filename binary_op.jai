@@ -58,11 +58,17 @@ DONE;
         return builder_to_string(*builder);
     }
     
-    assert(false, "unreachable");
+    assert(false, "Called execute_builtin_operation with an invalid operation index.");
     return false;
 }
 
-execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) -> bool {
+// this version may not be worth it
+// because we will still probably need the other version for eval procs
+// and this one creates more code bloat
+// but, it does bake the stack pops so that we don't have to lookup the operator types 
+// this is not a big deal for the exec procs, but for the bytecode, it could be a considerable performance loss 
+// in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
+execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) {
 
     dbg_print("stack_ptr: %\n", (cast(**void)stack_ptr).*);
 
@@ -70,44 +76,24 @@ execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) -> bool {
     #insert -> string {
         builder: String_Builder;
         
-//         FORMAT_STRING :: #string DONE
-//       case %1;
-//         right := pop_value(stack_ptr, %4);
-//         left  := pop_value(stack_ptr, %3);
-//         ret   := pop_value(stack_ptr, %2);
-//         ret.*  = left.* %5 right.*;
-//         return true;
-// DONE;
-        
         append(*builder, "if oper_idx == {\n");
         for BUILTIN_OPERATIONS {
-            left_is_aggr  := (cast(*Type_Info)it.left ).type == .STRUCT;
-            right_is_aggr := (cast(*Type_Info)it.right).type == .STRUCT;
-            ret_is_aggr   := (cast(*Type_Info)it.ret  ).type == .STRUCT;
-            
             print_to_builder(*builder, "case %;\n", it_index);
-            print_to_builder(*builder, "  dbg_print(\"op: % % %\\n\");\n", it.left, it.operator_ident, it.right);
             
-            print_to_builder(*builder, "  right := cast(*%) stack_pop(stack_ptr, %);\n", it.right, right_is_aggr);
-            print_to_builder(*builder, "  left  := cast(*%) stack_pop(stack_ptr, %);\n", it.left, left_is_aggr);
-            print_to_builder(*builder, "  ret   := cast(*%) stack_pop(stack_ptr, %);\n", it.ret, ret_is_aggr);
-            
-            print_to_builder(*builder, "  dbg_print(\"left  (%%): % %%\\n\", left,  left.*);\n", it.left);
-            print_to_builder(*builder, "  dbg_print(\"right (%%): % %%\\n\", right, right.*);\n", it.right);
+            print_to_builder(*builder, "  right := cast(*%) stack_pop(stack_ptr, %);\n", it.right, is_aggr(it.right));
+            print_to_builder(*builder, "  left  := cast(*%) stack_pop(stack_ptr, %);\n", it.left, is_aggr(it.left));
+            print_to_builder(*builder, "  ret   := cast(*%) stack_get_top(stack_ptr.*, %);\n", it.ret, is_aggr(it.ret));
             
             print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.operator_ident);
-            print_to_builder(*builder, "  dbg_print(\"ret   (%%): % %%\\n\", ret,   ret.*);\n", it.ret);
             
-            print_to_builder(*builder, "  stack_push(stack_ptr, xx *ret, %);\n", ret_is_aggr);
-            
-            append(*builder, "  return true;\n");
+            append(*builder, "  return;\n");
         }
         append(*builder, "}\n");
         
         return builder_to_string(*builder);
     }
     
-    assert(false, "unreachable");
-    return false;
+    assert(false, "Called execute_builtin_operation with an invalid operation index.");
+    // return false;
 }
 

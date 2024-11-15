@@ -60,37 +60,41 @@ typecheck_node :: (
         right_type := typecheck_node(ctxt, node.operation.right, check_flags);
         if !right_type  return null;
         
-        swap_args, is_builtin := false;
-        node.operation.operator_index, swap_args = resolve_builtin_operation(node.src_text, left_type, right_type);
-        if node.operation.operator_index >= 0 {
-            is_builtin = true;
-            node.value_type = cast(*Type_Info) BUILTIN_OPERATIONS[node.operation.operator_index].ret;
-            dbg_print("operator is builtin, ");
-        } else {
-            node.operation.operator_index, swap_args = resolve_procedure_index(ctxt, node.src_text, .[ left_type, right_type ], true);
-            if node.operation.operator_index == -1  return null;
-            procedure := *operators[node.operation.operator_index];
-            node.value_type = procedure.type.return_types[0];
-        }
-        dbg_print("resolved to operator index %\n", node.operation.operator_index);
+        operator_index, swap_args := resolve_builtin_operation(node.src_text, left_type, right_type);
+        if operator_index >= 0 {
+            node.operation.operator_index = operator_index;
+            
+            if swap_args {
+                node.operation.left, node.operation.right = node.operation.right, node.operation.left;
+            }
+            
+            node.value_type = cast(*Type_Info) BUILTIN_OPERATIONS[operator_index].ret;
+            
+            if is_aggr(node.value_type) {
+                node.operation.dst = Dynamic_New(node.value_type,, ctxt.allocator);
+                dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.operation.dst, node);
+            }
+            
+            return node.value_type;
+        } 
         
-        if swap_args {
-            node.flags |= .SWAP_ARGS;
-            // just swap left and right sides of binary operator
-            // potentially this could create inconsistency in evaluation order if calling procedure with side effects
-            // but that's probably not a real concern...
-            node.operation.left, node.operation.right = node.operation.right, node.operation.left;
-        }
-        if is_builtin  node.flags |= .IS_BUILTIN;
+        // if it was not one of the builtin operators, 
+        // then we will try checking for an overloaded procedure that performs the operation
+        node.operation.left.next = node.operation.right;
         
-        dbg_print("operation flags: %\n", node.flags);
+        proc_node := AST.Node.{
+            type      = .PROCEDURE_CALL,
+            src_loc   = node.src_loc,
+            src_text  = node.src_text,
+            flags     = node.flags | .OVERLOAD_OP,
+            procedure_call = .{
+                arg_nodes = node.operation.left,
+                arg_count = 2, // TODO: what if unary op
+            }
+        };
+        node.* = proc_node;
         
-        if node.value_type.type == .STRUCT {
-            node.operation.dst = Dynamic_New(node.value_type,, ctxt.allocator);
-            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.operation.dst, node);
-        }
-        
-        return node.value_type;
+        #through;
         
       case .PROCEDURE_CALL;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -110,40 +114,52 @@ typecheck_node :: (
             arg_node = arg_node.next;
         }
         
-        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types);
+        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types, node.flags & .OVERLOAD_OP != 0);
         if node.procedure_call.procedure_index == -1  return null;
         
         procedure := *procedures[node.procedure_call.procedure_index];
         node.value_type = procedure.type.return_types[0];
         
-        if node.value_type.type == .STRUCT {
+        if is_aggr(node.value_type) {
             node.procedure_call.dst = Dynamic_New(node.value_type,, ctxt.allocator);
             dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.procedure_call.dst, node);
         }
         
         return node.value_type;
         
-      case .SUBSCRIPT;
-        dbg_print("ERROR: unimplemented case for .SUBSCRIPT\n");
-        return null;
-        
       case .MEMBER;
-        dbg_print("ERROR: unimplemented case for .SUBSCRIPT\n");
-        return null;
+        base_type := typecheck_node(ctxt, node.member.base, check_flags & .EXPECT_LVALUE);
+        if base_type.type != .STRUCT  return null;
         
-        // base_type := typecheck_node(ctxt, node.member.base);
-        // if base_type.type != .STRUCT  return null, 0;
+        member_ti, member_offset := get_field(xx base_type, node.member.identifier);
+        if member_ti == null  return null;
         
-        // member_ti := get_field(xx base_type, node.member.identifier);
-        // if member_ti == null  return null, 0;
+        node.value_type    = member_ti.type;
+        node.member.offset = member_offset;
         
-        // node.value_type    = member_ti.type;
-        // node.member.offset = member_ti.offset_in_bytes;
+        if check_flags & .EXPECT_LVALUE {
+            node.flags |= .L_VALUE;
+        }
+        return node.value_type;
         
-        // if check_flags & .EXPECT_LVALUE {
-        //     node.flags |= .L_VALUE;
-        // }
-        // return node.value_type;
+      case .SUBSCRIPT;
+        base_type :=  cast(*Type_Info_Array) typecheck_node(ctxt, node.subscript.base, check_flags & .EXPECT_LVALUE);
+        if base_type.type != .ARRAY {
+            log("Typechecking Error: Type '%' cannot be indexed!", as_type(base_type));
+            return null;
+        }
+        
+        indexing_type := typecheck_node(ctxt, node.subscript.indexing_expr);
+        if indexing_type.type != .INTEGER && indexing_type.type != .FLOAT {
+            log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
+            return null;
+        }
+        
+        node.value_type = base_type.element_type;
+        if check_flags & .EXPECT_LVALUE {
+            node.flags |= .L_VALUE;
+        }
+        return node.value_type;
     }
     
     return null;
@@ -184,3 +200,15 @@ typecheck_script :: (script: *Script_Constructor) -> bool {
     return true;
 }
 
+
+is_aggr :: (t: Type) -> bool { return is_aggr(cast(*Type_Info)t); }
+
+is_aggr :: (ti: *Type_Info) -> bool {
+    if ti.type == {
+        case .INTEGER; return false;
+        case .FLOAT;   return false;
+        case .ENUM;    return false;
+        case .POINTER; return false;
+    }
+    return true;
+}

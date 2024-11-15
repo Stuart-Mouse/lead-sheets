@@ -123,7 +123,7 @@ lex_next_token :: (using t: *Tokenizer) -> Script_Token {
     }
     
     // single-character tokens
-    if is_any(file[0], "+-*/(),;=.") {
+    if is_any(file[0], "+-*/(),;=.[]{}") {
         ret := Script_Token.{
             type    = cast(Script_Token_Type) file[0], // character value for single-char tokens can be cast directly to token type
             text    = slice(file, 0, 1),

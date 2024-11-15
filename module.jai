@@ -38,7 +38,6 @@ Script :: struct {
     //       we will still want to have slice for variables, but we can duplicate the Any's for variables actually used into script's pool
     variables   : [..] Script_Variable;
     procedures  : [..] Script_Procedure;
-    operators   : [..] Script_Procedure; // TODO: enumerate what operators can actually be defined, prevent user registering disallowed operators
     
     pool       : Flat_Pool;
     allocator  : Allocator;
@@ -61,7 +60,6 @@ STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
-    array_free(operators);
     free_ast(*ast);
     fini(*pool);
     if script.dyncall_vm  dcFree(script.dyncall_vm);
@@ -80,17 +78,22 @@ alloc_node :: (script: *Script) -> *AST.Node {
 
 PTR_SIZE :: size_of(*void);
 
-stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) {
+// TODO: if we passed *Script instead of just stack pointer, then we could do runtime checks to make sure we don't exhaust stack space allocated
+stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) -> *void {
+    ret := value_pointer;
     if by_ptr {
         memcpy(stack_ptr.*, value_pointer, PTR_SIZE);
     } else {
         if value_pointer.* != null {
+            ret = value_pointer.*;
             memcpy(stack_ptr.*, value_pointer.*, PTR_SIZE);
         } else {
             dbg_print("WARNING: value_pointer.* was null!\n");
         }
     }
+    
     stack_ptr.* += PTR_SIZE;
+    return ret;
 }
 
 stack_pop :: (stack_ptr: **void, $$by_ptr := false) -> *void {
@@ -99,6 +102,15 @@ stack_pop :: (stack_ptr: **void, $$by_ptr := false) -> *void {
         return (cast(**void)(stack_ptr.*)).*;
     } else {
         return stack_ptr.*;
+    }
+}
+
+stack_get_top :: (stack_ptr: *void, $$by_ptr := false) -> *void {
+    stack_ptr -= PTR_SIZE;
+    if by_ptr {
+        return (cast(**void)(stack_ptr)).*;
+    } else {
+        return stack_ptr;
     }
 }
 
@@ -328,7 +340,7 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Nod
         // in any case, the caller should know what to expect.
         //     for example, note how parse_expression is called 
         //     after hitting open paren in parse_leaf.
-        if node == left  break; 
+        if node == left  break;
         
         // 'node' has replaced 'left' as the root node
         // original 'left' is now a child of 'node'
@@ -348,26 +360,40 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
     
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
-    // if next_token.type == {
-    //   case .DOT;
-    //     get_token(*tokenizer);
+    if next_token.type == {
+      case .DOT;
+        get_token(*tokenizer);
         
-    //     identifier := get_token(*tokenizer);
-    //     if identifier.type != .IDENTIFIER {
-    //         dbg_print("ERROR: expected identifier, got %\n", identifier);
-    //         return null;
-    //     }
+        identifier := get_token(*tokenizer);
+        if identifier.type != .IDENTIFIER {
+            dbg_print("ERROR: expected identifier, got %\n", identifier);
+            return null;
+        }
         
-    //     node := alloc_node(ctxt);
-    //     node.type = .MEMBER;
-    //     node.member = .{
-    //         base       = left,
-    //         identifier = identifier.text,
-    //     };
-    //     return node;
+        node := alloc_node(ctxt);
+        node.type = .MEMBER;
+        node.member = .{
+            base       = left,
+            identifier = identifier.text,
+        };
+        return node;
         
-    //   // case .BRACKET;
-    // }
+      case .OPEN_BRACKET;
+        get_token(*tokenizer);
+        
+        indexing_expr := parse_expression(ctxt, 0);
+        if indexing_expr == null  return null;
+        
+        if !expect_token_type(*tokenizer, .CLOSE_BRACKET)  return null;
+        
+        node := alloc_node(ctxt);
+        node.type = .SUBSCRIPT;
+        node.subscript = .{
+            base          = left,
+            indexing_expr = indexing_expr
+        };
+        return node;
+    }
     
     if token_is_binary_operator(next_token) {
         get_token(*tokenizer);
@@ -482,3 +508,18 @@ Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
 as_type :: inline (ti: *Type_Info) -> Type {
     return (cast(*Type)*ti).*;
 }
+
+
+
+
+DEBUG :: true;
+
+#if DEBUG {#add_context dbg_print_indent: int;}
+
+dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -> bytes_printed: s64 {
+    #if DEBUG {
+        for 0..context.dbg_print_indent  print("  ");
+        return print(format_string, ..args, to_standard_error);
+    }
+}
+

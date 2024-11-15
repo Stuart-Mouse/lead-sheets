@@ -59,7 +59,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
         assert(argument_types.count == 2, "argument_types.count was %", argument_types.count);
     }
     
-    proc_list := ifx is_operator then script.operators else script.procedures;
+    proc_list := script.procedures;
     for *proc, proc_index: proc_list {
         if proc.name != name  continue proc;
         ti_proc := cast(*Type_Info_Procedure) proc.type;
