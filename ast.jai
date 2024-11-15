@@ -263,7 +263,7 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         return true;
         
       case .OPERATION;
-        stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
+        result_ptr := stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
         
         if !execute_node(script, node.operation.left )  return false;
         if !execute_node(script, node.operation.right)  return false;
@@ -277,7 +277,12 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         // ret   := stack_get_top( script.stack_ptr, is_aggr(op.ret  ));
         // if !execute_builtin_operation(node.operation.operator_index, left, right, ret)  return false;
         
+        op    := BUILTIN_OPERATIONS[node.operation.operator_index];
+        dbg_print("operation: %\n", op);
+        
         execute_builtin_operation(node.operation.operator_index, *script.stack_ptr);
+        
+        dbg_print("returning result of binary operation: % %\n", as_type(node.value_type), Any.{ node.value_type, result_ptr });
         
         return true;
         
@@ -332,7 +337,6 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         if !remap_int(index, Any.{ indexing_type, index_ptr })
             dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
         dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
-        
         
         // TODO: better method of doing runtime indexing checks ?
         arr_count: int;

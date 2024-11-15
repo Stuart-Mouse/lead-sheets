@@ -316,6 +316,8 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
     parse_increasing_precedence is only relevant when parsing binary operators...?
         if so, maybe we can factor things a bit more intuitively
         
+    
+        
 */
 
 parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Node {
@@ -396,10 +398,8 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
     }
     
     if token_is_binary_operator(next_token) {
-        get_token(*tokenizer);
-        
         next_token_prec := get_operator_precedence(next_token.text);
-        if next_token_prec < min_prec {
+        if next_token_prec <= min_prec {
             dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
                 sprint_token(next_token), 
                 next_token_prec,
@@ -409,12 +409,15 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
             return left;
         }
         
+        get_token(*tokenizer);
+        
         right := parse_expression(ctxt, next_token_prec);
         if right == null  return null;
         
         return create_binary_operation(ctxt, next_token.text, left, right);
     }
     
+    dbg_print("sadfasdfasdf\n");
     return left;    
 }
 
