@@ -128,9 +128,9 @@ set_variable :: (script: *Script, name: string, any: Any) {
 
 Script_Constructor :: struct {
     using #as script: *Script;
-    tokenizer: Tokenizer;
+    lexer: Lexer;
 
-    // May do something like this in order to extend parser / tokenizer for in other modules
+    // May do something like this in order to extend parser / lexer for in other modules
     // resolve_identifier: struct { 
     //     proc: (string, *void) -> Any;
     //     data: *void;
@@ -147,12 +147,12 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     
     constructor: Script_Constructor;
     constructor.script = script;
-    constructor.tokenizer.file = source;
-    init_tokenizer(*constructor.tokenizer);
+    constructor.lexer.file = source;
+    init_lexer(*constructor.lexer);
     
     while true {
         if !parse_statement(*constructor)  return false;
-        if expect_token_type(*constructor.tokenizer, .EOF)  break;
+        if expect_token_type(*constructor.lexer, .EOF)  break;
     }
     
     script.flags |= .AST_CONSTRUCTED;
@@ -194,11 +194,11 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
 parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Node {
     dbg_print("parse_identifier(ident = '%')\n", ident);
     
-    if expect_token_type(*tokenizer, .OPEN_PAREN) {
+    if expect_token_type(*lexer, .OPEN_PAREN) {
         first_arg_node : *AST.Node;
         prev_arg_node  : *AST.Node;
         arg_count      :=  0;
-        if peek_token(*tokenizer).type != .CLOSE_PAREN {
+        if peek_token(*lexer).type != .CLOSE_PAREN {
             while true {
                 node := parse_expression(ctxt, 0);
                 if node == null  return null;
@@ -208,11 +208,11 @@ parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Nod
                 prev_arg_node = node;
                 arg_count += 1;
                 
-                if !expect_token_type(*tokenizer, .COMMA)  break;
+                if !expect_token_type(*lexer, .COMMA)  break;
             }
         }
         
-        if !expect_token_type(*tokenizer, .CLOSE_PAREN) {
+        if !expect_token_type(*lexer, .CLOSE_PAREN) {
             dbg_print("Error, expected a close paren at the end of parameter list!\n");
             return null;
         }
@@ -249,12 +249,12 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
 }
 
 parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
-    token := get_token_or_return(*tokenizer, null);
+    token := get_token_or_return(*lexer, null);
     
     // TODO: refactor unary minus to use an actual unary operation
     do_unary_minus := token.type == .SUB;
     if do_unary_minus {
-        token = get_token_or_return(*tokenizer, null);
+        token = get_token_or_return(*lexer, null);
     }
     
     node: *AST.Node;
@@ -264,7 +264,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         node = parse_expression(ctxt, 0);
         if node == null  return null;
         
-        token = get_token_or_return(*tokenizer, null);
+        token = get_token_or_return(*lexer, null);
         
         if token.type != .CLOSE_PAREN {
             dbg_print("Error, expected a closing paren!\n");
@@ -358,15 +358,15 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Nod
 parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node, min_prec: int) -> *AST.Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     
-    next_token := peek_token(*tokenizer);
+    next_token := peek_token(*lexer);
     
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
     if next_token.type == {
       case .DOT;
-        get_token(*tokenizer);
+        get_token(*lexer);
         
-        identifier := get_token(*tokenizer);
+        identifier := get_token(*lexer);
         if identifier.type != .IDENTIFIER {
             dbg_print("ERROR: expected identifier, got %\n", identifier);
             return null;
@@ -381,12 +381,12 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
         return node;
         
       case .OPEN_BRACKET;
-        get_token(*tokenizer);
+        get_token(*lexer);
         
         indexing_expr := parse_expression(ctxt, 0);
         if indexing_expr == null  return null;
         
-        if !expect_token_type(*tokenizer, .CLOSE_BRACKET)  return null;
+        if !expect_token_type(*lexer, .CLOSE_BRACKET)  return null;
         
         node := alloc_node(ctxt);
         node.type = .SUBSCRIPT;
@@ -409,7 +409,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
             return left;
         }
         
-        get_token(*tokenizer);
+        get_token(*lexer);
         
         right := parse_expression(ctxt, next_token_prec);
         if right == null  return null;
@@ -444,13 +444,13 @@ parse_statement :: (using ctxt: *Script_Constructor) -> bool {
     statement.assignment.left = parse_expression(ctxt, 0);
     if statement.assignment.left == null  return false;
     
-    if !expect_token_type(*tokenizer, .EQUALS)  return false;
+    if !expect_token_type(*lexer, .EQUALS)  return false;
     
     dbg_print("parsing expression for right side of assignment statement\n");
     statement.assignment.right = parse_expression(ctxt, 0);
     if statement.assignment.right == null  return false;
     
-    if !expect_token_type(*tokenizer, .SEMICOLON)  return false;
+    if !expect_token_type(*lexer, .SEMICOLON)  return false;
     
     array_add(*script.ast.statements, statement);
     

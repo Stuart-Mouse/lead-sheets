@@ -7,20 +7,20 @@
 
 
 main :: () {
-    // input := #string DONE
-    // r1 = -Vec2(3, 4) * 5;
-    // r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
-    // r3 = a + b;
-    // DONE;
+    input := #string DONE
+    r1 = -Vec2(3, 4) * 5;
+    r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
+    r3 = a + b;
+    DONE;
     
     // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
     // input := "r2 = x;";              // assignment to non-aggr
     // input := "r1.y = z.x + z.y;";    // member access as lvalue and rvalue
     // input := "r3 = a + b;";          // overloaded operator (int + int)
-    input := #string DONE
-    arr1[1 + z.y - pow(2, 2)] = 17;
-    r2 = arr1[1 + sin(3.14159/2)];
-    DONE;
+    // input := #string DONE
+    // arr1[1 + z.y - pow(2, 2)] = 17;
+    // r2 = arr1[1 + sin(3.14159/2)];
+    // DONE;
     // input := "r2 = 5 * 2 - 2;";
     
     script: Script;

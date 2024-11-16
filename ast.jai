@@ -287,7 +287,6 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         
       case .PROCEDURE_CALL;
         // TODO: this will have to be refactored just a bit later for bytecode (to push result ptr after popping args)
-        //       but its fine for now and adding array subscripts / struct member access is more pressing
         
         return_ptr := script.stack_ptr;
         stack_push(*script.stack_ptr, *node.procedure_call.dst, is_aggr(node.value_type));
