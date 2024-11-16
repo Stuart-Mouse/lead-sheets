@@ -1,77 +1,71 @@
 
 
-AST :: struct {
-    Node_Type :: enum {
-        NUMBER;
-        VARIABLE;
-        OPERATION;
-        PROCEDURE_CALL;
-        MEMBER;
-        SUBSCRIPT;
-    }
-    Node :: struct {
-        type       : Node_Type;
-        value_type : *Type_Info;
-        
-        src_loc  : Source_Location;
-        src_text : string;     // need for identifiers before typechecking step
-        
-        // usage is context dependent
-        // for procedure arguments, points to next argument node
-        next  : *AST.Node;
-        flags : Flags;
-        Flags :: enum_flags { L_VALUE; UNARY_OP; OVERLOAD_OP; };
-        
-        union {
-            variable_index  : int; // index to variable in Script.variables array 
-            number          : float32;
-            
-            procedure_call: struct {
-                procedure_index : int; // cannot remove yet, as this would destroy ability to print ast
-                arg_nodes       : *AST.Node;
-                arg_count       : int;
-                dst             : *void;
-            }
-            operation: struct {
-                operator_index  : int; // index to either a builtin operator or an operator procedure
-                left, right     : *AST.Node;
-                dst             : *void;
-            }
-            member: struct {
-                base        : *AST.Node;
-                offset      : int;
-                identifier  : string;
-            }
-            subscript: struct {
-                base          : *AST.Node;
-                indexing_expr : *AST.Node;
-            }
-        }
-    }
+Node_Type :: enum {
+    // expressions
+    NUMBER;
+    VARIABLE;
+    OPERATION;
+    PROCEDURE_CALL;
+    MEMBER;
+    SUBSCRIPT;
     
-    Statement_Type :: enum {
-        ASSIGNMENT;
-    }
-    Statement :: struct {
-        type : Statement_Type;
-        union {
-            assignment : struct {
-                left  : *AST.Node; // index to variable  // TODO: later we will want to support some kind of expression on left side (primarily for array indexing)
-                right : *AST.Node;
-            };
-        }
-    }
-    
-    // TODO: turn statements into a type of node. no reason for them to be an entirely separate struct
-    statements: [..] Statement;
+    // statements
+    BLOCK;
+    ASSIGNMENT;
 }
 
-free_ast :: (ast: *AST) {
-    // array_free(ast.nodes);
-    // memset(*ast.nodes, 0, size_of(Resizable_Array));
+Node :: struct {
+    type       : Node_Type;
+    value_type : *Type_Info;
+    
+    src_loc  : Source_Location;
+    src_text : string;     // need for identifiers before typechecking step
+    
+    // usage is context dependent
+    // for procedure arguments, points to next argument node
+    next  : *Node;
+    flags : Flags;
+    Flags :: enum_flags { L_VALUE; UNARY_OP; OVERLOAD_OP; DISCARD_VALUE; };
+    
+    // TODO: in the future, maybe we want to just have Node subtypes that we cast to.
+    //       for now it is convenient to just use a union because most node types are 
+    //       roughly the same size and it allows use to replace a node inplace if we need 
+    //       to change the type (as we do when converting an overloaded operator to a procedure call)
+    union {
+        variable_index  : int; // index to variable in Script.variables array 
+        number          : float32;
+        procedure_call: struct {
+            procedure_index : int; // cannot remove yet, as this would destroy ability to print ast
+            arg_nodes       : *Node;
+            arg_count       : int;
+            dst             : *void;
+        }
+        operation: struct {
+            operator_index  : int; // index to either a builtin operator or an operator procedure
+            left, right     : *Node;
+            dst             : *void;
+        }
+        member: struct {
+            base        : *Node;
+            offset      : int;
+            identifier  : string;
+        }
+        subscript: struct {
+            base          : *Node;
+            indexing_expr : *Node;
+        }
+        
+        
+        block: struct {
+            statements: *Node;
+        }
+        assignment: struct {
+            left, right: *Node; 
+        }
+    }
 }
 
-for_expansion :: (node: *AST.Node, body: Code, flags: For_Flags) #expand {
+for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
     `it := node;
     `it_index := 0;
     while it != null {
@@ -81,10 +75,10 @@ for_expansion :: (node: *AST.Node, body: Code, flags: For_Flags) #expand {
     }
 }
 
-// print_ast :: (script: *Script, node: *AST.Node, parent_prec: int = 0) {
-//     // if node_i < 0 || node_i >= ast.nodes.count  return;
+// print_ast :: (script: *Script, node: *Node, parent_prec: int = 0) {
+//     // if node_i < 0 || node_i >= nodes.count  return;
     
-//     // node := *ast.nodes[node_i];
+//     // node := *nodes[node_i];
 //     if node.type == {
 //       case .NUMBER;
 //         dbg_print("%", node.number);
@@ -116,7 +110,7 @@ for_expansion :: (node: *AST.Node, body: Code, flags: For_Flags) #expand {
 //     }
 // }
 
-sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
+sprint_ast_node :: (script: *Script, node: Node) -> string {
     if node.type == {
       case .NUMBER;
         return tprint(".NUMBER: %", node.number);
@@ -125,14 +119,14 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
         return tprint(".VARIABLE: %", node_get_variable(script, node).name);
         
       case .OPERATION;
-        if script.flags & .AST_TYPECHECKED {
+        if script.flags & .TYPECHECKED {
             return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
         } else {
             return node.src_text;
         }
         
       case .PROCEDURE_CALL;
-        if script.flags & .AST_TYPECHECKED {
+        if script.flags & .TYPECHECKED {
             return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
         } else {
             return node.src_text;
@@ -150,18 +144,18 @@ sprint_ast_node :: (script: *Script, node: AST.Node) -> string {
     Unfortunately these also need the script as context, since this is just an array lookup.
 */
 
-node_get_variable :: (script: *Script, node: AST.Node) -> *Script_Variable {
+node_get_variable :: (script: *Script, node: Node) -> *Script_Variable {
     assert(node.type == .VARIABLE);
     return *script.variables[node.variable_index];
 }
 
-node_get_procedure :: (script: *Script, node: AST.Node) -> *Script_Procedure {
+node_get_procedure :: (script: *Script, node: Node) -> *Script_Procedure {
     assert(node.type == .PROCEDURE_CALL);
     return *script.procedures[node.procedure_call.procedure_index];
 }
 
 // TODO: probably rename to node_get_operation_procedure
-node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
+node_get_operation :: (script: *Script, node: Node) -> *Script_Procedure {
     assert(node.type == .OPERATION);
     assert(node.flags & .IS_BUILTIN == 0);
     return *script.operators[node.operation.operator_index];
@@ -185,19 +179,19 @@ node_get_operation :: (script: *Script, node: AST.Node) -> *Script_Procedure {
 */
 
 execute_script :: (script: *Script) -> bool {
-    if !(script.flags & .AST_CONSTRUCTED) {
+    if !(script.flags & .PARSED) {
         dbg_print("Error: cannot execute script before AST has been constructed!\n");
         return false;
     }
-    if !(script.flags & .AST_TYPECHECKED) {
+    if !(script.flags & .TYPECHECKED) {
         dbg_print("Error: cannot execute script before AST has been typechecked!\n");
         return false;
     }
-        
-    dbg_print("executing script with % statements\n", script.ast.statements.count);
-    for * script.ast.statements {
+    
+    script.stack_ptr = script.stack_base;
+    
+    for *script.ast_root.block.statements {
         dbg_print("executing statement #%\n", it_index);
-        script.stack_ptr = script.stack_base;
         if !execute_statement(script, it)  return false;
     }
     
@@ -210,7 +204,7 @@ execute_script :: (script: *Script) -> bool {
     return true;
 }
 
-execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
+execute_statement :: (script: *Script, statement: *Node) -> bool {
     if statement.type == {
       case .ASSIGNMENT;
         if !execute_node(script, statement.assignment.left) {
@@ -235,12 +229,15 @@ execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
         
         return true;
         
+      case .PROCEDURE_CALL;
+        return execute_node(script, statement);
+        
       case;
         return false;
     }
 }
 
-execute_node :: (script : *Script, node: *AST.Node) -> bool {
+execute_node :: (script : *Script, node: *Node) -> bool {
     dbg_print("evaluating node %: %\n", node, node.type);
     
     #if DEBUG {
@@ -252,18 +249,18 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
     
     if node.type == {
       case .NUMBER;
-        stack_push(*script.stack_ptr, xx **node.number);
+        stack_push_item(script, node.number);
         dbg_print("returning number %\n", node.number);
         return true;
         
       case .VARIABLE;
         variable := node_get_variable(script, node);
-        by_ptr: bool = (node.flags & .L_VALUE) || (is_aggr(node.value_type));
-        stack_push(*script.stack_ptr, *variable.binding.value_pointer, by_ptr);
+        stack_push_item(script, variable.binding, node.flags & .L_VALUE != 0);
         return true;
         
       case .OPERATION;
         result_ptr := stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
+        // result_ptr := stack_push(*script, Any.{ node.value_type, node.operation.dst });
         
         if !execute_node(script, node.operation.left )  return false;
         if !execute_node(script, node.operation.right)  return false;
@@ -287,6 +284,11 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         
       case .PROCEDURE_CALL;
         // TODO: this will have to be refactored just a bit later for bytecode (to push result ptr after popping args)
+        //       this will require passing script to do_dyncall so that we can push to stack from within that function
+        //       and then we might as well just pass the entire node as well so that we dont have to pass return ptr explicitly.
+        //       I am considering just inlining the do_dyncall code here, but it is already relatively wide on its own...
+        //       maybe we inline it for now so it works all good and stuff and then un-inline it later?
+        //       but we are going to need to use is from the bytecode as well, and also possibly from the eval procs.
         
         return_ptr := script.stack_ptr;
         stack_push(*script.stack_ptr, *node.procedure_call.dst, is_aggr(node.value_type));
@@ -296,8 +298,11 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
             if !execute_node(script, it)  return false;
         }
         
+        // script.stack_ptr -= node.procedure_call.arg_count * PTR_SIZE;
+        
         procedure := node_get_procedure(script, node);
         if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, arg_ptr, return_ptr) {
+        // if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, script.stack_ptr, node.procedure_call.dst) {
             log("Failed while trying to call procedure '%'!", procedure.name);
             return false;
         }

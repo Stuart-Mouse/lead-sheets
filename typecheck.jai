@@ -18,7 +18,7 @@ Typechecking_Flags :: enum_flags {
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
 typecheck_node :: (
     using ctxt  : *Script_Constructor, 
-    node        : *AST.Node, 
+    node        : *Node, 
     check_flags :  Typechecking_Flags = .NONE, 
     expect_type : *Type_Info          = null
 ) -> (
@@ -31,7 +31,7 @@ typecheck_node :: (
         defer context.dbg_print_indent -= 1;
     }
     
-    if #complete node.type == {
+    if node.type == {
       case .NUMBER;
         if check_flags & .EXPECT_LVALUE  return null;
         node.value_type = type_info(float32);
@@ -82,7 +82,7 @@ typecheck_node :: (
         // then we will try checking for an overloaded procedure that performs the operation
         node.operation.left.next = node.operation.right;
         
-        proc_node := AST.Node.{
+        proc_node := Node.{
             type      = .PROCEDURE_CALL,
             src_loc   = node.src_loc,
             src_text  = node.src_text,
@@ -165,12 +165,13 @@ typecheck_node :: (
     return null;
 }
 
+// TODO: probably just make this a case of typecheck_node
 typecheck_statement :: (
     using ctxt  : *Script_Constructor, 
-    statement   : *AST.Statement, 
+    statement   : *Node, 
     check_flags : Typechecking_Flags
 ) -> bool {
-    if #complete statement.type == {
+    if statement.type == {
       case .ASSIGNMENT;
         // get type of left side
         // we expect left side to be an lvalue
@@ -185,18 +186,23 @@ typecheck_statement :: (
             dbg_print("types on left and right side of assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
             return false;
         }
-        
         return true;
+        
+      case .PROCEDURE_CALL;
+        return typecheck_node(ctxt, statement) != null;
     }
     return false;
 }
 
 typecheck_script :: (script: *Script_Constructor) -> bool {
-    for *script.ast.statements {
+    if !script.ast_root                 return false;
+    if script.ast_root.type != .BLOCK  return false;
+    
+    for *script.ast_root.block.statements {
         if !typecheck_statement(script, it, .NONE)  return false;
     }
     
-    script.flags |= .AST_TYPECHECKED;
+    script.flags |= .TYPECHECKED;
     return true;
 }
 

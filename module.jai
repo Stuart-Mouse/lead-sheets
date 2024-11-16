@@ -18,10 +18,13 @@
 
 // need to remember how to not have to specify the count explicitly here
 operator_precedence_table :: struct { op: string; prec: int; } .[
-    .{ "+", 1 },
-    .{ "-", 1 },
-    .{ "*", 2 },
-    .{ "/", 2 },
+    // .{ "==", 1 },
+    // .{ ">", 1 },
+    // .{ "<", 1 },
+    .{ "+", 2 },
+    .{ "-", 2 },
+    .{ "*", 3 },
+    .{ "/", 3 },
 ];
 
 Script_Variable :: struct {
@@ -30,7 +33,7 @@ Script_Variable :: struct {
 }
 
 Script :: struct {
-    ast         : AST;
+    ast_root    : *Node; // root node should always be a .BLOCK
     flags       : Flags;
     
     // TODO: we may actually not need to store these on script as dynamic arrays after all
@@ -39,19 +42,19 @@ Script :: struct {
     variables   : [..] Script_Variable;
     procedures  : [..] Script_Procedure;
     
-    pool       : Flat_Pool;
-    allocator  : Allocator;
+    pool        : Flat_Pool;
+    allocator   : Allocator;
     
-    stack_base : *void;
-    stack_size : int;
+    stack_base  : *void;
+    stack_size  : int;
     
-    stack_ptr  : *void; // state by execution procs
+    stack_ptr   : *void; // state by execution procs
     
-    dyncall_vm : *DCCallVM;
+    dyncall_vm  : *DCCallVM;
     
     Flags :: enum_flags {
-        AST_CONSTRUCTED;
-        AST_TYPECHECKED;
+        PARSED;
+        TYPECHECKED;
     }
 }
 
@@ -60,15 +63,14 @@ STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
-    free_ast(*ast);
     fini(*pool);
     if script.dyncall_vm  dcFree(script.dyncall_vm);
     
     script.* = .{};
 }
 
-alloc_node :: (script: *Script) -> *AST.Node {
-    return New(AST.Node,, script.allocator);
+alloc_node :: (script: *Script) -> *Node {
+    return New(Node,, script.allocator);
 }
 
 // the by_ptr arguments are primarily to ease code gen for the builtin binary ops
@@ -114,6 +116,27 @@ stack_get_top :: (stack_ptr: *void, $$by_ptr := false) -> *void {
     }
 }
 
+stack_push_item :: (script: *Script, any: Any, is_lvalue := false) -> value_pointer: *void {
+    defer script.stack_ptr += PTR_SIZE;
+    if is_aggr(any.type) || is_lvalue {
+        (cast(**void)script.stack_ptr).* = any.value_pointer; // store the pointer itself instead of the value
+    } else {
+        assert(any.type.runtime_size <= PTR_SIZE);
+        memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
+    }
+    return any.value_pointer;
+}
+
+stack_pop_item :: (script: *Script, ti: *Type_Info, is_lvalue := false) -> value_pointer: *void {
+    script.stack_ptr -= PTR_SIZE;
+    if is_aggr(any.type) || is_lvalue {
+        return (cast(**void)script.stack_ptr).*; // additional derefernce to get pointer to value
+    } else {
+        assert(ti.runtime_size == PTR_SIZE);
+        return stack_ptr;
+    }
+}
+
 // ensures no name conflicts
 set_variable :: (script: *Script, name: string, any: Any) {
     for *script.variables {
@@ -150,12 +173,22 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     constructor.lexer.file = source;
     init_lexer(*constructor.lexer);
     
-    while true {
-        if !parse_statement(*constructor)  return false;
-        if expect_token_type(*constructor.lexer, .EOF)  break;
+    script.ast_root = alloc_node(script);
+    script.ast_root.type = .BLOCK;
+    
+    script.ast_root.block.statements = parse_statement(*constructor);
+    if !script.ast_root.block.statements  return false;
+    
+    previous := script.ast_root.block.statements;
+    while !expect_token_type(*constructor.lexer, .EOF) {
+        node := parse_statement(*constructor);
+        if !node  return false;
+        
+        previous.next = node;
+        previous      = node;
     }
     
-    script.flags |= .AST_CONSTRUCTED;
+    script.flags |= .PARSED;
     
     dbg_print("\nTYPECHECKING SCRIPT\n");
     if !typecheck_script(*constructor) {
@@ -182,6 +215,36 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     return true;
 }
 
+parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
+    left := parse_expression(ctxt, 0);
+    if left == null  return null;
+    
+    if expect_token_type(*lexer, .EQUALS) {
+        right := parse_expression(ctxt, 0);
+        if right == null  return null;
+        
+        if !expect_token_type(*lexer, .SEMICOLON)  return null;
+
+        node := alloc_node(ctxt);
+        node.type = .ASSIGNMENT;
+        node.assignment.left  = left;
+        node.assignment.right = right;
+        return node;
+    }
+    
+    // check if expression can be used as a statement
+    if expect_token_type(*lexer, .SEMICOLON) {
+        if left.type == .PROCEDURE_CALL {
+            left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
+            return left;
+        }
+        
+        return null;
+    }
+    
+    return null;
+}
+
 resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
     for *variables {
         if it.name == ident {
@@ -191,12 +254,12 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
     return -1;
 }
 
-parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *AST.Node {
+parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *Node {
     dbg_print("parse_identifier(ident = '%')\n", ident);
     
     if expect_token_type(*lexer, .OPEN_PAREN) {
-        first_arg_node : *AST.Node;
-        prev_arg_node  : *AST.Node;
+        first_arg_node : *Node;
+        prev_arg_node  : *Node;
         arg_count      :=  0;
         if peek_token(*lexer).type != .CLOSE_PAREN {
             while true {
@@ -248,7 +311,7 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
            token.type == .DIV;
 }
 
-parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
+parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
     token := get_token_or_return(*lexer, null);
     
     // TODO: refactor unary minus to use an actual unary operation
@@ -257,7 +320,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         token = get_token_or_return(*lexer, null);
     }
     
-    node: *AST.Node;
+    node: *Node;
     if token.type == {
       case .OPEN_PAREN;
         // dbg_print("encountered open paren...\n");
@@ -278,11 +341,11 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         node.number = token.number;
         
       case .IDENTIFIER;
-        // instead of resolving identifiers completely at AST contruction time, 
+        // instead of resolving identifiers completely at this time, 
         // we only need to check if the identifier was a variable or a procedure
         node = parse_identifier(ctxt, token.text);
         if node == null  return null;
-            
+        
       case;
         dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
         assert(false);
@@ -317,10 +380,10 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *AST.Node {
         if so, maybe we can factor things a bit more intuitively
         
     
-        
+    
 */
 
-parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Node {
+parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
     
     // left is also sort of the root node of expression, when re 
@@ -355,7 +418,7 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *AST.Nod
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node, min_prec: int) -> *AST.Node {
+parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, min_prec: int) -> *Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     
     next_token := peek_token(*lexer);
@@ -422,10 +485,13 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *AST.Node
 }
 
 
-create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left: *AST.Node, right: *AST.Node) -> *AST.Node {
-    dbg_print("creating binary operation % % %\n", 
-    sprint_ast_node(ctxt, left), operator_ident, 
-    sprint_ast_node(ctxt, right));
+create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left: *Node, right: *Node) -> *Node {
+    dbg_print(
+        "creating binary operation % % %\n", 
+        sprint_ast_node(ctxt, left), 
+        operator_ident, 
+        sprint_ast_node(ctxt, right)
+    );
     node := alloc_node(ctxt);
     node.type = .OPERATION;
     node.src_text = operator_ident;
@@ -434,27 +500,6 @@ create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: str
         right = right,
     };
     return node;
-}
-
-parse_statement :: (using ctxt: *Script_Constructor) -> bool {
-    statement: AST.Statement;
-    statement.type == .ASSIGNMENT;
-    
-    dbg_print("parsing expression for left side of assignment statement\n");
-    statement.assignment.left = parse_expression(ctxt, 0);
-    if statement.assignment.left == null  return false;
-    
-    if !expect_token_type(*lexer, .EQUALS)  return false;
-    
-    dbg_print("parsing expression for right side of assignment statement\n");
-    statement.assignment.right = parse_expression(ctxt, 0);
-    if statement.assignment.right == null  return false;
-    
-    if !expect_token_type(*lexer, .SEMICOLON)  return false;
-    
-    array_add(*script.ast.statements, statement);
-    
-    return true;
 }
 
 
