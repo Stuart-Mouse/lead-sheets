@@ -228,8 +228,8 @@ execute_statement :: (script: *Script, statement: *AST.Statement) -> bool {
         r_value_ptr := stack_pop(*script.stack_ptr, is_aggr(r_type));
         l_value_ptr := stack_pop(*script.stack_ptr, true);
         
-        dbg_print("l_value_ptr: % (%)\n", l_value_ptr, Any.{l_type, l_value_ptr});
-        dbg_print("r_value_ptr: % (%)\n", r_value_ptr, Any.{r_type, r_value_ptr});
+        dbg_print("l_value_ptr: % (% %)\n", l_value_ptr, as_type(l_type), Any.{l_type, l_value_ptr});
+        dbg_print("r_value_ptr: % (% %)\n", r_value_ptr, as_type(r_type), Any.{r_type, r_value_ptr});
         
         memcpy(l_value_ptr, r_value_ptr, r_type.runtime_size);
         
@@ -277,8 +277,7 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         // ret   := stack_get_top( script.stack_ptr, is_aggr(op.ret  ));
         // if !execute_builtin_operation(node.operation.operator_index, left, right, ret)  return false;
         
-        op    := BUILTIN_OPERATIONS[node.operation.operator_index];
-        dbg_print("operation: %\n", op);
+        // dbg_print("operation: %\n", op);
         
         execute_builtin_operation(node.operation.operator_index, *script.stack_ptr);
         
@@ -318,25 +317,19 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
         if !execute_node(script, node.subscript.base)  return false;      
         if !execute_node(script, node.subscript.indexing_expr)  return false;      
         
-        dbg_print("val: %\n", Any.{ type_info(float), script.stack_ptr-8 });
-
         index_ptr := stack_pop(*script.stack_ptr);
-        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
-        
         base_ptr  := stack_pop(*script.stack_ptr, true);
-        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
-                
+        
         ti_array := cast(*Type_Info_Array) node.subscript.base.value_type;
         indexing_type := node.subscript.indexing_expr.value_type;
-        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
         
         // get index as s64
         // TODO: maybe improve this
         //       for bytecode, could do an instruction for inplace type cast
         index: s64;
-        if !remap_int(index, Any.{ indexing_type, index_ptr })
+        if !remap_int(index, Any.{ indexing_type, index_ptr }) {
             dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
-        dbg_print("val: %\n", Any.{ type_info(float), index_ptr });
+        }
         
         // TODO: better method of doing runtime indexing checks ?
         arr_count: int;
@@ -351,9 +344,8 @@ execute_node :: (script : *Script, node: *AST.Node) -> bool {
             base_ptr   = raw_array.data;
         }
         
-        dbg_print("index: %\n", index);
         if index < 0 || index >= arr_count {
-            log("Runtime Error: array index '%' was out of bounds [0 - %)!", index, arr_count);
+            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index, arr_count-1);
             return false;
         }
         

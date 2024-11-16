@@ -17,11 +17,11 @@ main :: () {
     // input := "r2 = x;";              // assignment to non-aggr
     // input := "r1.y = z.x + z.y;";    // member access as lvalue and rvalue
     // input := "r3 = a + b;";          // overloaded operator (int + int)
-    // input := #string DONE
-    // arr1[1 + z.y - pow(2, 2)] = 17;
-    // r2 = arr1[1 + sin(3.14159/2)];
-    // DONE;
-    input := "r2 = 5 * 2 - 2;";
+    input := #string DONE
+    arr1[1 + z.y - pow(2, 2)] = 17;
+    r2 = arr1[1 + sin(3.14159/2)];
+    DONE;
+    // input := "r2 = 5 * 2 - 2;";
     
     script: Script;
     
