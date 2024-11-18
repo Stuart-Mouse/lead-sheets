@@ -16,17 +16,6 @@
 
 
 
-// need to remember how to not have to specify the count explicitly here
-operator_precedence_table :: struct { op: string; prec: int; } .[
-    .{ "==", 1 },
-    .{ ">", 1 },
-    .{ "<", 1 },
-    .{ "+", 2 },
-    .{ "-", 2 },
-    .{ "*", 3 },
-    .{ "/", 3 },
-];
-
 Script_Variable :: struct {
     name    : string;
     binding : Any;
@@ -242,7 +231,6 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             
             return node;
         }
-        // return null;
     }
     
     if expect_token_type(*lexer, .OPEN_BRACE) {
@@ -269,7 +257,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
     left := parse_expression(ctxt, 0);
     if left == null  return null;
     
-    if expect_token_type(*lexer, .EQUALS) {
+    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
         right := parse_expression(ctxt, 0);
         if right == null  return null;
         
@@ -365,14 +353,34 @@ get_operator_precedence :: (op: string) -> int {
 }
 
 token_is_binary_operator :: (token: Script_Token) -> bool {
-    return token.type == .ADD ||
-           token.type == .SUB ||
-           token.type == .MUL ||
-           token.type == .DIV ||
-           token.type == .LESS_THAN     ||
-           token.type == .GREATER_THAN  ||
-           token.type == .DOUBLE_EQUALS;
+    return token.type == .ADD
+        || token.type == .SUB
+        || token.type == .MUL
+        || token.type == .DIV
+        || token.type == .LOGICAL_AND
+        || token.type == .LOGICAL_OR
+        || token.type == .LESS_THAN
+        || token.type == .GREATER_THAN
+        || token.type == .LESS_THAN_OR_EQUAL_TO
+        || token.type == .GREATER_THAN_OR_EQUAL_TO
+        || token.type == .COMPARE_EQUAL;
 }
+
+// need to remember how to not have to specify the count explicitly here
+operator_precedence_table :: struct { op: string; prec: int; } .[
+    .{ "&&", 1 },
+    .{ "||", 1 },
+    .{ "==", 2 },
+    .{ ">=", 2 },
+    .{ "<=", 2 },
+    .{ ">",  2 },
+    .{ "<",  2 },
+    
+    .{ "+", 5 },
+    .{ "-", 5 },
+    .{ "*", 6 },
+    .{ "/", 6 },
+];
 
 parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
     token := get_token_or_return(*lexer, null);

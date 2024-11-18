@@ -9,7 +9,7 @@
 main :: () {
     input := #string DONE
     r1 = -Vec2(3, 4) * 5;
-    if 2 < 3 {
+    if 3 + 1 == 2 + 2 && 1 > 0 {
         r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
         r3 = a + b;
     }
@@ -46,7 +46,7 @@ main :: () {
     a := 3;
     b := 5;
     
-    // TODO: add some proc for 'add_constant' or 'add_local_variable' that will make a copy of the valu ein the script's pool
+    // TODO: add some proc for 'add_constant' or 'add_local_variable' that will make a copy of the value in the script's pool
     //       this will allow us to pass temporary values, which wecannot do with set_variable
     //       all variables are assumed to be modifiable lvalues, with an externally defined storage duration
     

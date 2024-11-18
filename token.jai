@@ -36,10 +36,11 @@ Script_Token_Type :: enum {
     DOT           :: #char ".";
     COMMA         :: #char ",";    
     SEMICOLON     :: #char ";";
-    EQUALS        :: #char "=";
+    ASSIGN_EQUAL  :: #char "=";
     
     LESS_THAN     :: #char "<";
     GREATER_THAN  :: #char ">";
+    
     
     ADD           :: #char "+";
     SUB           :: #char "-";
@@ -48,7 +49,12 @@ Script_Token_Type :: enum {
     
     IDENTIFIER    :: 256;
     NUMBER;
-    DOUBLE_EQUALS;
+    COMPARE_EQUAL;
+    LESS_THAN_OR_EQUAL_TO;
+    GREATER_THAN_OR_EQUAL_TO;
+    
+    LOGICAL_AND;
+    LOGICAL_OR;
 }
 
 Script_Token :: struct {
@@ -141,8 +147,11 @@ expect_token_type :: (using t: *Lexer, type: Script_Token_Type) -> bool {
     return false;
 }
 
-lex_next_token :: (using t: *Lexer) -> Script_Token {
-    if !skip_whitespace_and_comments(t) {
+/*
+    The logic for 1- and 2-char tokens could probably be more efficient, but at least it's relatively clear.
+*/
+lex_next_token :: (using lexer: *Lexer) -> Script_Token {
+    if !skip_whitespace_and_comments(lexer) {
         return .{ type = .EOF };
     }
     
@@ -151,38 +160,46 @@ lex_next_token :: (using t: *Lexer) -> Script_Token {
         return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
     }
     
-    // TODO: this is hacky. double equals case
-    //       and we will need to do other combinations, like >=, <=, +=, -= anyhow 
-    //       so maybe we want to handle this on higher level?
-    if file.count >= 2 && file[0] == #char "=" && file[1] == #char "=" {
-        ret := Script_Token.{
-            type    = .DOUBLE_EQUALS,
-            text    = slice(file, 0, 2),
+    // convenience macro for short tokens
+    make_token :: (type: Script_Token_Type, len: int) -> Script_Token #expand {
+        defer advance(lexer, len);
+        return .{
+            type    = type,
+            text    = slice(file, 0, len),
             src_loc = src_loc
         };
-        advance(t);
-        return ret;
+    }
+    
+    // 2-char logical operators
+    if file.count >= 2 {
+        if slice(file, 0, 2) == {
+          case "&&"; return make_token(.LOGICAL_AND, 2);
+          case "||"; return make_token(.LOGICAL_OR,  2);
+        }
+    }
+    
+    // 2-char comparison operators
+    if file.count >= 2 && file[1] == #char "=" {
+        if file[0] == {
+          case #char "="; return make_token(.COMPARE_EQUAL, 2);
+          case #char "<"; return make_token(.LESS_THAN_OR_EQUAL_TO, 2);
+          case #char ">"; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
+        }
     }
     
     // single-character tokens
     if is_any(file[0], "+-*/(),;=.[]{}<>") {
-        ret := Script_Token.{
-            type    = cast(Script_Token_Type) file[0], // character value for single-char tokens can be cast directly to token type
-            text    = slice(file, 0, 1),
-            src_loc = src_loc
-        };
-        advance(t);
-        return ret;
+        return make_token(xx file[0], 1);
     }
     
     // parse an identifier
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
-        if !advance(t)  return make_error_token("Unexpected EOF while parsing identifier.");
+        if !advance(lexer)  return make_error_token("Unexpected EOF while parsing identifier.");
         
         while file && is_alnum(file[0]) {
             str.count += 1;
-            if !advance(t)  return make_error_token("Unexpected EOF while parsing identifier.");
+            if !advance(lexer)  return make_error_token("Unexpected EOF while parsing identifier.");
         }
         
         // TODO: Check if the identifier is a reserved word
@@ -197,11 +214,11 @@ lex_next_token :: (using t: *Lexer) -> Script_Token {
     // parse a number
     if is_digit(file[0]) {
         str: string = .{ 1, *file[0] };
-        if !advance(t)  return make_error_token();
+        if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
         
         while file && (is_digit(file[0]) || file[0] == #char ".") {
             str.count += 1;
-            if !advance(t)  return make_error_token("Unexpected EOF while parsing number.");
+            if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
         }
         
         val, ok, rem := string_to_float(str);
@@ -247,15 +264,15 @@ tokenize :: (text: string) -> ([..] Script_Token, bool) {
 
 
 // cycles between skipping whitespace and comments until next character is neither
-skip_whitespace_and_comments :: (using t: *Lexer) -> bool {
+skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
     if file.count == 0  return false;
     while true {
         while is_whitespace(file[0]) {
-            if !advance(t)  return false;
+            if !advance(lexer)  return false;
         }
         if file[0] == #char "#" {
             while file[0] != #char "\n" {
-                if !advance(t)  return false;
+                if !advance(lexer)  return false;
             }
         }
         else return true;

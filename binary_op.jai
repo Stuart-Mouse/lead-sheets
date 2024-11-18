@@ -10,9 +10,15 @@ BUILTIN_OPERATIONS :: (
     .{ "-", float, float, float, false },
     .{ "*", float, float, float, false },
     .{ "/", float, float, float, false },
+    
     .{ ">", float, float, bool, false },
     .{ "<", float, float, bool, false },
     .{ "==", float, float, bool, false },
+    .{ ">=", float, float, bool, false },
+    .{ "<=", float, float, bool, false },
+    
+    .{ "&&", bool, bool, bool, false },
+    .{ "||", bool, bool, bool, false },
     
     .{ "+", Vector2, Vector2, Vector2, false },
     .{ "-", Vector2, Vector2, Vector2, false },
@@ -20,6 +26,8 @@ BUILTIN_OPERATIONS :: (
     .{ "/", Vector2, Vector2, Vector2, false },
     .{ "*", Vector2, float,   Vector2, true  },
     .{ "/", Vector2, float,   Vector2, false },
+    
+    .{ "==", Vector2, Vector2, bool, false },
 ];
 
 resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, right_type: *Type_Info) -> (index: int, swap_args: bool) {
