@@ -195,6 +195,15 @@ execute_script :: (script: *Script) -> bool {
     return true;
 }
 
+/*
+    Even though the script has already been typechecked, I use stack_push_any and stack_pop_any 
+        so that it's easier to get the type info when needed for debugging.
+    Using these procedures also just makes the code here a bit easier to read and captures the 
+        type-specific rules about additional indirections automatically.
+    When moving to bytecode though, we should be just use stack_push and stack_pop, 
+        which are probably slightly faster and don't require passing type info.
+    
+*/
 execute_node :: (script : *Script, node: *Node) -> bool {
     dbg_print("evaluating node %: %\n", node, node.type);
     
@@ -207,23 +216,23 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     
     if node.type == {
       case .NUMBER;
-        stack_push_item(script, node.number);
+        stack_push_any(script, node.number);
         dbg_print("returning number %\n", node.number);
         return true;
         
       case .VARIABLE;
         variable := node_get_variable(script, node);
-        stack_push_item(script, variable.binding, node.flags & .L_VALUE != 0);
+        stack_push_any(script, variable.binding, node.flags & .L_VALUE != 0);
         return true;
         
       case .OPERATION;
         dbg_print("operation is %\n", node.src_text);
         
-        zero := cast(s64) 0;
         if is_aggr(node.value_type) {
-            stack_push_item(script, node.operation.dst);
+            stack_push_any(script, Any.{ node.value_type, node.procedure_call.dst });         
         } else {
-            stack_push_item(script, zero);
+            zero: s64 = 0;
+            stack_push_any(script, Any.{ node.value_type, *zero });
         }
         
         // result_ptr := stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
@@ -257,7 +266,12 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         //       but we are going to need to use is from the bytecode as well, and also possibly from the eval procs.
         
         return_ptr := script.stack_ptr;
-        stack_push(*script.stack_ptr, *node.procedure_call.dst, is_aggr(node.value_type));
+        if is_aggr(node.value_type) {
+            stack_push_any(script, Any.{ node.value_type, node.procedure_call.dst });         
+        } else {
+            zero: s64 = 0;
+            stack_push_any(script, Any.{ node.value_type, *zero });
+        }
         arg_ptr := script.stack_ptr;
         
         for node.procedure_call.arg_nodes {
@@ -278,17 +292,17 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
       case .MEMBER;
         if !execute_node(script, node.member.base)  return false;  
-        
-        base_ptr := stack_pop(*script.stack_ptr, true);
-        stack_push(*script.stack_ptr, *(base_ptr + node.member.offset), is_aggr(node.value_type) || (node.flags & .L_VALUE == .L_VALUE));
+        base   := stack_pop_any(script, node.member.base.value_type, true);
+        member := Any.{ base.value_pointer + node.member.offset, node.value_type };
+        stack_push_any(script, member, node.flags & .L_VALUE == .L_VALUE);
         return true;
         
       case .SUBSCRIPT;
         if !execute_node(script, node.subscript.base)  return false;      
         if !execute_node(script, node.subscript.indexing_expr)  return false;      
         
-        index_ptr := stack_pop(*script.stack_ptr);
-        base_ptr  := stack_pop(*script.stack_ptr, true);
+        index := stack_pop_any(script, node.subscript.indexing_expr.value_type);
+        base  := stack_pop_any(script, node.subscript.base.value_type, true);
         
         ti_array := cast(*Type_Info_Array) node.subscript.base.value_type;
         indexing_type := node.subscript.indexing_expr.value_type;
@@ -296,12 +310,13 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         // get index as s64
         // TODO: maybe improve this
         //       for bytecode, could do an instruction for inplace type cast
-        index: s64;
-        if !remap_int(index, Any.{ indexing_type, index_ptr }) {
+        index_as_s64: s64;
+        if !remap_int(index_as_s64, index) {
             dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
         }
         
         // TODO: better method of doing runtime indexing checks ?
+        base_ptr := base.value_pointer;
         arr_count: int;
         if ti_array.array_type == {
           case .FIXED;
@@ -314,12 +329,13 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             base_ptr   = raw_array.data;
         }
         
-        if index < 0 || index >= arr_count {
-            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index, arr_count-1);
+        if index_as_s64 < 0 || index_as_s64 >= arr_count {
+            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, arr_count-1);
             return false;
         }
         
-        stack_push(*script.stack_ptr, *(base_ptr + (index * node.value_type.runtime_size)), is_aggr(node.value_type) || (node.flags & .L_VALUE == .L_VALUE));
+        element := Any.{ base_ptr + index_as_s64 * node.value_type.runtime_size, node.value_type };
+        stack_push_any(script, element, node.flags & .L_VALUE == .L_VALUE);
         return true;
         
       case .ASSIGNMENT;
@@ -332,16 +348,13 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             return false;
         }
         
-        l_type := node.assignment.left.value_type;
-        r_type := node.assignment.right.value_type;
+        r_value := stack_pop_any(script, node.assignment.right.value_type);
+        l_value := stack_pop_any(script, node.assignment.left.value_type, true);
         
-        r_value_ptr := stack_pop(*script.stack_ptr, is_aggr(r_type));
-        l_value_ptr := stack_pop(*script.stack_ptr, true);
+        dbg_print("l_value: % %\n", as_type(l_value.type), l_value);
+        dbg_print("r_value: % %\n", as_type(r_value.type), r_value);
         
-        dbg_print("l_value_ptr: % (% %)\n", l_value_ptr, as_type(l_type), Any.{l_type, l_value_ptr});
-        dbg_print("r_value_ptr: % (% %)\n", r_value_ptr, as_type(r_type), Any.{r_type, r_value_ptr});
-        
-        memcpy(l_value_ptr, r_value_ptr, r_type.runtime_size);
+        memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         
         return true;
         
@@ -358,7 +371,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             return false;
         }
         
-        condition := Any.{ node.if_statement.condition.value_type, stack_pop_item(script, node.if_statement.condition.value_type) };
+        condition := stack_pop_any(script, node.if_statement.condition.value_type);
         dbg_print("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;

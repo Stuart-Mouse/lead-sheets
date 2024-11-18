@@ -80,24 +80,27 @@ alloc_node :: (script: *Script) -> *Node {
 PTR_SIZE :: size_of(*void);
 
 // TODO: if we passed *Script instead of just stack pointer, then we could do runtime checks to make sure we don't exhaust stack space allocated
-stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) -> *void {
-    ret := value_pointer;
-    if by_ptr {
-        memcpy(stack_ptr.*, value_pointer, PTR_SIZE);
-    } else {
-        if value_pointer.* != null {
-            ret = value_pointer.*;
-            memcpy(stack_ptr.*, value_pointer.*, PTR_SIZE);
-        } else {
-            dbg_print("WARNING: value_pointer.* was null!\n");
-        }
-    }
+// TODO: this proceudre also should probably just assert false when value_pointer.* is null
+// stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) -> *void {
+//     ret := value_pointer;
+//     if by_ptr {
+//         memcpy(stack_ptr.*, value_pointer, PTR_SIZE);
+//     } else {
+//         if value_pointer.* != null {
+//             ret = value_pointer.*;
+//             memcpy(stack_ptr.*, value_pointer.*, PTR_SIZE);
+//         } else {
+//             dbg_print("WARNING: value_pointer.* was null!\n");
+//         }
+//     }
     
-    stack_ptr.* += PTR_SIZE;
-    return ret;
-}
+//     stack_ptr.* += PTR_SIZE;
+//     return ret;
+// }
 
-stack_pop :: (stack_ptr: **void, $$by_ptr := false) -> *void {
+
+// TODO: we should also have some kind of assert that stack pointer is not less that stack base
+stack_pop :: inline (stack_ptr: **void, $$by_ptr := false) -> *void {
     stack_ptr.* -= PTR_SIZE;
     if by_ptr {
         return (cast(**void)(stack_ptr.*)).*;
@@ -106,7 +109,7 @@ stack_pop :: (stack_ptr: **void, $$by_ptr := false) -> *void {
     }
 }
 
-stack_get_top :: (stack_ptr: *void, $$by_ptr := false) -> *void {
+stack_get_top :: inline (stack_ptr: *void, $$by_ptr := false) -> *void {
     stack_ptr -= PTR_SIZE;
     if by_ptr {
         return (cast(**void)(stack_ptr)).*;
@@ -115,24 +118,31 @@ stack_get_top :: (stack_ptr: *void, $$by_ptr := false) -> *void {
     }
 }
 
-stack_push_item :: (script: *Script, any: Any, is_lvalue := false) -> value_pointer: *void {
+stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
+    if script.stack_ptr >= script.stack_base + script.stack_size {
+        dbg_print("Runtime Error: ran out of space on stack!\n");
+        return false;
+    }
     defer script.stack_ptr += PTR_SIZE;
+    
     if is_aggr(any.type) || is_lvalue {
         (cast(**void)script.stack_ptr).* = any.value_pointer; // store the pointer itself instead of the value
     } else {
         assert(any.type.runtime_size <= PTR_SIZE);
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
-    return any.value_pointer;
+    return true;
 }
 
-stack_pop_item :: (script: *Script, ti: *Type_Info, is_lvalue := false) -> value_pointer: *void {
+stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
+    assert(script.stack_ptr >= script.stack_base);
+
     script.stack_ptr -= PTR_SIZE;
     if is_aggr(ti) || is_lvalue {
-        return (cast(**void)script.stack_ptr).*; // additional derefernce to get pointer to value
+        return Any.{ ti, (cast(**void)script.stack_ptr).* }; // additional dereference to get pointer to value
     } else {
-        assert(ti.runtime_size == PTR_SIZE);
-        return script.stack_ptr;
+        assert(ti.runtime_size <= PTR_SIZE);
+        return Any.{ ti, script.stack_ptr };
     }
 }
 
