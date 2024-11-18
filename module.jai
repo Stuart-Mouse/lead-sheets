@@ -217,7 +217,8 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
     
     next_token := peek_token(*lexer);
     if next_token.type == .IDENTIFIER {
-        if next_token.text == "if" {
+        if next_token.text == {
+          case "if";
             get_token(*lexer);
             
             node := alloc_node(ctxt);
@@ -228,6 +229,20 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             
             node.if_statement.statement = parse_statement(ctxt);
             if node.if_statement.statement == null  return null;
+            
+            return node;
+            
+          case "while";
+            get_token(*lexer);
+            
+            node := alloc_node(ctxt);
+            node.type = .WHILE_LOOP;
+            
+            node.while_loop.condition = parse_expression(ctxt, 0);
+            if node.while_loop.condition == null  return null;
+            
+            node.while_loop.statement = parse_statement(ctxt);
+            if node.while_loop.statement == null  return null;
             
             return node;
         }

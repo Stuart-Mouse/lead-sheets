@@ -187,6 +187,11 @@ typecheck_node :: (
         if !typecheck_node(ctxt, node.if_statement.condition)  return null; // TODO: must be bool or coercible to bool
         if !typecheck_node(ctxt, node.if_statement.statement)  return null;
         return type_info(void);
+        
+      case .WHILE_LOOP;
+        if !typecheck_node(ctxt, node.while_loop.condition)  return null; // TODO: must be bool or coercible to bool
+        if !typecheck_node(ctxt, node.while_loop.statement)  return null;
+        return type_info(void);
     }
     
     return null;

@@ -120,6 +120,9 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
       case .IF_STATEMENT;
         return tprint(".IF_STATEMENT: if %  %", sprint_ast_node(script, node.if_statement.condition), sprint_ast_node(script, node.if_statement.statement));
         
+      case .WHILE_LOOP;
+        return tprint(".WHILE_LOOP: if %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
+        
       case .BLOCK;
         return "{ ... }";
         
@@ -378,6 +381,27 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
             if !execute_node(script, node.if_statement.statement) {
+                dbg_print("failed to evaluate left side of assignment statement!\n");
+                return false;
+            }
+        }
+        return true;
+        
+      case .WHILE_LOOP;
+        while loop := true {
+            if !execute_node(script, node.while_loop.condition) {
+                dbg_print("failed to evaluate left side of assignment statement!\n");
+                return false;
+            }
+            
+            condition := stack_pop_any(script, node.while_loop.condition.value_type);
+            dbg_print("condition: % %\n", as_type(condition.type), condition);
+            
+            condition_as_bool: bool;
+            any_to_bool(condition_as_bool, condition);
+            if !condition_as_bool  break loop;
+            
+            if !execute_node(script, node.while_loop.statement) {
                 dbg_print("failed to evaluate left side of assignment statement!\n");
                 return false;
             }

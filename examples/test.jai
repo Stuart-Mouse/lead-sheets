@@ -9,9 +9,12 @@
 main :: () {
     input := #string DONE
     r1 = -Vec2(3, 4) * 5;
-    if 3 + 1 == 2 + 2 && 1 > 0 {
-        r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
-        r3 = a + b;
+    r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
+    r3 = a + b;
+    
+    while r2 > 20 {
+        r2 = r2 - 1;
+        r3 = r3 + r3;
     }
     DONE;
     
