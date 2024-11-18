@@ -10,6 +10,9 @@ BUILTIN_OPERATIONS :: (
     .{ "-", float, float, float, false },
     .{ "*", float, float, float, false },
     .{ "/", float, float, float, false },
+    .{ ">", float, float, bool, false },
+    .{ "<", float, float, bool, false },
+    .{ "==", float, float, bool, false },
     
     .{ "+", Vector2, Vector2, Vector2, false },
     .{ "-", Vector2, Vector2, Vector2, false },

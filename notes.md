@@ -292,8 +292,20 @@ we should be able to do this no problem once we are in bytecode, but for executi
         and this would allow us to simplify code in several places
 
 also, since we will need to change how procedures are typechecked anywyas, this may be an even bigger help to simplify in the first place
+typechecking on procedure arguments should look at the nodes themselves for the arguments so that we can coerce/cast values in a similar way to what jai does
+    this is not urgent by any means but it would be quite useful 
 
 
+
+
+TODO: 
+    better typechecking on procedure arguments
+        will require type casting
+    remove need for variables and procedures resizable arrays in script struct
+        move to constructor
+        allocate fixed array view for these (only those variables/procedures that actually get used)
+        add additional flags for variables (internal/external, constant, intermediate, subexpression value)
+    add subexpression declarations
 
 
 

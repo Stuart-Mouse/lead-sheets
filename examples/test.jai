@@ -9,8 +9,10 @@
 main :: () {
     input := #string DONE
     r1 = -Vec2(3, 4) * 5;
-    r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
-    r3 = a + b;
+    if 2 < 3 {
+        r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
+        r3 = a + b;
+    }
     DONE;
     
     // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator

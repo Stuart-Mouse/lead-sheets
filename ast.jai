@@ -12,6 +12,9 @@ Node_Type :: enum {
     // statements
     BLOCK;
     ASSIGNMENT;
+    IF_STATEMENT;
+    WHILE_LOOP;
+    FOR_LOOP;
 }
 
 Node :: struct {
@@ -23,6 +26,7 @@ Node :: struct {
     
     // usage is context dependent
     // for procedure arguments, points to next argument node
+    // for statements, points to next statement (or block) in block
     next  : *Node;
     flags : Flags;
     Flags :: enum_flags { L_VALUE; UNARY_OP; OVERLOAD_OP; DISCARD_VALUE; };
@@ -62,6 +66,22 @@ Node :: struct {
         assignment: struct {
             left, right: *Node; 
         }
+        if_statement: struct {
+            condition: *Node;
+            statement: *Node;
+        }
+        while_loop: struct {
+            condition: *Node;
+            statement: *Node;
+        }
+        for_loop: struct {
+            control_type: enum { RANGE; ARRAY; };
+            control: union {
+                range: struct { min, max: *Node; };
+                array: *Node;
+            }
+            statement: *Node;
+        }
     }
 }
 
@@ -74,41 +94,6 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
         it_index += 1;
     }
 }
-
-// print_ast :: (script: *Script, node: *Node, parent_prec: int = 0) {
-//     // if node_i < 0 || node_i >= nodes.count  return;
-    
-//     // node := *nodes[node_i];
-//     if node.type == {
-//       case .NUMBER;
-//         dbg_print("%", node.number);
-        
-//       case .VARIABLE;
-//         dbg_print("%", get_node_variable(script, node).name);
-        
-//       case .OPERATION;
-//         prec := get_operator_precedence(get_node_operation(script, node).name[0]);
-//         do_parens := ifx prec < parent_prec then true;
-        
-//         if do_parens  dbg_print("(");
-//         dbg_print_ast(script, node.operation.left, prec);
-//         dbg_print(get_node_operation(script, node).name);
-//         dbg_print_ast(script, node.operation.right, prec);
-//         if do_parens  dbg_print(")");
-        
-//       case .PROCEDURE_CALL;
-//         dbg_print("%(", get_node_prcedure(script, node).name);
-        
-//         for node.procedure_call.arg_nodes {
-//             dbg_print_ast(script, it);
-//             if arg_node_index != node.procedure_call.arg_count-1  dbg_print(",");
-            
-//             arg_node = arg_node.next         ;
-//             arg_node_index += 1;
-//         }
-//         dbg_print(")");
-//     }
-// }
 
 sprint_ast_node :: (script: *Script, node: Node) -> string {
     if node.type == {
@@ -132,8 +117,14 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
             return node.src_text;
         }
         
+      case .IF_STATEMENT;
+        return tprint(".IF_STATEMENT: if %  %", sprint_ast_node(script, node.if_statement.condition), sprint_ast_node(script, node.if_statement.statement));
+        
+      case .BLOCK;
+        return "{ ... }";
+        
       case;
-        dbg_print("%: ??? ", node.type);
+        return tprint("%: ??? ", node.type);
     }
     return "";
 }
@@ -190,9 +181,9 @@ execute_script :: (script: *Script) -> bool {
     
     script.stack_ptr = script.stack_base;
     
-    for *script.ast_root.block.statements {
+    for script.ast_root.block.statements {
         dbg_print("executing statement #%\n", it_index);
-        if !execute_statement(script, it)  return false;
+        if !execute_node(script, it)  return false;
     }
     
     sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
@@ -202,39 +193,6 @@ execute_script :: (script: *Script) -> bool {
     }
     
     return true;
-}
-
-execute_statement :: (script: *Script, statement: *Node) -> bool {
-    if statement.type == {
-      case .ASSIGNMENT;
-        if !execute_node(script, statement.assignment.left) {
-            dbg_print("failed to evaluate left side of assignment statement!\n");
-            return false;
-        }
-        if !execute_node(script, statement.assignment.right) {
-            dbg_print("failed to evaluate right side of assignment statement!\n");
-            return false;
-        }
-        
-        l_type := statement.assignment.left.value_type;
-        r_type := statement.assignment.right.value_type;
-        
-        r_value_ptr := stack_pop(*script.stack_ptr, is_aggr(r_type));
-        l_value_ptr := stack_pop(*script.stack_ptr, true);
-        
-        dbg_print("l_value_ptr: % (% %)\n", l_value_ptr, as_type(l_type), Any.{l_type, l_value_ptr});
-        dbg_print("r_value_ptr: % (% %)\n", r_value_ptr, as_type(r_type), Any.{r_type, r_value_ptr});
-        
-        memcpy(l_value_ptr, r_value_ptr, r_type.runtime_size);
-        
-        return true;
-        
-      case .PROCEDURE_CALL;
-        return execute_node(script, statement);
-        
-      case;
-        return false;
-    }
 }
 
 execute_node :: (script : *Script, node: *Node) -> bool {
@@ -259,8 +217,16 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         return true;
         
       case .OPERATION;
-        result_ptr := stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
-        // result_ptr := stack_push(*script, Any.{ node.value_type, node.operation.dst });
+        dbg_print("operation is %\n", node.src_text);
+        
+        zero := cast(s64) 0;
+        if is_aggr(node.value_type) {
+            stack_push_item(script, node.operation.dst);
+        } else {
+            stack_push_item(script, zero);
+        }
+        
+        // result_ptr := stack_push(*script.stack_ptr, *node.operation.dst, is_aggr(node.value_type));
         
         if !execute_node(script, node.operation.left )  return false;
         if !execute_node(script, node.operation.right)  return false;
@@ -278,7 +244,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         execute_builtin_operation(node.operation.operator_index, *script.stack_ptr);
         
-        dbg_print("returning result of binary operation: % %\n", as_type(node.value_type), Any.{ node.value_type, result_ptr });
+        dbg_print("returning result of binary operation: % %\n", as_type(node.value_type), Any.{ node.value_type, script.stack_ptr });
         
         return true;
         
@@ -354,6 +320,55 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         
         stack_push(*script.stack_ptr, *(base_ptr + (index * node.value_type.runtime_size)), is_aggr(node.value_type) || (node.flags & .L_VALUE == .L_VALUE));
+        return true;
+        
+      case .ASSIGNMENT;
+        if !execute_node(script, node.assignment.left) {
+            dbg_print("failed to evaluate left side of assignment statement!\n");
+            return false;
+        }
+        if !execute_node(script, node.assignment.right) {
+            dbg_print("failed to evaluate right side of assignment statement!\n");
+            return false;
+        }
+        
+        l_type := node.assignment.left.value_type;
+        r_type := node.assignment.right.value_type;
+        
+        r_value_ptr := stack_pop(*script.stack_ptr, is_aggr(r_type));
+        l_value_ptr := stack_pop(*script.stack_ptr, true);
+        
+        dbg_print("l_value_ptr: % (% %)\n", l_value_ptr, as_type(l_type), Any.{l_type, l_value_ptr});
+        dbg_print("r_value_ptr: % (% %)\n", r_value_ptr, as_type(r_type), Any.{r_type, r_value_ptr});
+        
+        memcpy(l_value_ptr, r_value_ptr, r_type.runtime_size);
+        
+        return true;
+        
+      case .BLOCK;
+        for node.block.statements {
+            dbg_print("executing statement #%\n", it_index);
+            if !execute_node(script, it)  return false;
+        }
+        return true;
+        
+      case .IF_STATEMENT;
+        if !execute_node(script, node.if_statement.condition) {
+            dbg_print("failed to evaluate left side of assignment statement!\n");
+            return false;
+        }
+        
+        condition := Any.{ node.if_statement.condition.value_type, stack_pop_item(script, node.if_statement.condition.value_type) };
+        dbg_print("condition: % %\n", as_type(condition.type), condition);
+        
+        condition_as_bool: bool;
+        any_to_bool(condition_as_bool, condition);
+        if condition_as_bool {
+            if !execute_node(script, node.if_statement.statement) {
+                dbg_print("failed to evaluate left side of assignment statement!\n");
+                return false;
+            }
+        }
         return true;
     }
     

@@ -18,9 +18,9 @@
 
 // need to remember how to not have to specify the count explicitly here
 operator_precedence_table :: struct { op: string; prec: int; } .[
-    // .{ "==", 1 },
-    // .{ ">", 1 },
-    // .{ "<", 1 },
+    .{ "==", 1 },
+    .{ ">", 1 },
+    .{ "<", 1 },
     .{ "+", 2 },
     .{ "-", 2 },
     .{ "*", 3 },
@@ -47,8 +47,7 @@ Script :: struct {
     
     stack_base  : *void;
     stack_size  : int;
-    
-    stack_ptr   : *void; // state by execution procs
+    stack_ptr   : *void; // state used by execution procs
     
     dyncall_vm  : *DCCallVM;
     
@@ -129,11 +128,11 @@ stack_push_item :: (script: *Script, any: Any, is_lvalue := false) -> value_poin
 
 stack_pop_item :: (script: *Script, ti: *Type_Info, is_lvalue := false) -> value_pointer: *void {
     script.stack_ptr -= PTR_SIZE;
-    if is_aggr(any.type) || is_lvalue {
+    if is_aggr(ti) || is_lvalue {
         return (cast(**void)script.stack_ptr).*; // additional derefernce to get pointer to value
     } else {
         assert(ti.runtime_size == PTR_SIZE);
-        return stack_ptr;
+        return script.stack_ptr;
     }
 }
 
@@ -152,7 +151,7 @@ set_variable :: (script: *Script, name: string, any: Any) {
 Script_Constructor :: struct {
     using #as script: *Script;
     lexer: Lexer;
-
+    
     // May do something like this in order to extend parser / lexer for in other modules
     // resolve_identifier: struct { 
     //     proc: (string, *void) -> Any;
@@ -196,7 +195,7 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         return false;
     }
     
-    // script.stack_size = stack_required;
+    // TODO: we should have some way to configure the stack size that gets allocated. perhaps should be passed by user as a parameter
     script.stack_size = 1024;
     script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
     
@@ -216,6 +215,47 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
 }
 
 parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
+    
+    next_token := peek_token(*lexer);
+    if next_token.type == .IDENTIFIER {
+        if next_token.text == "if" {
+            get_token(*lexer);
+            
+            node := alloc_node(ctxt);
+            node.type = .IF_STATEMENT;
+            
+            node.if_statement.condition = parse_expression(ctxt, 0);
+            if node.if_statement.condition == null  return null;
+            
+            node.if_statement.statement = parse_statement(ctxt);
+            if node.if_statement.statement == null  return null;
+            
+            return node;
+        }
+        // return null;
+    }
+    
+    if expect_token_type(*lexer, .OPEN_BRACE) {
+        node := alloc_node(ctxt);
+        node.type = .BLOCK;
+        
+        statement := parse_statement(ctxt);
+        if !statement  return null;
+        
+        node.block.statements = statement;
+        
+        previous := statement;
+        while !expect_token_type(*lexer, .CLOSE_BRACE) {
+            statement = parse_statement(ctxt);
+            if !statement  return null;
+            
+            previous.next = statement;
+            previous      = statement;
+        }
+        
+        return node;
+    }
+    
     left := parse_expression(ctxt, 0);
     if left == null  return null;
     
@@ -254,8 +294,18 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
     return -1;
 }
 
+is_reserved_word :: (str: string) -> bool {
+    if str == {
+        case "if";  return true;
+    }
+    return false;
+}
+
 parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *Node {
     dbg_print("parse_identifier(ident = '%')\n", ident);
+    
+    // check first for reserved words
+    if is_reserved_word(ident)  return null;
     
     if expect_token_type(*lexer, .OPEN_PAREN) {
         first_arg_node : *Node;
@@ -308,7 +358,10 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
     return token.type == .ADD ||
            token.type == .SUB ||
            token.type == .MUL ||
-           token.type == .DIV;
+           token.type == .DIV ||
+           token.type == .LESS_THAN     ||
+           token.type == .GREATER_THAN  ||
+           token.type == .DOUBLE_EQUALS;
 }
 
 parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
@@ -480,7 +533,6 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         return create_binary_operation(ctxt, next_token.text, left, right);
     }
     
-    dbg_print("sadfasdfasdf\n");
     return left;    
 }
 

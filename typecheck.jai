@@ -160,38 +160,36 @@ typecheck_node :: (
             node.flags |= .L_VALUE;
         }
         return node.value_type;
-    }
-    
-    return null;
-}
-
-// TODO: probably just make this a case of typecheck_node
-typecheck_statement :: (
-    using ctxt  : *Script_Constructor, 
-    statement   : *Node, 
-    check_flags : Typechecking_Flags
-) -> bool {
-    if statement.type == {
+        
       case .ASSIGNMENT;
         // get type of left side
         // we expect left side to be an lvalue
-        left_type := typecheck_node(ctxt, statement.assignment.left, check_flags = .EXPECT_LVALUE);
-        if !left_type  return false;
+        left_type := typecheck_node(ctxt, node.assignment.left, check_flags = .EXPECT_LVALUE);
+        if !left_type  return null;
         
         // pass left type as 'expect_type' argument so that we can infer type of struct literals
-        right_type := typecheck_node(ctxt, statement.assignment.right, expect_type = left_type);
-        if !right_type  return false;
+        right_type := typecheck_node(ctxt, node.assignment.right, expect_type = left_type);
+        if !right_type  return null;
         
         if left_type != right_type {
             dbg_print("types on left and right side of assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
-            return false;
+            return null;
         }
-        return true;
+        return type_info(void);
         
-      case .PROCEDURE_CALL;
-        return typecheck_node(ctxt, statement) != null;
+      case .BLOCK;
+        for node.block.statements {
+            if !typecheck_node(ctxt, it)  return null;
+        }
+        return type_info(void);
+        
+      case .IF_STATEMENT;
+        if !typecheck_node(ctxt, node.if_statement.condition)  return null; // TODO: must be bool or coercible to bool
+        if !typecheck_node(ctxt, node.if_statement.statement)  return null;
+        return type_info(void);
     }
-    return false;
+    
+    return null;
 }
 
 typecheck_script :: (script: *Script_Constructor) -> bool {
@@ -199,7 +197,8 @@ typecheck_script :: (script: *Script_Constructor) -> bool {
     if script.ast_root.type != .BLOCK  return false;
     
     for *script.ast_root.block.statements {
-        if !typecheck_statement(script, it, .NONE)  return false;
+        // TODO: probably check specifically that type returned here is void, since statements should not have a value_type.
+        if !typecheck_node(script, it, .NONE)  return false;
     }
     
     script.flags |= .TYPECHECKED;

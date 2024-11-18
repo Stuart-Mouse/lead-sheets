@@ -38,6 +38,9 @@ Script_Token_Type :: enum {
     SEMICOLON     :: #char ";";
     EQUALS        :: #char "=";
     
+    LESS_THAN     :: #char "<";
+    GREATER_THAN  :: #char ">";
+    
     ADD           :: #char "+";
     SUB           :: #char "-";
     MUL           :: #char "*";
@@ -45,6 +48,7 @@ Script_Token_Type :: enum {
     
     IDENTIFIER    :: 256;
     NUMBER;
+    DOUBLE_EQUALS;
 }
 
 Script_Token :: struct {
@@ -147,8 +151,21 @@ lex_next_token :: (using t: *Lexer) -> Script_Token {
         return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
     }
     
+    // TODO: this is hacky. double equals case
+    //       and we will need to do other combinations, like >=, <=, +=, -= anyhow 
+    //       so maybe we want to handle this on higher level?
+    if file.count >= 2 && file[0] == #char "=" && file[1] == #char "=" {
+        ret := Script_Token.{
+            type    = .DOUBLE_EQUALS,
+            text    = slice(file, 0, 2),
+            src_loc = src_loc
+        };
+        advance(t);
+        return ret;
+    }
+    
     // single-character tokens
-    if is_any(file[0], "+-*/(),;=.[]{}") {
+    if is_any(file[0], "+-*/(),;=.[]{}<>") {
         ret := Script_Token.{
             type    = cast(Script_Token_Type) file[0], // character value for single-char tokens can be cast directly to token type
             text    = slice(file, 0, 1),
