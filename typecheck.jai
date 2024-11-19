@@ -47,7 +47,7 @@ typecheck_node :: (
         node.value_type = variables[node.variable_index].binding.type;
         
         if check_flags & .EXPECT_LVALUE {
-            node.flags |= .L_VALUE;
+            node.flags |= .IS_LVALUE;
         }
         return node.value_type;
         
@@ -138,7 +138,7 @@ typecheck_node :: (
         node.member.offset = member_offset;
         
         if check_flags & .EXPECT_LVALUE {
-            node.flags |= .L_VALUE;
+            node.flags |= .IS_LVALUE;
         }
         return node.value_type;
         
@@ -157,11 +157,13 @@ typecheck_node :: (
         
         node.value_type = base_type.element_type;
         if check_flags & .EXPECT_LVALUE {
-            node.flags |= .L_VALUE;
+            node.flags |= .IS_LVALUE;
         }
         return node.value_type;
         
       case .ASSIGNMENT;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
         // get type of left side
         // we expect left side to be an lvalue
         left_type := typecheck_node(ctxt, node.assignment.left, check_flags = .EXPECT_LVALUE);
@@ -175,23 +177,77 @@ typecheck_node :: (
             dbg_print("types on left and right side of assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
             return null;
         }
-        return type_info(void);
+        
+        node.value_type = type_info(void);
+        return node.value_type;
         
       case .BLOCK;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
         for node.block.statements {
             if !typecheck_node(ctxt, it)  return null;
         }
-        return type_info(void);
+        
+        node.value_type = type_info(void);
+        return node.value_type;
         
       case .IF_STATEMENT;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
         if !typecheck_node(ctxt, node.if_statement.condition)  return null; // TODO: must be bool or coercible to bool
         if !typecheck_node(ctxt, node.if_statement.statement)  return null;
-        return type_info(void);
+        
+        node.value_type = type_info(void);
+        return node.value_type;
         
       case .WHILE_LOOP;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
         if !typecheck_node(ctxt, node.while_loop.condition)  return null; // TODO: must be bool or coercible to bool
         if !typecheck_node(ctxt, node.while_loop.statement)  return null;
-        return type_info(void);
+        
+        node.value_type = type_info(void);
+        return node.value_type;
+        
+      case .FOR_LOOP;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
+        ti_array := typecheck_node(ctxt, node.for_loop.control.array, check_flags = .EXPECT_LVALUE);
+        if !ti_array || ti_array.type != .ARRAY  return null;
+        
+        if !typecheck_node(ctxt, node.for_loop.statement)  return null;
+        
+        node.value_type = type_info(void);
+        return node.value_type;
+        
+      case .ITERATOR;
+        node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
+        if !node.iterator.parent_for {
+            dbg_print("Error: Attempt to use 'it' ouside of the context of a for loop!\n");
+            return null;
+        }
+        
+        // TODO: this is ugly wtf
+        ti_array := cast(*Type_Info_Array) node.iterator.parent_for.for_loop.control.array.value_type;
+        assert(ti_array.type == .ARRAY);
+        node.value_type = ti_array.element_type;
+        
+        // in future, may need checks on whether array itself is an lvalue
+        // this would be important if we wanted to have array literals in scripts
+        if check_flags & .EXPECT_LVALUE {
+            node.flags |= .IS_LVALUE;
+        }
+        
+        return node.value_type;
+        
+      case .ITERATOR_INDEX;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
+        node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
+        if !node.iterator.parent_for  return null;
+        
+        node.value_type = type_info(int);
+        return node.value_type;
     }
     
     return null;
@@ -218,6 +274,7 @@ is_aggr :: (ti: *Type_Info) -> bool {
         case .INTEGER; return false;
         case .FLOAT;   return false;
         case .ENUM;    return false;
+        case .BOOL;    return false;
         case .POINTER; return false;
     }
     return true;

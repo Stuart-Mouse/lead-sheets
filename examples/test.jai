@@ -16,6 +16,10 @@ main :: () {
         r2 = r2 - 1;
         r3 = r3 + r3;
     }
+    
+    for arr1  if it > 1  it = f32(it_index) * 4;
+    for arr1  echo(it);
+    
     DONE;
     
     // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
@@ -35,6 +39,10 @@ main :: () {
     register_procedure(*script, "sin", sin);
     register_procedure(*script, "cos", cos);
     register_procedure(*script, "+", (x: int, y: int) -> int { return x + y; });
+    register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
+    register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
+    register_procedure(*script, "echo", (value: Vector2) -> Vector2 { print("%\n", value); return value; });
+    register_procedure(*script, "f32", (value: int) -> float { return xx value; });
     
     r1: Vector2;
     r2: float;

@@ -308,4 +308,13 @@ TODO:
     add subexpression declarations
 
 
+    procedures as variables
+        currently, parsing and typecheckin of procedures is completely separate from variables
+        but variables could be procedures, and an expression can evaluate to a procedure pointer that maybe we want to be able to call
+
+    
+iterators are very much hardcoded right now
+also for loops only work on arrays, not ranges
+    we will probably want to be able to do for loops on numeric ranges, or at least slice arrays and iterateresulting slice
+    
 

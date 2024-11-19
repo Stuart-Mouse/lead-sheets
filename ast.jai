@@ -9,6 +9,9 @@ Node_Type :: enum {
     MEMBER;
     SUBSCRIPT;
     
+    ITERATOR;
+    ITERATOR_INDEX;
+    
     // statements
     BLOCK;
     ASSIGNMENT;
@@ -23,13 +26,14 @@ Node :: struct {
     
     src_loc  : Source_Location;
     src_text : string;     // need for identifiers before typechecking step
+    enclosing_scope: *Node; // points to parent block/loop
     
     // usage is context dependent
     // for procedure arguments, points to next argument node
     // for statements, points to next statement (or block) in block
     next  : *Node;
     flags : Flags;
-    Flags :: enum_flags { L_VALUE; UNARY_OP; OVERLOAD_OP; DISCARD_VALUE; };
+    Flags :: enum_flags { IS_LVALUE; UNARY_OP; OVERLOAD_OP; DISCARD_VALUE; };
     
     // TODO: in the future, maybe we want to just have Node subtypes that we cast to.
     //       for now it is convenient to just use a union because most node types are 
@@ -59,7 +63,8 @@ Node :: struct {
             indexing_expr : *Node;
         }
         
-        
+        // TODO: refactor how nodes work, probably stop using a union
+        //       make loops a subclass of blocks, so that we can put common variable resolution logic in block
         block: struct {
             statements: *Node;
         }
@@ -77,10 +82,16 @@ Node :: struct {
         for_loop: struct {
             control_type: enum { RANGE; ARRAY; };
             control: union {
-                range: struct { min, max: *Node; };
+                // range: struct { min, max: *Node; };
                 array: *Node;
             }
             statement: *Node;
+            
+            iterator_ptr: *void;       // points to some value allocated in pool, iterator node will get a copy of this during typecheck 
+            iterator_index: int; // backing value. iterator_index node inside loop will get pointer to this.
+        }
+        iterator: struct {
+            parent_for: *Node;
         }
     }
 }
@@ -121,7 +132,10 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
         return tprint(".IF_STATEMENT: if %  %", sprint_ast_node(script, node.if_statement.condition), sprint_ast_node(script, node.if_statement.statement));
         
       case .WHILE_LOOP;
-        return tprint(".WHILE_LOOP: if %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
+        return tprint(".WHILE_LOOP: while %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
+        
+      case .FOR_LOOP;
+        return tprint(".FOR_LOOP: for %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
         
       case .BLOCK;
         return "{ ... }";
@@ -217,6 +231,10 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     
     dbg_print("stack_pointer offset: %  (%)\n", script.stack_ptr - script.stack_base, script.stack_ptr);
     
+    if !node.value_type {
+        dbg_print("BIG TIME ERROR: node has no set value type!\n");
+    }
+    
     if node.type == {
       case .NUMBER;
         stack_push_any(script, node.number);
@@ -225,7 +243,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
       case .VARIABLE;
         variable := node_get_variable(script, node);
-        stack_push_any(script, variable.binding, node.flags & .L_VALUE != 0);
+        stack_push_any(script, variable.binding, node.flags & .IS_LVALUE != 0);
         return true;
         
       case .OPERATION;
@@ -297,7 +315,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         if !execute_node(script, node.member.base)  return false;  
         base   := stack_pop_any(script, node.member.base.value_type, true);
         member := Any.{ base.value_pointer + node.member.offset, node.value_type };
-        stack_push_any(script, member, node.flags & .L_VALUE == .L_VALUE);
+        stack_push_any(script, member, node.flags & .IS_LVALUE == .IS_LVALUE);
         return true;
         
       case .SUBSCRIPT;
@@ -338,7 +356,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         
         element := Any.{ base_ptr + index_as_s64 * node.value_type.runtime_size, node.value_type };
-        stack_push_any(script, element, node.flags & .L_VALUE == .L_VALUE);
+        stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE);
         return true;
         
       case .ASSIGNMENT;
@@ -406,6 +424,56 @@ execute_node :: (script : *Script, node: *Node) -> bool {
                 return false;
             }
         }
+        return true;
+        
+        
+      case .FOR_LOOP;
+        if !execute_node(script, node.for_loop.control.array) {
+            dbg_print("failed to evaluate left side of assignment statement!\n");
+            return false;
+        }
+        
+        ti_array := cast(*Type_Info_Array) node.for_loop.control.array.value_type;
+        assert(ti_array.type == .ARRAY);
+        array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
+        
+        base_ptr := array.value_pointer;
+        array_count: int;
+        if ti_array.array_type == {
+          case .FIXED;
+            array_count = ti_array.array_count;
+            
+          case .RESIZABLE; #through;
+          case .VIEW; 
+            raw_array := cast(*Array_View_64) base_ptr;
+            array_count = raw_array.count;
+            base_ptr    = raw_array.data;
+        }
+        
+        // these will be accessed by iterator and iterator_index nodes during iteration
+        node.for_loop.iterator_ptr   = base_ptr;
+        node.for_loop.iterator_index = 0;
+        
+        while node.for_loop.iterator_index < array_count {
+            defer {
+                node.for_loop.iterator_ptr   += ti_array.element_type.runtime_size;
+                node.for_loop.iterator_index += 1;
+            }
+            
+            if !execute_node(script, node.for_loop.statement) {
+                dbg_print("failed to evaluate left side of assignment statement!\n");
+                return false;
+            }
+        }
+        return true;
+        
+      case .ITERATOR;
+        iterator_any := Any.{ node.value_type, node.iterator.parent_for.for_loop.iterator_ptr };
+        stack_push_any(script, iterator_any, node.flags & .IS_LVALUE != 0);
+        return true;
+        
+      case .ITERATOR_INDEX;
+        stack_push_any(script, node.iterator.parent_for.for_loop.iterator_index);
         return true;
     }
     

@@ -57,8 +57,10 @@ free_script :: (using script: *Script) {
     script.* = .{};
 }
 
-alloc_node :: (script: *Script) -> *Node {
-    return New(Node,, script.allocator);
+alloc_node :: (using ctxt: *Script_Constructor) -> *Node {
+    node := New(Node,, allocator);
+    node.enclosing_scope = current_enclosing_scope; // not sure if this is the place for this, but its the only sensible thing to do at this very moment
+    return node;
 }
 
 // the by_ptr arguments are primarily to ease code gen for the builtin binary ops
@@ -151,6 +153,8 @@ Script_Constructor :: struct {
     using #as script: *Script;
     lexer: Lexer;
     
+    current_enclosing_scope: *Node;
+    
     // May do something like this in order to extend parser / lexer for in other modules
     // resolve_identifier: struct { 
     //     proc: (string, *void) -> Any;
@@ -171,8 +175,10 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
     constructor.lexer.file = source;
     init_lexer(*constructor.lexer);
     
-    script.ast_root = alloc_node(script);
+    script.ast_root = alloc_node(*constructor);
     script.ast_root.type = .BLOCK;
+    
+    constructor.current_enclosing_scope = script.ast_root;
     
     script.ast_root.block.statements = parse_statement(*constructor);
     if !script.ast_root.block.statements  return false;
@@ -185,6 +191,8 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
         previous.next = node;
         previous      = node;
     }
+    
+    assert(constructor.current_enclosing_scope == script.ast_root);
     
     script.flags |= .PARSED;
     
@@ -223,12 +231,17 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             
             node := alloc_node(ctxt);
             node.type = .IF_STATEMENT;
+            node.enclosing_scope = current_enclosing_scope; // store prev scope
             
             node.if_statement.condition = parse_expression(ctxt, 0);
             if node.if_statement.condition == null  return null;
             
+            current_enclosing_scope = node; // set new scope
+            
             node.if_statement.statement = parse_statement(ctxt);
             if node.if_statement.statement == null  return null;
+            
+            current_enclosing_scope = node.enclosing_scope; // restore prev scope
             
             return node;
             
@@ -237,12 +250,36 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             
             node := alloc_node(ctxt);
             node.type = .WHILE_LOOP;
+            node.enclosing_scope = current_enclosing_scope; // store prev scope
             
             node.while_loop.condition = parse_expression(ctxt, 0);
             if node.while_loop.condition == null  return null;
             
+            current_enclosing_scope = node; // set new scope
+            
             node.while_loop.statement = parse_statement(ctxt);
             if node.while_loop.statement == null  return null;
+            
+            current_enclosing_scope = node.enclosing_scope; // restore prev scope
+            
+            return node;
+            
+          case "for";
+            get_token(*lexer);
+            
+            node := alloc_node(ctxt);
+            node.type = .FOR_LOOP;
+            node.enclosing_scope = current_enclosing_scope; // store prev scope
+            
+            node.for_loop.control.array = parse_expression(ctxt, 0);
+            if node.for_loop.control.array == null  return null;
+            
+            current_enclosing_scope = node; // set new scope
+            
+            node.for_loop.statement = parse_statement(ctxt);
+            if node.for_loop.statement == null  return null;
+            
+            current_enclosing_scope = node.enclosing_scope; // restore prev scope
             
             return node;
         }
@@ -251,6 +288,8 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
     if expect_token_type(*lexer, .OPEN_BRACE) {
         node := alloc_node(ctxt);
         node.type = .BLOCK;
+        node.enclosing_scope = current_enclosing_scope; // store prev scope
+        current_enclosing_scope = node; // set new scope
         
         statement := parse_statement(ctxt);
         if !statement  return null;
@@ -265,6 +304,8 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             previous.next = statement;
             previous      = statement;
         }
+            
+        current_enclosing_scope = node.enclosing_scope; // restore prev scope
         
         return node;
     }
@@ -309,13 +350,40 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
 
 is_reserved_word :: (str: string) -> bool {
     if str == {
-        case "if";  return true;
+        case "if";        return true;
+        case "for";       return true;
+        case "while";     return true;
+        case "it";        return true;
+        case "it_index";  return true;
     }
     return false;
 }
 
+// searches from current_enclosing_scope
+get_enclosing_for_loop :: (enclosing_scope: *Node) -> *Node {
+    while enclosing_scope {
+        if enclosing_scope.type == .FOR_LOOP  return enclosing_scope;
+        enclosing_scope = enclosing_scope.enclosing_scope;
+    }
+    return null;
+}
+
+
 parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *Node {
     dbg_print("parse_identifier(ident = '%')\n", ident);
+    
+    if ident == "it" {
+        node := alloc_node(ctxt);
+        node.type = .ITERATOR;
+        node.src_text = ident;
+        return node;
+    }
+    if ident == "it_index" {
+        node := alloc_node(ctxt);
+        node.type = .ITERATOR_INDEX;
+        node.src_text = ident;
+        return node;
+    }
     
     // check first for reserved words
     if is_reserved_word(ident)  return null;
