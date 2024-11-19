@@ -24,7 +24,7 @@ typecheck_node :: (
 ) -> (
     node_type      : *Type_Info
 ) {
-    dbg_print("typechecking node %: % %\n", node, node.type, node.src_text);
+    dbg_print("typechecking node %: %\n", node, node.type, node.src_text);
     
     #if DEBUG {
         context.dbg_print_indent += 1;
@@ -33,9 +33,19 @@ typecheck_node :: (
     
     if node.type == {
       case .NUMBER;
-        if check_flags & .EXPECT_LVALUE  return null;
+        if check_flags & .EXPECT_LVALUE {
+            dbg_print("Error: number literal cannot be used as an lvalue.\n");
+            return null;
+        }
+        
+        if expect_type && (expect_type.type == .INTEGER || expect_type.type == .FLOAT) {
+            node.value_type = expect_type;
+            return expect_type;
+        }
+        
         node.value_type = type_info(float32);
         return type_info(float32);
+        
         
       case .VARIABLE;
         node.variable_index = resolve_variable(ctxt, node.src_text);
@@ -50,6 +60,7 @@ typecheck_node :: (
             node.flags |= .IS_LVALUE;
         }
         return node.value_type;
+        
         
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -127,6 +138,7 @@ typecheck_node :: (
         
         return node.value_type;
         
+        
       case .MEMBER;
         base_type := typecheck_node(ctxt, node.member.base, check_flags & .EXPECT_LVALUE);
         if base_type.type != .STRUCT  return null;
@@ -141,6 +153,7 @@ typecheck_node :: (
             node.flags |= .IS_LVALUE;
         }
         return node.value_type;
+        
         
       case .SUBSCRIPT;
         base_type :=  cast(*Type_Info_Array) typecheck_node(ctxt, node.subscript.base, check_flags & .EXPECT_LVALUE);
@@ -160,6 +173,7 @@ typecheck_node :: (
             node.flags |= .IS_LVALUE;
         }
         return node.value_type;
+        
         
       case .ASSIGNMENT;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -181,6 +195,7 @@ typecheck_node :: (
         node.value_type = type_info(void);
         return node.value_type;
         
+        
       case .BLOCK;
         if check_flags & .EXPECT_LVALUE  return null;
         
@@ -191,6 +206,7 @@ typecheck_node :: (
         node.value_type = type_info(void);
         return node.value_type;
         
+        
       case .IF_STATEMENT;
         if check_flags & .EXPECT_LVALUE  return null;
         
@@ -199,6 +215,7 @@ typecheck_node :: (
         
         node.value_type = type_info(void);
         return node.value_type;
+        
         
       case .WHILE_LOOP;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -209,15 +226,40 @@ typecheck_node :: (
         node.value_type = type_info(void);
         return node.value_type;
         
+        
       case .FOR_LOOP;
         if check_flags & .EXPECT_LVALUE  return null;
         
-        ti_array := typecheck_node(ctxt, node.for_loop.control.array, check_flags = .EXPECT_LVALUE);
-        if !ti_array || ti_array.type != .ARRAY  return null;
+        control_type: *Type_Info;
+        if node.for_loop.control.type == {
+          case .RANGE;
+            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int));
+          case;
+            control_type = typecheck_node(ctxt, node.for_loop.control, check_flags = .EXPECT_LVALUE);
+        }
+        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER)  return null;
         
         if !typecheck_node(ctxt, node.for_loop.statement)  return null;
         
         node.value_type = type_info(void);
+        return node.value_type;
+        
+        
+      case .RANGE;
+        if check_flags & .EXPECT_LVALUE  return null;
+        
+        assert(node.range.lower != null);
+        lower_type := typecheck_node(ctxt, node.range.lower, expect_type = type_info(int));
+        if lower_type == null  return null;
+        
+        assert(node.range.upper != null);
+        upper_type := typecheck_node(ctxt, node.range.upper, expect_type = lower_type);
+        if lower_type != upper_type { 
+            dbg_print("Error: type mismatch on lower and upper bounds fo range.\n");
+            return null;
+        }
+        
+        node.value_type = lower_type;
         return node.value_type;
         
       case .ITERATOR;
@@ -227,24 +269,38 @@ typecheck_node :: (
             return null;
         }
         
-        // TODO: this is ugly wtf
-        ti_array := cast(*Type_Info_Array) node.iterator.parent_for.for_loop.control.array.value_type;
-        assert(ti_array.type == .ARRAY);
-        node.value_type = ti_array.element_type;
-        
-        // in future, may need checks on whether array itself is an lvalue
-        // this would be important if we wanted to have array literals in scripts
-        if check_flags & .EXPECT_LVALUE {
-            node.flags |= .IS_LVALUE;
+        control_type := node.iterator.parent_for.for_loop.control.value_type;
+        if control_type.type == {
+          case .ARRAY;
+            node.value_type = (cast(*Type_Info_Array)control_type).element_type;
+            // in future, may need checks on whether array itself is an lvalue
+            // this would be important if we wanted to have array literals in scripts
+            if check_flags & .EXPECT_LVALUE {
+                node.flags |= .IS_LVALUE;
+            }
+            return node.value_type;
+            
+          case .INTEGER;
+            node.value_type = control_type;
+            if check_flags & .EXPECT_LVALUE {
+                dbg_print("Error: attempt to use an integer-typed iterator as an lvalue.\n");
+                return null;
+            }
+            return node.value_type;
         }
+        return null;
         
-        return node.value_type;
         
       case .ITERATOR_INDEX;
         if check_flags & .EXPECT_LVALUE  return null;
         
         node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
         if !node.iterator.parent_for  return null;
+        
+        if node.iterator.parent_for.for_loop.control.value_type.type != .ARRAY {
+            dbg_print("Error: attempt to use it_index in a range-based for loop.\n");
+            return null;
+        }
         
         node.value_type = type_info(int);
         return node.value_type;
@@ -271,11 +327,13 @@ is_aggr :: (t: Type) -> bool { return is_aggr(cast(*Type_Info)t); }
 
 is_aggr :: (ti: *Type_Info) -> bool {
     if ti.type == {
-        case .INTEGER; return false;
-        case .FLOAT;   return false;
-        case .ENUM;    return false;
-        case .BOOL;    return false;
-        case .POINTER; return false;
+        case .INTEGER;   return false;
+        case .FLOAT;     return false;
+        case .ENUM;      return false;
+        case .BOOL;      return false;
+        case .POINTER;   return false;
+        case .PROCEDURE; return false;
+        case .TYPE;      return false;
     }
     return true;
 }

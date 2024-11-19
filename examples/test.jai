@@ -7,20 +7,20 @@
 
 
 main :: () {
-    input := #string DONE
-    r1 = -Vec2(3, 4) * 5;
-    r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
-    r3 = a + b;
+    // input := #string DONE
+    // r1 = -Vec2(3, 4) * 5;
+    // r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
+    // r3 = a + b;
     
-    while r2 > 20 {
-        r2 = r2 - 1;
-        r3 = r3 + r3;
-    }
+    // while r2 > 20 {
+    //     r2 = r2 - 1;
+    //     r3 = r3 + r3;
+    // }
     
-    for arr1  if it > 1  it = f32(it_index) * 4;
-    for arr1  echo(it);
+    // for arr1  if it > 1  it = f32(it_index) * 7;
+    // for arr1  echo(it);
     
-    DONE;
+    // DONE;
     
     // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
     // input := "r2 = x;";              // assignment to non-aggr
@@ -31,6 +31,7 @@ main :: () {
     // r2 = arr1[1 + sin(3.14159/2)];
     // DONE;
     // input := "r2 = 5 * 2 - 2;";
+    input := "for 2..5  echo(it);";
     
     script: Script;
     

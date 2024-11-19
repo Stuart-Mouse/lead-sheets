@@ -222,7 +222,6 @@ construct_script_from_source_string :: (script: *Script, source: string) -> bool
 }
 
 parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
-    
     next_token := peek_token(*lexer);
     if next_token.type == .IDENTIFIER {
         if next_token.text == {
@@ -271,8 +270,8 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             node.type = .FOR_LOOP;
             node.enclosing_scope = current_enclosing_scope; // store prev scope
             
-            node.for_loop.control.array = parse_expression(ctxt, 0);
-            if node.for_loop.control.array == null  return null;
+            node.for_loop.control = parse_expression(ctxt, 0);
+            if node.for_loop.control == null  return null;
             
             current_enclosing_scope = node; // set new scope
             
@@ -304,7 +303,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             previous.next = statement;
             previous      = statement;
         }
-            
+        
         current_enclosing_scope = node.enclosing_scope; // restore prev scope
         
         return node;
@@ -340,7 +339,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
 }
 
 resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
-    for *variables {
+    for variables {
         if it.name == ident {
             return it_index;
         }
@@ -482,23 +481,24 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
         if node == null  return null;
         
         token = get_token_or_return(*lexer, null);
-        
         if token.type != .CLOSE_PAREN {
             dbg_print("Error, expected a closing paren!\n");
             return null;
         }
-        // dbg_print("consumed corresponding close paren\n");
+        
         
       case .NUMBER;
         node = alloc_node(ctxt);
         node.type   = .NUMBER;
         node.number = token.number;
         
+        
       case .IDENTIFIER;
         // instead of resolving identifiers completely at this time, 
         // we only need to check if the identifier was a variable or a procedure
         node = parse_identifier(ctxt, token.text);
         if node == null  return null;
+        
         
       case;
         dbg_print("Unexpected token '%'. Expected a number or identifier.\n", sprint_token(token));
@@ -582,6 +582,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
     if next_token.type == {
       case .DOT;
         get_token(*lexer);
+        dbg_print("parsing struct member access\n");
         
         identifier := get_token(*lexer);
         if identifier.type != .IDENTIFIER {
@@ -597,8 +598,10 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         };
         return node;
         
+        
       case .OPEN_BRACKET;
         get_token(*lexer);
+        dbg_print("parsing array subscript\n");
         
         indexing_expr := parse_expression(ctxt, 0);
         if indexing_expr == null  return null;
@@ -610,6 +613,23 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         node.subscript = .{
             base          = left,
             indexing_expr = indexing_expr
+        };
+        return node;
+        
+        
+      case .SPREAD;
+        get_token(*lexer);
+        dbg_print("parsing range\n");
+        
+        lower := left;
+        upper := parse_expression(ctxt, 0);
+        if upper == null  return null;
+        
+        node := alloc_node(ctxt);
+        node.type = .RANGE;
+        node.range = .{
+            lower = lower,
+            upper = upper
         };
         return node;
     }

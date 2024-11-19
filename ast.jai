@@ -12,6 +12,8 @@ Node_Type :: enum {
     ITERATOR;
     ITERATOR_INDEX;
     
+    RANGE;
+    
     // statements
     BLOCK;
     ASSIGNMENT;
@@ -62,6 +64,9 @@ Node :: struct {
             base          : *Node;
             indexing_expr : *Node;
         }
+        range: struct {
+            lower, upper: *Node;
+        }
         
         // TODO: refactor how nodes work, probably stop using a union
         //       make loops a subclass of blocks, so that we can put common variable resolution logic in block
@@ -81,10 +86,7 @@ Node :: struct {
         }
         for_loop: struct {
             control_type: enum { RANGE; ARRAY; };
-            control: union {
-                // range: struct { min, max: *Node; };
-                array: *Node;
-            }
+            control: *Node;
             statement: *Node;
             
             iterator_ptr: *void;       // points to some value allocated in pool, iterator node will get a copy of this during typecheck 
@@ -112,7 +114,7 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
         return tprint(".NUMBER: %", node.number);
         
       case .VARIABLE;
-        return tprint(".VARIABLE: %", node_get_variable(script, node).name);
+        return tprint(".VARIABLE: %", node.src_text);
         
       case .OPERATION;
         if script.flags & .TYPECHECKED {
@@ -237,7 +239,9 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     
     if node.type == {
       case .NUMBER;
-        stack_push_any(script, node.number);
+        value: u64 = 0; // just empty space
+        remap_data(value, node.number);
+        stack_push_any(script, Any.{ node.value_type, *value });
         dbg_print("returning number %\n", node.number);
         return true;
         
@@ -405,6 +409,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         return true;
         
+        
       case .WHILE_LOOP;
         while loop := true {
             if !execute_node(script, node.while_loop.condition) {
@@ -428,52 +433,92 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         
       case .FOR_LOOP;
-        if !execute_node(script, node.for_loop.control.array) {
-            dbg_print("failed to evaluate left side of assignment statement!\n");
+        if !execute_node(script, node.for_loop.control) {
+            dbg_print("failed to evaluate for loop control node!\n");
             return false;
         }
         
-        ti_array := cast(*Type_Info_Array) node.for_loop.control.array.value_type;
-        assert(ti_array.type == .ARRAY);
-        array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
-        
-        base_ptr := array.value_pointer;
-        array_count: int;
-        if ti_array.array_type == {
-          case .FIXED;
-            array_count = ti_array.array_count;
+        control_type := node.for_loop.control.value_type;
+        if control_type.type == {
+          case .ARRAY;
+            ti_array := cast(*Type_Info_Array) control_type;
+            array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
             
-          case .RESIZABLE; #through;
-          case .VIEW; 
-            raw_array := cast(*Array_View_64) base_ptr;
-            array_count = raw_array.count;
-            base_ptr    = raw_array.data;
-        }
-        
-        // these will be accessed by iterator and iterator_index nodes during iteration
-        node.for_loop.iterator_ptr   = base_ptr;
-        node.for_loop.iterator_index = 0;
-        
-        while node.for_loop.iterator_index < array_count {
-            defer {
-                node.for_loop.iterator_ptr   += ti_array.element_type.runtime_size;
-                node.for_loop.iterator_index += 1;
+            base_ptr := array.value_pointer;
+            array_count: int;
+            if ti_array.array_type == {
+              case .FIXED;
+                array_count = ti_array.array_count;
+                
+              case .RESIZABLE; #through;
+              case .VIEW; 
+                raw_array := cast(*Array_View_64) base_ptr;
+                array_count = raw_array.count;
+                base_ptr    = raw_array.data;
             }
             
-            if !execute_node(script, node.for_loop.statement) {
-                dbg_print("failed to evaluate left side of assignment statement!\n");
-                return false;
+            // these will be accessed by iterator and iterator_index nodes during iteration
+            node.for_loop.iterator_ptr   = base_ptr;
+            node.for_loop.iterator_index = 0;
+            
+            while node.for_loop.iterator_index < array_count {
+                defer {
+                    node.for_loop.iterator_ptr   += ti_array.element_type.runtime_size;
+                    node.for_loop.iterator_index += 1;
+                }
+                
+                if !execute_node(script, node.for_loop.statement) {
+                    dbg_print("failed to evaluate left side of assignment statement!\n");
+                    return false;
+                }
             }
+            return true;
+            
+          case .INTEGER;
+            // This is a bit weird. 
+            // So the way I'm doing this right now is that a range node will just push two values, lower and upper when evaluated
+            // but those values may come as integer types other than s64, so we will have to dynamically cast them back and forth
+            control_type := node.for_loop.control.value_type;
+            upper := stack_pop_any(script, control_type);
+            lower := stack_pop_any(script, control_type);
+            upper_as_s64: int;
+            lower_as_s64: int;
+            int_to_int(upper_as_s64, upper);
+            int_to_int(lower_as_s64, lower);
+            
+            for lower_as_s64..upper_as_s64 {
+                _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
+                int_to_int(Any.{ control_type, *_it }, it);
+                
+                node.for_loop.iterator_ptr = *_it;
+                // TODO: for now we just don't set it_index. 
+                // we should probably prevent using it_index for range-based loops in typecheck 
+                
+                if !execute_node(script, node.for_loop.statement) {
+                    dbg_print("failed to evaluate left side of assignment statement!\n");
+                    return false;
+                }
+            }
+            return true;
         }
-        return true;
+        
+        return false;
+        
         
       case .ITERATOR;
         iterator_any := Any.{ node.value_type, node.iterator.parent_for.for_loop.iterator_ptr };
         stack_push_any(script, iterator_any, node.flags & .IS_LVALUE != 0);
         return true;
         
+        
       case .ITERATOR_INDEX;
         stack_push_any(script, node.iterator.parent_for.for_loop.iterator_index);
+        return true;
+        
+        
+      case .RANGE;
+        if !execute_node(script, node.range.lower)  return false;
+        if !execute_node(script, node.range.upper)  return false;
         return true;
     }
     

@@ -55,6 +55,8 @@ Script_Token_Type :: enum {
     
     LOGICAL_AND;
     LOGICAL_OR;
+    
+    SPREAD;
 }
 
 Script_Token :: struct {
@@ -174,7 +176,8 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     if file.count >= 2 {
         if slice(file, 0, 2) == {
           case "&&"; return make_token(.LOGICAL_AND, 2);
-          case "||"; return make_token(.LOGICAL_OR,  2);
+          case "||"; return make_token(.LOGICAL_OR, 2);
+          case ".."; return make_token(.SPREAD, 2); // not a logical operator but whatever, it goes here
         }
     }
     
@@ -216,7 +219,15 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
         str: string = .{ 1, *file[0] };
         if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
         
-        while file && (is_digit(file[0]) || file[0] == #char ".") {
+        after_dot := false;
+        while file {
+            // we can only allow one decimal point in a number, and it cannot be followed by a second decimal point
+            if !is_digit(file[0]) {
+                if file[0] != #char "." || after_dot  break;
+                if file.count > 1 && file[1] == #char "."  break; // cannot have a double dot, that is a spread/range operator
+                after_dot = true;
+            }
+            
             str.count += 1;
             if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
         }
