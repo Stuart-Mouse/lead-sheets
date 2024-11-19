@@ -31,7 +31,7 @@ main :: () {
     // r2 = arr1[1 + sin(3.14159/2)];
     // DONE;
     // input := "r2 = 5 * 2 - 2;";
-    input := "for 2..5  echo(it);";
+    input := "for -9..5  echo(it);";
     
     script: Script;
     

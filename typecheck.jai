@@ -233,11 +233,11 @@ typecheck_node :: (
         control_type: *Type_Info;
         if node.for_loop.control.type == {
           case .RANGE;
-            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int));
+            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int)); // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
           case;
             control_type = typecheck_node(ctxt, node.for_loop.control, check_flags = .EXPECT_LVALUE);
         }
-        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER)  return null;
+        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER && control_type.type != .FLOAT)  return null; // TODO: may not allow float here?
         
         if !typecheck_node(ctxt, node.for_loop.statement)  return null;
         
