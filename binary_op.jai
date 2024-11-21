@@ -6,13 +6,24 @@
 BUILTIN_OPERATIONS :: (
     struct { operator_ident: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
 ).[
+    .{ "+", int, int, int, false },
+    .{ "-", int, int, int, false },
+    .{ "*", int, int, int, false },
+    .{ "/", int, int, int, false },
+    
+    .{ ">",  int, int, bool, false },
+    .{ "<",  int, int, bool, false },
+    .{ "==", int, int, bool, false },
+    .{ ">=", int, int, bool, false },
+    .{ "<=", int, int, bool, false },
+    
     .{ "+", float, float, float, false },
     .{ "-", float, float, float, false },
     .{ "*", float, float, float, false },
     .{ "/", float, float, float, false },
     
-    .{ ">", float, float, bool, false },
-    .{ "<", float, float, bool, false },
+    .{ ">",  float, float, bool, false },
+    .{ "<",  float, float, bool, false },
     .{ "==", float, float, bool, false },
     .{ ">=", float, float, bool, false },
     .{ "<=", float, float, bool, false },

@@ -20,12 +20,12 @@ typecheck_node :: (
     using ctxt  : *Script_Constructor, 
     node        : *Node, 
     check_flags :  Typechecking_Flags = .NONE, 
-    expect_type : *Type_Info          = null
+    hint_type : *Type_Info          = null
 ) -> (
     node_type      : *Type_Info
 ) {
     dbg_print("typechecking node %: %\n", node, node.type, node.src_text);
-    dbg_print("expecting type: %\n", as_type(expect_type));
+    dbg_print("expecting type: %\n", as_type(hint_type));
     
     #if DEBUG {
         context.dbg_print_indent += 1;
@@ -39,10 +39,10 @@ typecheck_node :: (
             return null;
         }
         
-        if expect_type && (expect_type.type == .INTEGER || expect_type.type == .FLOAT) {
-            dbg_print("returning expected type: %\n", as_type(expect_type));
-            node.value_type = expect_type;
-            return expect_type;
+        if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
+            dbg_print("returning expected type: %\n", as_type(hint_type));
+            node.value_type = hint_type;
+            return hint_type;
         }
         
         node.value_type = type_info(float32);
@@ -72,10 +72,10 @@ typecheck_node :: (
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
         
-        left_type := typecheck_node(ctxt, node.operation.left, check_flags);
+        left_type := typecheck_node(ctxt, node.operation.left, check_flags, hint_type);
         if !left_type   return null;
         
-        right_type := typecheck_node(ctxt, node.operation.right, check_flags);
+        right_type := typecheck_node(ctxt, node.operation.right, check_flags, hint_type);
         if !right_type  return null;
         
         operator_index, swap_args := resolve_builtin_operation(node.src_text, left_type, right_type);
@@ -220,7 +220,7 @@ typecheck_node :: (
             return null;
         }
         
-        indexing_type := typecheck_node(ctxt, node.subscript.indexing_expr);
+        indexing_type := typecheck_node(ctxt, node.subscript.indexing_expr, hint_type = type_info(int));
         if indexing_type.type != .INTEGER && indexing_type.type != .FLOAT {
             log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
             return null;
@@ -241,8 +241,8 @@ typecheck_node :: (
         left_type := typecheck_node(ctxt, node.assignment.left, check_flags = .EXPECT_LVALUE);
         if !left_type  return null;
         
-        // pass left type as 'expect_type' argument so that we can infer type of struct literals
-        right_type := typecheck_node(ctxt, node.assignment.right, expect_type = left_type);
+        // pass left type as 'hint_type' argument so that we can infer type of struct literals
+        right_type := typecheck_node(ctxt, node.assignment.right, hint_type = left_type);
         if !right_type  return null;
         
         if left_type != right_type {
@@ -292,7 +292,7 @@ typecheck_node :: (
         if node.for_loop.control.type == {
           case .RANGE;
             // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
-            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int)); 
+            control_type = typecheck_node(ctxt, node.for_loop.control, hint_type = type_info(int)); 
           case;
             control_type = typecheck_node(ctxt, node.for_loop.control, check_flags = .EXPECT_LVALUE);
         }
@@ -309,12 +309,14 @@ typecheck_node :: (
       case .RANGE;
         if check_flags & .EXPECT_LVALUE  return null;
         
+        dbg_print("typechecking range lower\n");
         assert(node.range.lower != null);
-        lower_type := typecheck_node(ctxt, node.range.lower, expect_type = type_info(int));
+        lower_type := typecheck_node(ctxt, node.range.lower, hint_type = type_info(int));
         if lower_type == null  return null;
         
+        dbg_print("typechecking range upper\n");
         assert(node.range.upper != null);
-        upper_type := typecheck_node(ctxt, node.range.upper, expect_type = lower_type);
+        upper_type := typecheck_node(ctxt, node.range.upper, hint_type = lower_type);
         if lower_type != upper_type { 
             dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
             return null;

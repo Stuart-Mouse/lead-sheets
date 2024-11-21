@@ -33,16 +33,21 @@ main :: () {
     // input := "r2 = 5 * 2 - 2;";
     
     /*
-         this was failing because unary minus was being applied as lower precedence than range operator
+        this was failing because unary minus was being applied as lower precedence than range operator
             well, really it was only getting its precedence from how it is applied in parse_expression in such a hacky way
             we need to be able to make unary operators actually obey operator precedence, but I haven't quite figured that one out yet
         another issue is that if we have an operation in the range expression here, then the type hint for int will not flow through the operation
             I am really not sure how to solve that one, since the typechecking there could get really nasty really quickly.
+            
+        OK, now we got it to use s64 here by just simply passing the type hint through the operation node
+        but of course this will probably not work in many cases, since this assumes that result type of operation is the same as the inputs
+        but maybe it really only matters that we solve this simple case?
+        still, we should probably put in logic to widen an int (especially an int-typed .NUMBER node) to a float if the other operand is a float
     */
     // input := "for -2..5  echo(it);";
     
     // test procedure variables
-    input := "r2 = struct1.func(struct1.value);";
+    // input := "r2 = struct1.func(struct1.value);";
     
     script: Script;
     
@@ -50,7 +55,7 @@ main :: () {
     register_procedure(*script, "pow", pow);
     register_procedure(*script, "sin", sin);
     register_procedure(*script, "cos", cos);
-    register_procedure(*script, "+", (x: int, y: int) -> int { return x + y; });
+    // register_procedure(*script, "+", (x: int, y: int) -> int { return x + y; });
     register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: Vector2) -> Vector2 { print("%\n", value); return value; });
