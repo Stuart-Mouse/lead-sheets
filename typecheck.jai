@@ -25,6 +25,7 @@ typecheck_node :: (
     node_type      : *Type_Info
 ) {
     dbg_print("typechecking node %: %\n", node, node.type, node.src_text);
+    dbg_print("expecting type: %\n", as_type(expect_type));
     
     #if DEBUG {
         context.dbg_print_indent += 1;
@@ -39,6 +40,7 @@ typecheck_node :: (
         }
         
         if expect_type && (expect_type.type == .INTEGER || expect_type.type == .FLOAT) {
+            dbg_print("returning expected type: %\n", as_type(expect_type));
             node.value_type = expect_type;
             return expect_type;
         }
@@ -61,6 +63,11 @@ typecheck_node :: (
         }
         return node.value_type;
         
+      case .PROCEDURE;
+        // in order to typecheck a procedure node, we would need to know what type ot expect, so that we can resolve overloads
+        // so for now, this node can only be used in the context of a PROCEDURE_CALL, where it is typechecked inline
+        dbg_print("Error: typechecking a procedure node in isolation is not currently supported.\n");
+        return null;
         
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -93,17 +100,27 @@ typecheck_node :: (
         // then we will try checking for an overloaded procedure that performs the operation
         node.operation.left.next = node.operation.right;
         
-        proc_node := Node.{
-            type      = .PROCEDURE_CALL,
-            src_loc   = node.src_loc,
-            src_text  = node.src_text,
-            flags     = node.flags | .OVERLOAD_OP,
-            procedure_call = .{
+        // need to create a new node for the procedure itself, kinda dumb
+        proc_node := alloc_node(ctxt);
+        proc_node.type            = .PROCEDURE;
+        proc_node.src_text        = node.src_text;
+        proc_node.src_loc         = node.src_loc;
+        proc_node.enclosing_scope = node.enclosing_scope;
+        
+        // then replace the current operation node with a procedure_call node
+        proc_call_node := Node.{
+            type            = .PROCEDURE_CALL,
+            src_loc         = node.src_loc,
+            src_text        = node.src_text,
+            flags           = node.flags | .OVERLOAD_OP,
+            enclosing_scope = node.enclosing_scope,
+            procedure_call  = .{
+                procedure_node = proc_node,
                 arg_nodes = node.operation.left,
                 arg_count = 2, // TODO: what if unary op
             }
         };
-        node.* = proc_node;
+        node.* = proc_call_node;
         
         #through;
         
@@ -114,28 +131,66 @@ typecheck_node :: (
         dbg_print("arg_count: %\n", node.procedure_call.arg_count);
         
         argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp); // TODO
-        arg_node := node.procedure_call.arg_nodes;
-        arg_idx  := 0;
-        while arg_node != null {
-            argument_type := typecheck_node(ctxt, arg_node);
+        for node.procedure_call.arg_nodes {
+            argument_type := typecheck_node(ctxt, it);
             if !argument_type  return null;
-            argument_types[arg_idx] = argument_type;
-            
-            arg_idx += 1;
-            arg_node = arg_node.next;
+            argument_types[it_index] = argument_type;
         }
         
-        node.procedure_call.procedure_index = resolve_procedure_index(ctxt, node.src_text, argument_types, node.flags & .OVERLOAD_OP != 0);
-        if node.procedure_call.procedure_index == -1  return null;
+        proc_node := node.procedure_call.procedure_node;
+        if proc_node == null {
+            dbg_print("proc_node was null!\n");
+            return null;
+        }
         
-        procedure := *procedures[node.procedure_call.procedure_index];
-        node.value_type = procedure.type.return_types[0];
+        if node.procedure_call.procedure_node.type == {
+          case .PROCEDURE;
+            // we don't call typecheck_node on proc_node, because we need the context of the arguments here to resolve overloaded procedures 
+            // so we basically just typecheck this node inline here and set its value_type manually below
+            
+            proc_node.procedure_index = resolve_procedure_index(ctxt, proc_node.src_text, argument_types, node.flags & .OVERLOAD_OP != 0);
+            if proc_node.procedure_index == -1  return null;
+            
+            procedure := *procedures[proc_node.procedure_index];
+            proc_node.value_type = procedure.type;
+            node.value_type = ifx procedure.type.return_types then procedure.type.return_types[0] else type_info(void);
+            
+            
+          case;
+            ti_proc := cast(*Type_Info_Procedure) typecheck_node(ctxt, proc_node);
+            if ti_proc == null {
+                dbg_print("Error: failed to typecheck procedure_node.\n");
+                return null;
+            } 
+            if ti_proc.type != .PROCEDURE {
+                dbg_print("Error: attempt to call a non-procedure type as if it were a procedure.\n");
+                return null;
+            }
+            if ti_proc.return_types.count > 1 {
+                dbg_print("Error: attempt to call a procedure which returns more than one value. This is not currently supported.\n");
+                return null;
+            }
+            
+            // typecheck arguments. we know what they must be, so we just straightforwardly match. can also easily add logic to coerce/cast
+            // TODO: coerce/up-cast arguments
+            if ti_proc.argument_types.count != argument_types.count {
+                dbg_print("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, argument_types.count);
+                return null;
+            }
+            for 0..argument_types.count-1 {
+                if ti_proc.argument_types[it] != argument_types[it] {
+                    dbg_print("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(ti_proc.argument_types[it]), as_type(argument_types[it]));
+                    return null;
+                }
+            }
+            
+            node.value_type = ifx ti_proc.return_types then ti_proc.return_types[0] else type_info(void);
+        }
         
         if is_aggr(node.value_type) {
             node.procedure_call.dst = Dynamic_New(node.value_type,, ctxt.allocator);
             dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.procedure_call.dst, node);
         }
-        
         return node.value_type;
         
         
@@ -148,6 +203,9 @@ typecheck_node :: (
         
         node.value_type    = member_ti.type;
         node.member.offset = member_offset;
+        
+        dbg_print("member value type: %\n", as_type(member_ti.type));
+        dbg_print("member offset: %\n", member_offset);
         
         if check_flags & .EXPECT_LVALUE {
             node.flags |= .IS_LVALUE;
@@ -233,11 +291,14 @@ typecheck_node :: (
         control_type: *Type_Info;
         if node.for_loop.control.type == {
           case .RANGE;
-            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int)); // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
+            // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
+            control_type = typecheck_node(ctxt, node.for_loop.control, expect_type = type_info(int)); 
           case;
             control_type = typecheck_node(ctxt, node.for_loop.control, check_flags = .EXPECT_LVALUE);
         }
-        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER && control_type.type != .FLOAT)  return null; // TODO: may not allow float here?
+        
+        // TODO: may not allow float here?
+        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER && control_type.type != .FLOAT)  return null; 
         
         if !typecheck_node(ctxt, node.for_loop.statement)  return null;
         
@@ -255,7 +316,7 @@ typecheck_node :: (
         assert(node.range.upper != null);
         upper_type := typecheck_node(ctxt, node.range.upper, expect_type = lower_type);
         if lower_type != upper_type { 
-            dbg_print("Error: type mismatch on lower and upper bounds fo range.\n");
+            dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
             return null;
         }
         
@@ -280,6 +341,7 @@ typecheck_node :: (
             }
             return node.value_type;
             
+          case .FLOAT; #through; // ehh...
           case .INTEGER;
             node.value_type = control_type;
             if check_flags & .EXPECT_LVALUE {
@@ -288,6 +350,8 @@ typecheck_node :: (
             }
             return node.value_type;
         }
+        
+        dbg_print("Error: Iterator used in a for loop with an invalid control type? (%)\n", as_type(control_type));
         return null;
         
         

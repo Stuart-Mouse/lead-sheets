@@ -10,7 +10,7 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     assert(procedure.type.type == .PROCEDURE);
     
     ti_proc := cast(*Type_Info_Procedure) procedure.type;
-    assert(ti_proc.return_types.count == 1);
+    assert(ti_proc.return_types.count <= 1);
     assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
     
     array_add(*script.procedures, .{
@@ -20,19 +20,6 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     });
 }
 
-register_operator :: (script: *Script, name: string, procedure: Any) {
-    assert(procedure.type.type == .PROCEDURE);
-    
-    ti_proc := cast(*Type_Info_Procedure) procedure.type;
-    assert(ti_proc.argument_types.count == 2);
-    assert(ti_proc.return_types.count == 1);
-    
-    array_add(*script.operators, .{
-        name = name,
-        type = procedure.type,
-        ptr  = (cast(**void)procedure.value_pointer).*
-    });
-}
 
 // The Any here actually points to the pointer in the given Script_Procedure.
 // This could be problematic if we were to modify the script's procedures array and cause a realloc, but that should never happen.

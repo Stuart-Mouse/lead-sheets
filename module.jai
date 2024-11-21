@@ -57,9 +57,10 @@ free_script :: (using script: *Script) {
     script.* = .{};
 }
 
-alloc_node :: (using ctxt: *Script_Constructor) -> *Node {
+alloc_node :: (using ctxt: *Script_Constructor, loc := #caller_location) -> *Node {
     node := New(Node,, allocator);
     node.enclosing_scope = current_enclosing_scope; // not sure if this is the place for this, but its the only sensible thing to do at this very moment
+    dbg_print("allocated node % at %\n", node, loc);
     return node;
 }
 
@@ -387,52 +388,69 @@ parse_identifier :: (using ctxt: *Script_Constructor, ident: string) -> *Node {
     // check first for reserved words
     if is_reserved_word(ident)  return null;
     
-    if expect_token_type(*lexer, .OPEN_PAREN) {
-        first_arg_node : *Node;
-        prev_arg_node  : *Node;
-        arg_count      :=  0;
-        if peek_token(*lexer).type != .CLOSE_PAREN {
-            while true {
-                node := parse_expression(ctxt, 0);
-                if node == null  return null;
-                
-                if first_arg_node == null  first_arg_node = node;
-                if prev_arg_node  != null  prev_arg_node.next = node;
-                prev_arg_node = node;
-                arg_count += 1;
-                
-                if !expect_token_type(*lexer, .COMMA)  break;
-            }
-        }
-        
-        if !expect_token_type(*lexer, .CLOSE_PAREN) {
-            dbg_print("Error, expected a close paren at the end of parameter list!\n");
-            return null;
-        }
-        
+    
+    variable_index := resolve_variable(ctxt, ident);
+    if variable_index != -1 {
         node := alloc_node(ctxt);
-        node.type = .PROCEDURE_CALL;
+        node.type = .VARIABLE;
         node.src_text = ident;
-        node.procedure_call.arg_nodes = first_arg_node;
-        node.procedure_call.arg_count = arg_count;
         return node;
     }
     
-    // else identifier must refer to a variable
+    // must be a procedure i guess?
+    // TODO: we should probably at least search to see if there are any procedures with the given identifier
+    
     node := alloc_node(ctxt);
-    node.type = .VARIABLE;
+    node.type = .PROCEDURE;
     node.src_text = ident;
     return node;
 }
 
 
 get_operator_precedence :: (op: string) -> int {
-    for operator_precedence_table 
-        if it.op == op
+    for operator_precedence_table  {
+        if it.op == op {
             return it.prec;
-            
+        }
+    }
     return -1;
 }
+
+
+Bit_Field :: struct(MIN: int, MAX: int) {
+    MASK_SIZE :: ((MAX - MIN + 1) / 8) + cast(int) ((MAX - MIN + 1) % 8 != 0);
+    mask: [MASK_SIZE] u8;
+}
+
+check_bitfield :: (using bit_field: Bit_Field, check_bits: ..bit_field.T) -> bool {
+    for check_bits {
+        byte_index := (it - MIN) / 8;
+        bit_index  := cast(u8) 1 << ((it - MIN) % 8);
+        if it < MIN || it > MAX || bit_index & mask[byte_index] == 0 {
+            // log("Bit % was not set", it);
+            return false;
+        }
+    }
+    return true;
+}
+
+set_bitfield :: (using bit_field: *Bit_Field, set_bits: ..bit_field.T) -> bool {
+    for set_bits {
+        if it < MIN || it > MAX { 
+            // log("Failed to set bit %", it);
+            return false;
+        }
+        byte_index := (it - MIN) / 8;
+        bit_index  := cast(u8) 1 << ((it - MIN) % 8);
+        mask[byte_index] |= bit_index;
+    }
+    return true;
+}
+
+// token_is_binary_operator :: (token: Script_Token) -> bool {
+//     binary_operators :: #run make_bit_set(Script_Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
+//     return check_bit(binary_operators, token.type);
+// }
 
 token_is_binary_operator :: (token: Script_Token) -> bool {
     return token.type == .ADD
@@ -465,13 +483,10 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
 ];
 
 parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
-    token := get_token_or_return(*lexer, null);
+    dbg_print("parse_leaf()\n");
+    dbg_print_push_indent();
     
-    // TODO: refactor unary minus to use an actual unary operation
-    do_unary_minus := token.type == .SUB;
-    if do_unary_minus {
-        token = get_token_or_return(*lexer, null);
-    }
+    token := get_token_or_return(*lexer, null);
     
     node: *Node;
     if token.type == {
@@ -505,14 +520,6 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
         assert(false);
     }
     
-    // makes a binary op of -1 * node
-    if do_unary_minus {
-        neg := alloc_node(ctxt);
-        neg.type   = .NUMBER;
-        neg.number = -1;
-        node = create_binary_operation(ctxt, "*", neg, node);
-    }
-    
     return node;
 }
 
@@ -539,12 +546,26 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
 
 parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
+    dbg_print_push_indent();
     
     // left is also sort of the root node of expression, when re 
     // the reason we call it left is because if it is part of a binary operation, it will be the left side
     
+    
+    // TODO: refactor unary minus to use an actual unary operation
+    //       this is a really bad way to handle unary minus... 
+    do_unary_minus := expect_token_type(*lexer, .SUB);
+    
     left := parse_leaf(ctxt);
     if left == null  return null;
+    
+    // makes a binary op of -1 * node
+    if do_unary_minus {
+        neg := alloc_node(ctxt);
+        neg.type   = .NUMBER;
+        neg.number = -1;
+        left = create_binary_operation(ctxt, "*", neg, left);
+    }
     
     dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, left));
     
@@ -559,27 +580,78 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *Node {
         // in any case, the caller should know what to expect.
         //     for example, note how parse_expression is called 
         //     after hitting open paren in parse_leaf.
-        if node == left  break;
+        
+        if node == left { 
+            dbg_print("node == left,  break\n");
+            break;
+        }
         
         // 'node' has replaced 'left' as the root node
         // original 'left' is now a child of 'node'
+        dbg_print("left = node\n");
         left = node;
     }
     
     // left is returned as root node of expression
     // could be just a leaf, could be binary op, could be indexer
+    dbg_print("return left\n");
     return left;
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, min_prec: int) -> *Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
+    dbg_print_push_indent();
     
     next_token := peek_token(*lexer);
+    dbg_print("next_token: %\n", sprint_token(next_token));
     
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
     if next_token.type == {
+      case .OPEN_PAREN;
+        get_token(*lexer);
+        dbg_print("parsing argument list\n");
+        dbg_print_push_indent();
+        
+        first_arg_node : *Node;
+        arg_count      :=  0;
+        
+        if peek_token(*lexer).type != .CLOSE_PAREN {
+            first_arg_node = parse_expression(ctxt, 0);
+            if first_arg_node == null  return null;
+            arg_count = 1;
+            
+            dbg_print("parsed first arg\n");
+            
+            prev_arg_node := first_arg_node;
+            while expect_token_type(*lexer, .COMMA) {
+                dbg_print("parsing another arg\n");
+                node := parse_expression(ctxt, 0);
+                if node == null  return null;
+                
+                prev_arg_node.next = node;
+                prev_arg_node = node;
+                arg_count += 1;
+            }
+        }
+        dbg_print("done parsing arg list, expecting close paren.\n");
+        
+        if !expect_token_type(*lexer, .CLOSE_PAREN) {
+            dbg_print("Error, expected a close paren at the end of parameter list!\n");
+            return null;
+        }
+        
+        node := alloc_node(ctxt);
+        node.type = .PROCEDURE_CALL;
+        node.procedure_call = .{
+            procedure_node = left,
+            arg_nodes = first_arg_node,
+            arg_count = arg_count
+        };
+        return node;
+        
+        
       case .DOT;
         get_token(*lexer);
         dbg_print("parsing struct member access\n");
@@ -651,9 +723,11 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         right := parse_expression(ctxt, next_token_prec);
         if right == null  return null;
         
+        dbg_print("return create_binary_operation\n");
         return create_binary_operation(ctxt, next_token.text, left, right);
     }
     
+    dbg_print("return left\n");
     return left;    
 }
 
@@ -743,4 +817,9 @@ dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -
         return print(format_string, ..args, to_standard_error);
     }
 }
-
+dbg_print_push_indent :: () #expand {
+    #if DEBUG {
+        context.dbg_print_indent += 1;
+        `defer context.dbg_print_indent -= 1;
+    }
+}

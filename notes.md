@@ -318,3 +318,7 @@ also for loops only work on arrays, not ranges
     we will probably want to be able to do for loops on numeric ranges, or at least slice arrays and iterateresulting slice
     
 
+whe resolving an identifier for a procedure, we should first search all variables for a match
+failing that, we search the procedures array, find all candidate procedures, and then resolve the best overload
+
+

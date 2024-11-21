@@ -4,6 +4,7 @@ Node_Type :: enum {
     // expressions
     NUMBER;
     VARIABLE;
+    PROCEDURE;
     OPERATION;
     PROCEDURE_CALL;
     MEMBER;
@@ -43,9 +44,10 @@ Node :: struct {
     //       to change the type (as we do when converting an overloaded operator to a procedure call)
     union {
         variable_index  : int; // index to variable in Script.variables array 
+        procedure_index : int;
         number          : float32;
         procedure_call: struct {
-            procedure_index : int; // cannot remove yet, as this would destroy ability to print ast
+            procedure_node  : *Node;
             arg_nodes       : *Node;
             arg_count       : int;
             dst             : *void;
@@ -125,10 +127,14 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
         
       case .PROCEDURE_CALL;
         if script.flags & .TYPECHECKED {
-            return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
+            // return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
+            return tprint(".PROCEDURE_CALL: %", as_type(node.procedure_call.procedure_node.value_type));
         } else {
             return node.src_text;
         }
+        
+      case .PROCEDURE;
+        return tprint(".PROCEDURE: %", node.src_text);
         
       case .IF_STATEMENT;
         return tprint(".IF_STATEMENT: if %  %", sprint_ast_node(script, node.if_statement.condition), sprint_ast_node(script, node.if_statement.statement));
@@ -157,11 +163,6 @@ sprint_ast_node :: (script: *Script, node: Node) -> string {
 node_get_variable :: (script: *Script, node: Node) -> *Script_Variable {
     assert(node.type == .VARIABLE);
     return *script.variables[node.variable_index];
-}
-
-node_get_procedure :: (script: *Script, node: Node) -> *Script_Procedure {
-    assert(node.type == .PROCEDURE_CALL);
-    return *script.procedures[node.procedure_call.procedure_index];
 }
 
 // TODO: probably rename to node_get_operation_procedure
@@ -240,7 +241,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     if node.type == {
       case .NUMBER;
         value: u64 = 0; // just empty space
-        remap_data(value, node.number);
+        remap_data(Any.{ node.value_type, *value }, node.number);
         stack_push_any(script, Any.{ node.value_type, *value });
         dbg_print("returning number %\n", node.number);
         return true;
@@ -248,6 +249,13 @@ execute_node :: (script : *Script, node: *Node) -> bool {
       case .VARIABLE;
         variable := node_get_variable(script, node);
         stack_push_any(script, variable.binding, node.flags & .IS_LVALUE != 0);
+        return true;
+        
+      case .PROCEDURE;
+        // returns procedure pointer
+        procedure := script.procedures[node.procedure_index];
+        stack_push_any(script, procedure.ptr);
+        dbg_print("returning procedure ptr %\n", procedure.ptr);
         return true;
         
       case .OPERATION;
@@ -290,13 +298,21 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         //       maybe we inline it for now so it works all good and stuff and then un-inline it later?
         //       but we are going to need to use is from the bytecode as well, and also possibly from the eval procs.
         
+        proc_node := node.procedure_call.procedure_node;
+        if !execute_node(script, proc_node)  return false;
+        procedure := stack_pop_any(script, proc_node.value_type); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
+        // we have to grab the actual procedure pointer value now before overwriting with another stack push below
+        proc_ptr := (cast(**void)procedure.value_pointer).*;
+        
         return_ptr := script.stack_ptr;
+        
         if is_aggr(node.value_type) {
             stack_push_any(script, Any.{ node.value_type, node.procedure_call.dst });         
         } else {
             zero: s64 = 0;
             stack_push_any(script, Any.{ node.value_type, *zero });
         }
+        
         arg_ptr := script.stack_ptr;
         
         for node.procedure_call.arg_nodes {
@@ -304,11 +320,9 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         
         // script.stack_ptr -= node.procedure_call.arg_count * PTR_SIZE;
-        
-        procedure := node_get_procedure(script, node);
-        if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, arg_ptr, return_ptr) {
+        if !do_dyncall(script.dyncall_vm, proc_ptr, xx proc_node.value_type, arg_ptr, return_ptr) {
         // if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, script.stack_ptr, node.procedure_call.dst) {
-            log("Failed while trying to call procedure '%'!", procedure.name);
+            log("Failed while trying to call procedure '%'!", as_type(procedure.type));
             return false;
         }
         
@@ -318,8 +332,12 @@ execute_node :: (script : *Script, node: *Node) -> bool {
       case .MEMBER;
         if !execute_node(script, node.member.base)  return false;  
         base   := stack_pop_any(script, node.member.base.value_type, true);
-        member := Any.{ base.value_pointer + node.member.offset, node.value_type };
-        stack_push_any(script, member, node.flags & .IS_LVALUE == .IS_LVALUE);
+        member := Any.{ node.value_type, base.value_pointer + node.member.offset };
+        
+        dbg_print("base value ptr: %\n", base.value_pointer);
+        dbg_print("member value ptr: %\n", member.value_pointer);
+        
+        stack_push_any(script, member, (node.flags & .IS_LVALUE) == .IS_LVALUE);
         return true;
         
       case .SUBSCRIPT;
@@ -474,6 +492,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             }
             return true;
             
+          case .FLOAT; #through; // ehh...
           case .INTEGER;
             // This is a bit weird. 
             // So the way I'm doing this right now is that a range node will just push two values, lower and upper when evaluated
@@ -483,12 +502,12 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             lower := stack_pop_any(script, control_type);
             upper_as_s64: int;
             lower_as_s64: int;
-            int_to_int(upper_as_s64, upper);
-            int_to_int(lower_as_s64, lower);
+            remap_int(upper_as_s64, upper);
+            remap_int(lower_as_s64, lower);
             
             for lower_as_s64..upper_as_s64 {
                 _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
-                int_to_int(Any.{ control_type, *_it }, it);
+                remap_data(Any.{ control_type, *_it }, it);
                 
                 node.for_loop.iterator_ptr = *_it;
                 // TODO: for now we just don't set it_index. 
@@ -533,7 +552,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
 do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, arg_ptr: *void, return_ptr: *void) -> bool {
     dcReset(vm);
     
-    assert(proc_type.return_types.count == 1);
+    assert(proc_type.return_types.count <= 1);
     
     jai_call :: true;
     assert(proc_type.procedure_flags & .IS_C_CALL == 0);
@@ -617,10 +636,10 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
         }
         
         if is_aggr(arg_type) {
-            dbg_print("% ", Any.{arg_type, (cast(**void)arg_ptr).*});
+            dbg_print("% % ", as_type(arg_type), Any.{arg_type, (cast(**void)arg_ptr).*});
             arg_ptr += size_of(*void);
         } else {
-            dbg_print("% ", Any.{arg_type, arg_ptr});
+            dbg_print("% % ", as_type(arg_type), Any.{arg_type, arg_ptr});
             arg_ptr += size_of(*void);
         }
     }

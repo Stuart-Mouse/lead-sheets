@@ -215,7 +215,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     }
     
     // parse a number
-    if is_digit(file[0]) {
+    if is_digit(file[0]) || file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
         if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
         

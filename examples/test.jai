@@ -8,7 +8,7 @@
 
 main :: () {
     // input := #string DONE
-    // r1 = -Vec2(3, 4) * 5;
+    // r1 = Vec2(3, 4) * 5;
     // r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
     // r3 = a + b;
     
@@ -31,7 +31,18 @@ main :: () {
     // r2 = arr1[1 + sin(3.14159/2)];
     // DONE;
     // input := "r2 = 5 * 2 - 2;";
-    input := "for -9..5  echo(it);";
+    
+    /*
+         this was failing because unary minus was being applied as lower precedence than range operator
+            well, really it was only getting its precedence from how it is applied in parse_expression in such a hacky way
+            we need to be able to make unary operators actually obey operator precedence, but I haven't quite figured that one out yet
+        another issue is that if we have an operation in the range expression here, then the type hint for int will not flow through the operation
+            I am really not sure how to solve that one, since the typechecking there could get really nasty really quickly.
+    */
+    // input := "for -2..5  echo(it);";
+    
+    // test procedure variables
+    input := "r2 = struct1.func(struct1.value);";
     
     script: Script;
     
@@ -58,9 +69,20 @@ main :: () {
     a := 3;
     b := 5;
     
+    
+    Some_Struct :: struct {
+        value: float;
+        func: (float) -> float;
+    }
+    
+    struct1 := Some_Struct.{ 5, (x: float) -> float { return x * x; } };
+    proc1 := (x: float) -> float { return x * x; };
+    
     // TODO: add some proc for 'add_constant' or 'add_local_variable' that will make a copy of the value in the script's pool
     //       this will allow us to pass temporary values, which wecannot do with set_variable
     //       all variables are assumed to be modifiable lvalues, with an externally defined storage duration
+    
+    print("%\n", struct1.func);
     
     set_variable(*script, "x", x);
     set_variable(*script, "y", y);
@@ -74,6 +96,9 @@ main :: () {
     set_variable(*script, "r3", r3);
     
     set_variable(*script, "arr1", arr1);
+    set_variable(*script, "struct1", struct1);
+    set_variable(*script, "proc1", proc1);
+    
     
     print("\nCONSTRUCTING SCRIPT\n");
     if !construct_script_from_source_string(*script, input) {
@@ -88,6 +113,9 @@ main :: () {
         print("r1: %\n", r1);
         print("r2: %\n", r2);
         print("r3: %\n", r3);
+        
+        print("arr1: %\n", arr1);
+        print("struct1: %\n", struct1);
     } else {
         print("failed!\n");
     }
