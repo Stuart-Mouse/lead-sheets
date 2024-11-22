@@ -31,9 +31,9 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
     // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
     // maybe we will put this behind some debug flag later
     Procedure_Resolution_Error :: struct {
-        proc    : *Script_Procedure;
-        error_type : enum { NONE; ARG_COUNT; ARG_TYPE; };
-        details : union {
+        proc: *Script_Procedure;
+        error_type: enum { NONE; ARG_COUNT; ARG_TYPE; };
+        details: union {
             arg_count : struct { expected: int; provided: int; };
             arg_type  : struct { index: int; expected: *Type_Info; provided: *Type_Info; };
         };

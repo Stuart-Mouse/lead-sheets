@@ -322,3 +322,19 @@ whe resolving an identifier for a procedure, we should first search all variable
 failing that, we search the procedures array, find all candidate procedures, and then resolve the best overload
 
 
+
+make management of scopes better
+resolve declarations within nested scopes
+node needs pointer to prev and parent in addition to next
+
+
+
+
+
+
+
+IDEAS FOR LATER
+
+named blocks that can be called like funcitons, but don't take arguments
+these named blocks can then have new statements compiled ad added to them dynamically
+this would be useful for some application(s) maybe

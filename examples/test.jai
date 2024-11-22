@@ -22,7 +22,7 @@ main :: () {
     
     // DONE;
     
-    // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
+    input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
     // input := "r2 = x;";              // assignment to non-aggr
     // input := "r1.y = z.x + z.y;";    // member access as lvalue and rvalue
     // input := "r3 = a + b;";          // overloaded operator (int + int)
@@ -55,7 +55,6 @@ main :: () {
     register_procedure(*script, "pow", pow);
     register_procedure(*script, "sin", sin);
     register_procedure(*script, "cos", cos);
-    // register_procedure(*script, "+", (x: int, y: int) -> int { return x + y; });
     register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: Vector2) -> Vector2 { print("%\n", value); return value; });
@@ -104,7 +103,6 @@ main :: () {
     set_variable(*script, "struct1", struct1);
     set_variable(*script, "proc1", proc1);
     
-    
     print("\nCONSTRUCTING SCRIPT\n");
     if !construct_script_from_source_string(*script, input) {
         print("failed to construct script from source!\n");
@@ -115,9 +113,9 @@ main :: () {
     ok := execute_script(*script);
     if ok {
         print("\nRESULTS:\n");
-        print("r1: %\n", r1);
-        print("r2: %\n", r2);
-        print("r3: %\n", r3);
+        print("r1: % at %\n", r1, *r1);
+        print("r2: % at %\n", r2, *r2);
+        print("r3: % at %\n", r3, *r3);
         
         print("arr1: %\n", arr1);
         print("struct1: %\n", struct1);

@@ -12,7 +12,7 @@
 
 Typechecking_Flags :: enum_flags {
     NONE :: 0;
-    EXPECT_LVALUE :: 1; // this should not get passed down syntax tree except through indexing operations
+    EXPECT_LVALUE :: 1;
 }
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
@@ -20,154 +20,164 @@ typecheck_node :: (
     using ctxt  : *Script_Constructor, 
     node        : *Node, 
     check_flags :  Typechecking_Flags = .NONE, 
-    hint_type : *Type_Info          = null
+    hint_type   : *Type_Info          = null
 ) -> (
-    node_type      : *Type_Info
+    value_type  : *Type_Info
 ) {
-    dbg_print("typechecking node %: %\n", node, node.type, node.src_text);
+    dbg_print("typechecking node %\n", node, node.node_type);
     dbg_print("expecting type: %\n", as_type(hint_type));
+    dbg_print_push_indent();
     
-    #if DEBUG {
-        context.dbg_print_indent += 1;
-        defer context.dbg_print_indent -= 1;
-    }
+    // if already typechecked, just return resolved type.
+    // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
+    if node.value_type  return node.value_type;
     
-    if node.type == {
+    if node.node_type == {
       case .NUMBER;
+        number := cast(*Node_Number) node;
         if check_flags & .EXPECT_LVALUE {
-            dbg_print("Error: number literal cannot be used as an lvalue.\n");
+            log("Error: number literal cannot be used as an lvalue.\n");
             return null;
         }
         
+        // TODO: we could store any numeric literal type in the same space so that we don't have to call remap_data every time we execute node
         if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
-            dbg_print("returning expected type: %\n", as_type(hint_type));
-            node.value_type = hint_type;
+            dbg_print("returning hinted type: %\n", as_type(hint_type));
+            number.value_type = hint_type;
             return hint_type;
         }
         
-        node.value_type = type_info(float32);
-        return type_info(float32);
+        number.value_type = type_info(type_of(number.float_value)); 
+        return number.value_type;
         
         
-      case .VARIABLE;
-        node.variable_index = resolve_variable(ctxt, node.src_text);
-        if node.variable_index == -1 {
-            dbg_print("Unable to resolve variable '%'!\n", node.src_text);
-            return null;
+      case .IDENTIFIER;
+        identifier := cast(*Node_Identifier) node;
+        // if type was resolved, then we should have returned early above.
+        assert(identifier.resolved_type == .UNRESOLVED); 
+        
+        // TODO: resolve references to internal declarations as well
+        
+        // try to resolve identifier as a variable here
+        // if the identifier is referring to a procedure, that will have to be handled in PROCEDURE_CALL case
+        variable_index := resolve_variable(ctxt, identifier.name);
+        if variable_index != -1 {
+            if check_flags & .EXPECT_LVALUE {
+                identifier.flags |= .IS_LVALUE;
+            }
+            identifier.resolved_type  = .EXTERNAL_VARIABLE;
+            identifier.value_type     = variables[variable_index].binding.type;
+            identifier.variable_index = variable_index;
+            return identifier.value_type;
         }
         
-        node.value_type = variables[node.variable_index].binding.type;
-        
-        if check_flags & .EXPECT_LVALUE {
-            node.flags |= .IS_LVALUE;
-        }
-        return node.value_type;
-        
-      case .PROCEDURE;
-        // in order to typecheck a procedure node, we would need to know what type ot expect, so that we can resolve overloads
-        // so for now, this node can only be used in the context of a PROCEDURE_CALL, where it is typechecked inline
-        dbg_print("Error: typechecking a procedure node in isolation is not currently supported.\n");
+        log("Error: Unable to resolve identifier.");
         return null;
+        
         
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
+        operation := cast(*Node_Operation) node;
         
-        left_type := typecheck_node(ctxt, node.operation.left, check_flags, hint_type);
+        left_type := typecheck_node(ctxt, operation.left, check_flags, hint_type);
         if !left_type   return null;
         
-        right_type := typecheck_node(ctxt, node.operation.right, check_flags, hint_type);
+        right_type := typecheck_node(ctxt, operation.right, check_flags, hint_type);
         if !right_type  return null;
         
-        operator_index, swap_args := resolve_builtin_operation(node.src_text, left_type, right_type);
+        operator_index, swap_args := resolve_builtin_operation(operation.name, left_type, right_type);
         if operator_index >= 0 {
-            node.operation.operator_index = operator_index;
+            operation.operator_index = operator_index;
             
             if swap_args {
-                node.operation.left, node.operation.right = node.operation.right, node.operation.left;
+                operation.left, operation.right = operation.right, operation.left;
             }
             
-            node.value_type = cast(*Type_Info) BUILTIN_OPERATIONS[operator_index].ret;
+            operation.value_type = cast(*Type_Info) BUILTIN_OPERATIONS[operator_index].ret;
             
-            if is_aggr(node.value_type) {
-                node.operation.dst = Dynamic_New(node.value_type,, ctxt.allocator);
-                dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.operation.dst, node);
+            if is_aggr(operation.value_type) {
+                operation.return_ptr = Dynamic_New(operation.value_type,, ctxt.allocator);
+                dbg_print("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
             }
             
-            return node.value_type;
+            return operation.value_type;
         } 
         
-        // if it was not one of the builtin operators, 
-        // then we will try checking for an overloaded procedure that performs the operation
-        node.operation.left.next = node.operation.right;
+        // TODO: fix operator overloading later. for now it is just disabled so I can get the major refactor on nodes working
         
-        // need to create a new node for the procedure itself, kinda dumb
-        proc_node := alloc_node(ctxt);
-        proc_node.type            = .PROCEDURE;
-        proc_node.src_text        = node.src_text;
-        proc_node.src_loc         = node.src_loc;
-        proc_node.enclosing_scope = node.enclosing_scope;
+        log("Error: operator overloading is currently broken!");
+        return null;
         
-        // then replace the current operation node with a procedure_call node
-        proc_call_node := Node.{
-            type            = .PROCEDURE_CALL,
-            src_loc         = node.src_loc,
-            src_text        = node.src_text,
-            flags           = node.flags | .OVERLOAD_OP,
-            enclosing_scope = node.enclosing_scope,
-            procedure_call  = .{
-                procedure_node = proc_node,
-                arg_nodes = node.operation.left,
-                arg_count = 2, // TODO: what if unary op
-            }
-        };
-        node.* = proc_call_node;
+        // // if it was not one of the builtin operators, 
+        // // then we will try checking for an overloaded procedure that performs the operation
+        // operation.left.next = operation.right;
         
-        #through;
+        // // need to create a new node for the procedure itself, kinda dumb
+        // proc_node := alloc_node(ctxt, Node_Identifier);
+        // proc_node.src_text        = node.src_text;
+        // proc_node.src_loc         = node.src_loc;
+        // proc_node.enclosing_scope = node.enclosing_scope;
+        
+        // // then replace the current operation node with a procedure_call node
+        // proc_call_node := Node.{
+        //     type            = .PROCEDURE_CALL,
+        //     src_loc         = node.src_loc,
+        //     src_text        = node.src_text,
+        //     flags           = node.flags | .OVERLOAD_OP,
+        //     enclosing_scope = node.enclosing_scope,
+        //     procedure_call  = .{
+        //         procedure_expression = proc_node,
+        //         arg_nodes = operation.left,
+        //         arg_count = 2, // TODO: what if unary op
+        //     }
+        // };
+        // node.* = proc_call_node;
+        
+        // #through;
         
       case .PROCEDURE_CALL;
         if check_flags & .EXPECT_LVALUE  return null;
+        procedure_call := cast(*Node_Procedure_Call) node;
         
         dbg_print("typechecking arguments...\n");
-        dbg_print("arg_count: %\n", node.procedure_call.arg_count);
+        dbg_print("arg_count: %\n", procedure_call.arguments_count);
         
-        argument_types := NewArray(node.procedure_call.arg_count, *Type_Info,, temp); // TODO
-        for node.procedure_call.arg_nodes {
+        argument_types := NewArray(procedure_call.arguments_count, *Type_Info,, temp); // TODO
+        for procedure_call.arguments {
             argument_type := typecheck_node(ctxt, it);
             if !argument_type  return null;
             argument_types[it_index] = argument_type;
         }
         
-        proc_node := node.procedure_call.procedure_node;
-        if proc_node == null {
-            dbg_print("proc_node was null!\n");
-            return null;
-        }
+        ti_proc := cast(*Type_Info_Procedure) typecheck_node(ctxt, procedure_call.procedure_expression);
         
-        if node.procedure_call.procedure_node.type == {
-          case .PROCEDURE;
-            // we don't call typecheck_node on proc_node, because we need the context of the arguments here to resolve overloaded procedures 
-            // so we basically just typecheck this node inline here and set its value_type manually below
+        if procedure_call.procedure_expression.node_type == .IDENTIFIER && ti_proc == null {
+            identifier := cast(*Node_Identifier) procedure_call.procedure_expression;
+            assert(identifier.resolved_type == .UNRESOLVED);
             
-            proc_node.procedure_index = resolve_procedure_index(ctxt, proc_node.src_text, argument_types, node.flags & .OVERLOAD_OP != 0);
-            if proc_node.procedure_index == -1  return null;
+            procedure_index := resolve_procedure_index(ctxt, identifier.name, argument_types, node.flags & .OVERLOAD_OP != 0);
+            if procedure_index == -1  return null; // error logged by above
             
-            procedure := *procedures[proc_node.procedure_index];
-            proc_node.value_type = procedure.type;
-            node.value_type = ifx procedure.type.return_types then procedure.type.return_types[0] else type_info(void);
+            // TODO: remove need to allocate additional node here
+            identifier.resolved_type   = .EXTERNAL_PROCEDURE;
+            identifier.procedure_index = procedure_index;
             
-            
-          case;
-            ti_proc := cast(*Type_Info_Procedure) typecheck_node(ctxt, proc_node);
+            ti_proc, identifier.value_type = procedures[procedure_index].type;
+            node.value_type = ifx ti_proc.return_types 
+                then ti_proc.return_types[0] 
+                else type_info(void);
+        }
+        else {
             if ti_proc == null {
-                dbg_print("Error: failed to typecheck procedure_node.\n");
+                log("Error: failed to typecheck procedure_expression.");
                 return null;
             } 
             if ti_proc.type != .PROCEDURE {
-                dbg_print("Error: attempt to call a non-procedure type as if it were a procedure.\n");
+                log("Error: attempt to call a non-procedure type as if it were a procedure.");
                 return null;
             }
             if ti_proc.return_types.count > 1 {
-                dbg_print("Error: attempt to call a procedure which returns more than one value. This is not currently supported.\n");
+                log("Error: attempt to call a procedure which returns more than one value. This is not currently supported.");
                 return null;
             }
             
@@ -184,65 +194,70 @@ typecheck_node :: (
                 }
             }
             
-            node.value_type = ifx ti_proc.return_types then ti_proc.return_types[0] else type_info(void);
+            node.value_type = ifx ti_proc.return_types 
+                then ti_proc.return_types[0] 
+                else type_info(void);
         }
         
         if is_aggr(node.value_type) {
-            node.procedure_call.dst = Dynamic_New(node.value_type,, ctxt.allocator);
-            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), node.procedure_call.dst, node);
+            procedure_call.return_ptr = Dynamic_New(node.value_type,, ctxt.allocator);
+            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), procedure_call.return_ptr, procedure_call);
         }
         return node.value_type;
         
         
       case .MEMBER;
-        base_type := typecheck_node(ctxt, node.member.base, check_flags & .EXPECT_LVALUE);
+        member := cast(*Node_Member) node;
+        base_type := typecheck_node(ctxt, member.base_expression, check_flags & .EXPECT_LVALUE);
         if base_type.type != .STRUCT  return null;
         
-        member_ti, member_offset := get_field(xx base_type, node.member.identifier);
+        member_ti, member_offset := get_field(xx base_type, member.identifier);
         if member_ti == null  return null;
         
-        node.value_type    = member_ti.type;
-        node.member.offset = member_offset;
+        member.value_type = member_ti.type;
+        member.offset     = member_offset;
         
-        dbg_print("member value type: %\n", as_type(member_ti.type));
-        dbg_print("member offset: %\n", member_offset);
+        // dbg_print("member value type: %\n", as_type(member_ti.type));
+        // dbg_print("member offset: %\n", member_offset);
         
         if check_flags & .EXPECT_LVALUE {
-            node.flags |= .IS_LVALUE;
+            member.flags |= .IS_LVALUE;
         }
-        return node.value_type;
+        return member.value_type;
         
         
       case .SUBSCRIPT;
-        base_type :=  cast(*Type_Info_Array) typecheck_node(ctxt, node.subscript.base, check_flags & .EXPECT_LVALUE);
+        subscript := cast(*Node_Subscript) node;
+        base_type :=  cast(*Type_Info_Array) typecheck_node(ctxt, subscript.base_expression, check_flags & .EXPECT_LVALUE);
         if base_type.type != .ARRAY {
             log("Typechecking Error: Type '%' cannot be indexed!", as_type(base_type));
             return null;
         }
         
-        indexing_type := typecheck_node(ctxt, node.subscript.indexing_expr, hint_type = type_info(int));
+        indexing_type := typecheck_node(ctxt, subscript.indexing_expression, hint_type = type_info(int));
         if indexing_type.type != .INTEGER && indexing_type.type != .FLOAT {
             log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
             return null;
         }
         
-        node.value_type = base_type.element_type;
+        subscript.value_type = base_type.element_type;
         if check_flags & .EXPECT_LVALUE {
-            node.flags |= .IS_LVALUE;
+            subscript.flags |= .IS_LVALUE;
         }
-        return node.value_type;
+        return subscript.value_type;
         
         
       case .ASSIGNMENT;
         if check_flags & .EXPECT_LVALUE  return null;
+        assignment := cast(*Node_Assignment) node;
         
         // get type of left side
         // we expect left side to be an lvalue
-        left_type := typecheck_node(ctxt, node.assignment.left, check_flags = .EXPECT_LVALUE);
+        left_type := typecheck_node(ctxt, assignment.left, check_flags = .EXPECT_LVALUE);
         if !left_type  return null;
         
         // pass left type as 'hint_type' argument so that we can infer type of struct literals
-        right_type := typecheck_node(ctxt, node.assignment.right, hint_type = left_type);
+        right_type := typecheck_node(ctxt, assignment.right, hint_type = left_type);
         if !right_type  return null;
         
         if left_type != right_type {
@@ -250,126 +265,131 @@ typecheck_node :: (
             return null;
         }
         
-        node.value_type = type_info(void);
-        return node.value_type;
+        assignment.value_type = type_info(void);
+        return assignment.value_type;
         
         
       case .BLOCK;
         if check_flags & .EXPECT_LVALUE  return null;
+        block := cast(*Node_Block) node;
         
-        for node.block.statements {
+        for block.statements {
             if !typecheck_node(ctxt, it)  return null;
         }
         
-        node.value_type = type_info(void);
-        return node.value_type;
+        block.value_type = type_info(void);
+        return block.value_type;
         
         
       case .IF_STATEMENT;
         if check_flags & .EXPECT_LVALUE  return null;
+        if_statement := cast(*Node_If_Statement) node;
         
-        if !typecheck_node(ctxt, node.if_statement.condition)  return null; // TODO: must be bool or coercible to bool
-        if !typecheck_node(ctxt, node.if_statement.statement)  return null;
+        if !typecheck_node(ctxt, if_statement.condition)  return null; // TODO: must be bool or coercible to bool
+        if !typecheck_node(ctxt, if_statement.statement)  return null;
         
-        node.value_type = type_info(void);
-        return node.value_type;
+        if_statement.value_type = type_info(void);
+        return if_statement.value_type;
         
         
       case .WHILE_LOOP;
         if check_flags & .EXPECT_LVALUE  return null;
+        while_loop := cast(*Node_While_Loop) node;
         
-        if !typecheck_node(ctxt, node.while_loop.condition)  return null; // TODO: must be bool or coercible to bool
-        if !typecheck_node(ctxt, node.while_loop.statement)  return null;
+        if !typecheck_node(ctxt, while_loop.condition)  return null; // TODO: must be bool or coercible to bool
+        if !typecheck_node(ctxt, while_loop.statement)  return null;
         
-        node.value_type = type_info(void);
-        return node.value_type;
+        while_loop.value_type = type_info(void);
+        return while_loop.value_type;
         
         
       case .FOR_LOOP;
         if check_flags & .EXPECT_LVALUE  return null;
+        for_loop := cast(*Node_For_Loop) node;
         
         control_type: *Type_Info;
-        if node.for_loop.control.type == {
+        if for_loop.control_expression.node_type == {
           case .RANGE;
             // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
-            control_type = typecheck_node(ctxt, node.for_loop.control, hint_type = type_info(int)); 
+            control_type = typecheck_node(ctxt, for_loop.control_expression, hint_type = type_info(int)); 
           case;
-            control_type = typecheck_node(ctxt, node.for_loop.control, check_flags = .EXPECT_LVALUE);
+            control_type = typecheck_node(ctxt, for_loop.control_expression, check_flags = .EXPECT_LVALUE);
         }
         
         // TODO: may not allow float here?
         if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER && control_type.type != .FLOAT)  return null; 
         
-        if !typecheck_node(ctxt, node.for_loop.statement)  return null;
+        if !typecheck_node(ctxt, for_loop.statement)  return null;
         
-        node.value_type = type_info(void);
-        return node.value_type;
+        for_loop.value_type = type_info(void);
+        return for_loop.value_type;
         
         
       case .RANGE;
         if check_flags & .EXPECT_LVALUE  return null;
+        range := cast(*Node_Range) node;
         
         dbg_print("typechecking range lower\n");
-        assert(node.range.lower != null);
-        lower_type := typecheck_node(ctxt, node.range.lower, hint_type = type_info(int));
+        assert(range.lower != null);
+        lower_type := typecheck_node(ctxt, range.lower, hint_type = type_info(int));
         if lower_type == null  return null;
         
         dbg_print("typechecking range upper\n");
-        assert(node.range.upper != null);
-        upper_type := typecheck_node(ctxt, node.range.upper, hint_type = lower_type);
+        assert(range.upper != null);
+        upper_type := typecheck_node(ctxt, range.upper, hint_type = lower_type);
         if lower_type != upper_type { 
             dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
             return null;
         }
         
-        node.value_type = lower_type;
-        return node.value_type;
+        range.value_type = lower_type;
+        return range.value_type;
         
-      case .ITERATOR;
-        node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
-        if !node.iterator.parent_for {
-            dbg_print("Error: Attempt to use 'it' ouside of the context of a for loop!\n");
-            return null;
-        }
+      // case .ITERATOR;
+      //   node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
+      //   if !node.iterator.parent_for {
+      //       dbg_print("Error: Attempt to use 'it' ouside of the context of a for loop!\n");
+      //       return null;
+      //   }
         
-        control_type := node.iterator.parent_for.for_loop.control.value_type;
-        if control_type.type == {
-          case .ARRAY;
-            node.value_type = (cast(*Type_Info_Array)control_type).element_type;
-            // in future, may need checks on whether array itself is an lvalue
-            // this would be important if we wanted to have array literals in scripts
-            if check_flags & .EXPECT_LVALUE {
-                node.flags |= .IS_LVALUE;
-            }
-            return node.value_type;
+      //   control_type := node.iterator.parent_for.for_loop.control_expression.value_type;
+      //   if control_type.type == {
+      //     case .ARRAY;
+      //       node.value_type = (cast(*Type_Info_Array)control_type).element_type;
+      //       // in future, may need checks on whether array itself is an lvalue
+      //       // this would be important if we wanted to have array literals in scripts
+      //       if check_flags & .EXPECT_LVALUE {
+      //           node.flags |= .IS_LVALUE;
+      //       }
+      //       return node.value_type;
             
-          case .FLOAT; #through; // ehh...
-          case .INTEGER;
-            node.value_type = control_type;
-            if check_flags & .EXPECT_LVALUE {
-                dbg_print("Error: attempt to use an integer-typed iterator as an lvalue.\n");
-                return null;
-            }
-            return node.value_type;
-        }
+      //     case .FLOAT; #through; // ehh...
+      //     case .INTEGER;
+      //       node.value_type = control_type;
+      //       if check_flags & .EXPECT_LVALUE {
+      //           dbg_print("Error: attempt to use an integer-typed iterator as an lvalue.\n");
+      //           return null;
+      //       }
+      //       return node.value_type;
+      //   }
         
-        dbg_print("Error: Iterator used in a for loop with an invalid control type? (%)\n", as_type(control_type));
-        return null;
+      //   dbg_print("Error: Iterator used in a for loop with an invalid control type? (%)\n", as_type(control_type));
+      //   return null;
         
         
-      case .ITERATOR_INDEX;
-        if check_flags & .EXPECT_LVALUE  return null;
+      // case .ITERATOR_INDEX;
+      //   if check_flags & .EXPECT_LVALUE  return null;
         
-        node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
-        if !node.iterator.parent_for  return null;
+      //   node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
+      //   if !node.iterator.parent_for  return null;
         
-        if node.iterator.parent_for.for_loop.control.value_type.type != .ARRAY {
-            dbg_print("Error: attempt to use it_index in a range-based for loop.\n");
-            return null;
-        }
+      //   if node.iterator.parent_for.for_loop.control_expression.value_type.type != .ARRAY {
+      //       dbg_print("Error: attempt to use it_index in a range-based for loop.\n");
+      //       return null;
+      //   }
         
-        node.value_type = type_info(int);
-        return node.value_type;
+      //   node.value_type = type_info(int);
+      //   return node.value_type;
     }
     
     return null;
@@ -377,9 +397,9 @@ typecheck_node :: (
 
 typecheck_script :: (script: *Script_Constructor) -> bool {
     if !script.ast_root                 return false;
-    if script.ast_root.type != .BLOCK  return false;
+    if script.ast_root.node_type != .BLOCK  return false;
     
-    for *script.ast_root.block.statements {
+    for *script.ast_root.statements {
         // TODO: probably check specifically that type returned here is void, since statements should not have a value_type.
         if !typecheck_node(script, it, .NONE)  return false;
     }
@@ -403,3 +423,13 @@ is_aggr :: (ti: *Type_Info) -> bool {
     }
     return true;
 }
+
+resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
+    for variables {
+        if it.name == ident {
+            return it_index;
+        }
+    }
+    return -1;
+}
+
