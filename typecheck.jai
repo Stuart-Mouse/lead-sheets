@@ -234,7 +234,7 @@ typecheck_node :: (
             return null;
         }
         
-        indexing_type := typecheck_node(ctxt, subscript.indexing_expression, hint_type = type_info(int));
+        indexing_type := typecheck_node(ctxt, subscript.indexing_expression/*, hint_type = type_info(int)*/);
         if indexing_type.type != .INTEGER && indexing_type.type != .FLOAT {
             log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
             return null;

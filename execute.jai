@@ -192,8 +192,9 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             return false;
         }
         
-        element := Any.{ arr_data + index_as_s64 * node.value_type.runtime_size, node.value_type };
+        element := Any.{ node.value_type, arr_data + index_as_s64 * node.value_type.runtime_size };
         stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE);
+        dbg_print("returning result of indexing operation: %\n", element);
         return true;
         
       case .ASSIGNMENT;

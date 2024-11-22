@@ -22,7 +22,7 @@ main :: () {
     
     // DONE;
     
-    input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
+    // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
     // input := "r2 = x;";              // assignment to non-aggr
     // input := "r1.y = z.x + z.y;";    // member access as lvalue and rvalue
     // input := "r3 = a + b;";          // overloaded operator (int + int)
@@ -38,7 +38,7 @@ main :: () {
             we need to be able to make unary operators actually obey operator precedence, but I haven't quite figured that one out yet
         another issue is that if we have an operation in the range expression here, then the type hint for int will not flow through the operation
             I am really not sure how to solve that one, since the typechecking there could get really nasty really quickly.
-            
+            a
         OK, now we got it to use s64 here by just simply passing the type hint through the operation node
         but of course this will probably not work in many cases, since this assumes that result type of operation is the same as the inputs
         but maybe it really only matters that we solve this simple case?
@@ -103,6 +103,11 @@ main :: () {
     set_variable(*script, "struct1", struct1);
     set_variable(*script, "proc1", proc1);
     
+    print("*arr1: %\n", *arr1);
+    print("*r1: %\n", *r1);
+    print("*r2: %\n", *r2);
+    print("*r3: %\n", *r3);
+
     print("\nCONSTRUCTING SCRIPT\n");
     if !construct_script_from_source_string(*script, input) {
         print("failed to construct script from source!\n");
@@ -113,9 +118,9 @@ main :: () {
     ok := execute_script(*script);
     if ok {
         print("\nRESULTS:\n");
-        print("r1: % at %\n", r1, *r1);
-        print("r2: % at %\n", r2, *r2);
-        print("r3: % at %\n", r3, *r3);
+        print("r1: %\n", r1);
+        print("r2: %\n", r2);
+        print("r3: %\n", r3);
         
         print("arr1: %\n", arr1);
         print("struct1: %\n", struct1);
