@@ -27,7 +27,6 @@ Node_Type :: enum {
     // statements
     BLOCK;
     ASSIGNMENT;
-    DECLARATION;
     IF_STATEMENT;
     WHILE_LOOP;
     FOR_LOOP;
@@ -35,7 +34,6 @@ Node_Type :: enum {
 
 Node :: struct {
     node_type:            Node_Type;
-    // src_loc:              Source_Location;    // -1 for declared externally?
     parent, prev, next:   *Node;              // used for argument lists or connecting statements in a block
     flags:                Flags;
     value_type:           *Type_Info;         // null if not yet typechecked
@@ -45,6 +43,8 @@ Node :: struct {
         UNARY_OP; 
         OVERLOAD_OP; 
         DISCARD_VALUE; 
+        
+        EXTRA_INDIRECTION; // used on internal variables in certain cases (e.g. iterators)
     };
 }
 
@@ -56,27 +56,20 @@ Node_Block :: struct {
 Node_Identifier :: struct {
     using #as node_base: Node;
     name: string;
-    resolved_type: enum { UNRESOLVED; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; DECLARATION; }; 
+    resolved_type: enum { UNRESOLVED; INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
     union {
-        variable_index:   int;
-        procedure_index:  int;
-        declaration:      *Node;
+        variable_ptr:     *void;    // internal variable
+        variable_index:   int;      // external variable
+        procedure_index:  int;      // external procedure
     }
-}
-
-// Maybe we should just insert Node_Declaration's when we call set_variable or add_procedure?
-// or maybe this should just be a flag on Node_Assignment?
-Node_Declaration :: struct {
-    left:   *Node_Identifier;
-    right:  *Node;
 }
 
 Node_Procedure_Call :: struct {
     using #as node_base: Node;
-    procedure_expression: *Node;
-    arguments:            *Node;
-    arguments_count:      int;
-    return_ptr:           *void; // will point to some memory allocated in script pool if return type is an aggregate type
+    procedure_expression:   *Node;
+    arguments:              *Node;
+    arguments_count:        int;
+    return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
 }
 
 Node_Number :: struct {
@@ -112,19 +105,17 @@ Node_Subscript :: struct {
     indexing_expression:   *Node;
 }
 
-
 Node_Assignment :: struct {
     using #as node_base: Node;
+    is_declaration: bool;
     left, right: *Node; 
 }
-
 
 Node_If_Statement :: struct {
     using #as node_base: Node;
     condition: *Node;
     statement: *Node;
 }
-
 
 Node_While_Loop :: struct {
     using #as node_base: Node;
@@ -136,19 +127,26 @@ Node_For_Loop :: struct {
     using #as node_base: Node;
     control_type: enum { RANGE; ARRAY; };
     control_expression: *Node;
-    statement: *Node;
-    
-    iterator_ptr: *void;       // points to some value allocated in pool, iterator node will get a copy of this during typecheck 
-    iterator_index: int; // backing value. iterator_index node inside loop will get pointer to this.
+    /*
+        union {
+            array_expression: *Node;
+            range: struct { lower, upper: *Node };
+        }
+    */
+    statement:       *Node;
+    iterator_ptr:    *void;  // points to some value allocated in pool, iterator node will get a copy of this during typecheck 
+    iterator_index:  int;    // backing value. iterator_index node inside loop will get pointer to this.
 }
 
 for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
     #if flags & .REVERSE {
-        // no it_index when iterating in reverse. not sure how that would really work
+        // required to define it index here it seems? but it doesn't make any sense to use...
         `it := node;
+        `it_index := 0;
         while it != null {
             #insert body;
             it = it.prev;
+            it_index -= 1;
         }
     } else {
         `it := node;
@@ -246,6 +244,7 @@ alloc_node :: (ctxt: *Script_Constructor, $T_Node: Type, parent_node: *Node = nu
     node := New(T_Node,, ctxt.allocator);
     node.node_type = #run type_to_enum(T_Node);
     node.parent    = ifx parent_node else ctxt.current_parent_node;
+    dbg_print("allocated % at %\n", T_Node, loc);
     return node;
 }
 
@@ -256,7 +255,6 @@ enum_to_type :: (node_type: Node_Type) -> Type {
     if #complete node_type == {
       case .NUMBER;          return Node_Number;
       case .IDENTIFIER;      return Node_Identifier;
-      case .DECLARATION;     return Node_Declaration;
       case .OPERATION;       return Node_Operation;
       case .PROCEDURE_CALL;  return Node_Procedure_Call;
       case .MEMBER;          return Node_Member;
@@ -277,7 +275,6 @@ type_to_enum :: (type: Type) -> Node_Type {
     if type == {
       case Node_Number;          return .NUMBER;
       case Node_Identifier;      return .IDENTIFIER;
-      case Node_Declaration;     return .DECLARATION;
       case Node_Operation;       return .OPERATION;
       case Node_Procedure_Call;  return .PROCEDURE_CALL;
       case Node_Member;          return .MEMBER;

@@ -116,8 +116,10 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
         (cast(**void)script.stack_ptr).* = any.value_pointer; // store the pointer itself instead of the value
     } else {
         assert(any.type.runtime_size <= PTR_SIZE);
+        
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
+    dbg_print("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
     return true;
 }
 
@@ -222,6 +224,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             // TODO: maybe check if token text is a reserved word before switch? Then we can error early if a reserved word is used inappropriately
             if next_token.text == {
               case "if";
+                dbg_print("parsing if\n"); dbg_print_push_indent();
                 get_token(*lexer);
                 if_statement := alloc_node(ctxt, Node_If_Statement);
                 current_parent_node = if_statement; 
@@ -236,6 +239,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
                 return if_statement;
                 
               case "while";
+                dbg_print("parsing while\n"); dbg_print_push_indent();
                 get_token(*lexer);
                 while_loop := alloc_node(ctxt, Node_While_Loop);
                 current_parent_node = while_loop; 
@@ -250,6 +254,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
                 return while_loop;
                 
               case "for";
+                dbg_print("parsing for\n"); dbg_print_push_indent();
                 get_token(*lexer);
                 for_loop := alloc_node(ctxt, Node_For_Loop);
                 current_parent_node = for_loop; 
@@ -270,6 +275,7 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
         
         
       case .OPEN_BRACE;
+        get_token(*lexer);
         block := alloc_node(ctxt, Node_Block);
         current_parent_node = block; 
         
@@ -282,8 +288,9 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
             statement = parse_statement(ctxt);
             if !statement  return null;
             
-            previous.next = statement;
-            previous      = statement;
+            statement.prev = previous;
+            previous.next  = statement;
+            previous       = statement;
         }
         
         current_parent_node = block.parent; 
@@ -294,13 +301,22 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
     left := parse_expression(ctxt, 0);
     if left == null  return null;
     
-    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+    is_declaration := expect_token_type(*lexer, .COLON);
+    is_assignment  := expect_token_type(*lexer, .ASSIGN_EQUAL);
+    
+    if is_declaration && !is_assignment {
+        log("Error: colon must be followd by equals in declaration.");
+        return null;
+    }
+    
+    if is_assignment {
         right := parse_expression(ctxt, 0);
         if right == null  return null;
         
         if !expect_token_type(*lexer, .SEMICOLON)  return null;
 
         assignment := alloc_node(ctxt, Node_Assignment);
+        assignment.is_declaration = is_declaration;
         assignment.left  = left;
         assignment.right = right;
         return assignment;
@@ -347,37 +363,7 @@ get_operator_precedence :: (op: string) -> int {
     return -1;
 }
 
-
-Bit_Field :: struct(MIN: int, MAX: int) {
-    MASK_SIZE :: ((MAX - MIN + 1) / 8) + cast(int) ((MAX - MIN + 1) % 8 != 0);
-    mask: [MASK_SIZE] u8;
-}
-
-check_bitfield :: (using bit_field: Bit_Field, check_bits: ..bit_field.T) -> bool {
-    for check_bits {
-        byte_index := (it - MIN) / 8;
-        bit_index  := cast(u8) 1 << ((it - MIN) % 8);
-        if it < MIN || it > MAX || bit_index & mask[byte_index] == 0 {
-            // log("Bit % was not set", it);
-            return false;
-        }
-    }
-    return true;
-}
-
-set_bitfield :: (using bit_field: *Bit_Field, set_bits: ..bit_field.T) -> bool {
-    for set_bits {
-        if it < MIN || it > MAX { 
-            // log("Failed to set bit %", it);
-            return false;
-        }
-        byte_index := (it - MIN) / 8;
-        bit_index  := cast(u8) 1 << ((it - MIN) % 8);
-        mask[byte_index] |= bit_index;
-    }
-    return true;
-}
-
+// TODO: probably remove this, I don't think there's any good reason to do the whole bit set thing here just to check if a node is n operator
 // token_is_binary_operator :: (token: Script_Token) -> bool {
 //     binary_operators :: #run make_bit_set(Script_Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
 //     return check_bit(binary_operators, token.type);
@@ -528,6 +514,8 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         first_arg_node : *Node;
         arg_count      :=  0;
         
+        node := alloc_node(ctxt, Node_Procedure_Call);
+        
         if peek_token(*lexer).type != .CLOSE_PAREN {
             first_arg_node = parse_expression(ctxt, 0);
             if first_arg_node == null  return null;
@@ -538,11 +526,12 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
             prev_arg_node := first_arg_node;
             while expect_token_type(*lexer, .COMMA) {
                 dbg_print("parsing another arg\n");
-                node := parse_expression(ctxt, 0);
-                if node == null  return null;
+                arg_node := parse_expression(ctxt, 0);
+                if arg_node == null  return null;
                 
-                prev_arg_node.next = node;
-                prev_arg_node = node;
+                arg_node.prev = prev_arg_node;
+                prev_arg_node.next = arg_node;
+                prev_arg_node = arg_node;
                 arg_count += 1;
             }
         }
@@ -553,7 +542,6 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
             return null;
         }
         
-        node := alloc_node(ctxt, Node_Procedure_Call);
         node.procedure_expression = left;
         node.arguments            = first_arg_node;
         node.arguments_count      = arg_count;

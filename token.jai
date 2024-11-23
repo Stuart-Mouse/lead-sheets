@@ -35,6 +35,7 @@ Script_Token_Type :: enum {
     
     DOT           :: #char ".";
     COMMA         :: #char ",";    
+    COLON         :: #char ":";
     SEMICOLON     :: #char ";";
     ASSIGN_EQUAL  :: #char "=";
     
@@ -191,7 +192,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     }
     
     // single-character tokens
-    if is_any(file[0], "+-*/(),;=.[]{}<>") {
+    if is_any(file[0], "+-*/(),:;=.[]{}<>") {
         return make_token(xx file[0], 1);
     }
     

@@ -70,9 +70,20 @@ execute_node :: (script : *Script, node: *Node) -> bool {
       case .IDENTIFIER;
         identifier := cast(*Node_Identifier) node;
         if identifier.resolved_type == {
+          case .INTERNAL_VARIABLE;
+            dbg_print("identifier.variable_ptr is %\n", identifier.variable_ptr);
+            variable_any := Any.{ identifier.value_type, identifier.variable_ptr };
+            if (identifier.flags & .EXTRA_INDIRECTION) {
+                variable_any.value_pointer = (cast(**void)variable_any.value_pointer).*;
+            }
+            
+            dbg_print("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
+            stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0);
+            return true;
+            
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.variable_index];
-            dbg_print("returning variable with value % at %\n", variable.binding, variable.binding.value_pointer);
+            dbg_print("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
             stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0);
             return true;
             
@@ -109,7 +120,12 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         // dbg_print("operation: %\n", op);
         
         execute_builtin_operation(operation.operator_index, *script.stack_ptr);
-        dbg_print("returning result of binary operation: % %\n", as_type(operation.value_type), Any.{ operation.value_type, operation.return_ptr });
+        
+        result_any := Any.{ 
+            operation.value_type, 
+            ifx is_aggr(operation.value_type) then operation.return_ptr else script.stack_ptr
+        };
+        dbg_print("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
         return true;
         
         
@@ -151,6 +167,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         script.stack_ptr = arg_ptr;
         return true;
         
+        
       case .MEMBER;
         member := cast(*Node_Member) node;
         
@@ -163,6 +180,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         stack_push_any(script, member_any, (member.flags & .IS_LVALUE) == .IS_LVALUE);
         return true;
+        
         
       case .SUBSCRIPT;
         subscript := cast(*Node_Subscript) node;
@@ -197,6 +215,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         dbg_print("returning result of indexing operation: %\n", element);
         return true;
         
+        
       case .ASSIGNMENT;
         assignment := cast(*Node_Assignment) node;
         
@@ -211,6 +230,9 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         r_value := stack_pop_any(script, assignment.right.value_type);
         l_value := stack_pop_any(script, assignment.left.value_type, true);
+        
+        dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
+        dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
         
         dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
         dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
@@ -345,18 +367,6 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         
         return false;
-        
-        
-      // case .ITERATOR;
-      //   iterator_any := Any.{ node.value_type, node.iterator.parent_for.for_loop.iterator_ptr };
-      //   stack_push_any(script, iterator_any, node.flags & .IS_LVALUE != 0);
-      //   return true;
-        
-        
-      // case .ITERATOR_INDEX;
-      //   stack_push_any(script, node.iterator.parent_for.for_loop.iterator_index);
-      //   return true;
-        
         
       case .RANGE;
         range := cast(*Node_Range) node;

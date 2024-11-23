@@ -24,7 +24,7 @@ typecheck_node :: (
 ) -> (
     value_type  : *Type_Info
 ) {
-    dbg_print("typechecking node %\n", node, node.node_type);
+    dbg_print("typechecking node % %\n", node, node.node_type);
     dbg_print("expecting type: %\n", as_type(hint_type));
     dbg_print_push_indent();
     
@@ -56,25 +56,136 @@ typecheck_node :: (
         // if type was resolved, then we should have returned early above.
         assert(identifier.resolved_type == .UNRESOLVED); 
         
-        // TODO: resolve references to internal declarations as well
-        
-        // try to resolve identifier as a variable here
-        // if the identifier is referring to a procedure, that will have to be handled in PROCEDURE_CALL case
-        variable_index := resolve_variable(ctxt, identifier.name);
-        if variable_index != -1 {
-            if check_flags & .EXPECT_LVALUE {
-                identifier.flags |= .IS_LVALUE;
+        // try to resolve to internal declaration
+        {
+            scan := identifier.parent;
+            assert(scan.node_type == .BLOCK || scan.node_type == .FOR_LOOP);
+            if scan.node_type == {
+              case .BLOCK;
+                 scan = (cast(*Node_Block)scan).statements;
+            
+              case .FOR_LOOP;
+                for_loop := cast(*Node_For_Loop) scan;
+                if for_loop.control_expression.node_type == {
+                  case .RANGE;
+                    if identifier.name == "it" {
+                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                        identifier.variable_ptr  = *for_loop.iterator_index;
+                        identifier.value_type    = for_loop.control_expression.value_type;
+                        identifier.flags;
+                        return identifier.value_type;
+                    }
+                    
+                  case;
+                    if identifier.name == "it" {
+                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                        identifier.variable_ptr  = *for_loop.iterator_ptr;
+                        identifier.value_type    = (cast(*Type_Info_Array)for_loop.control_expression.value_type).element_type;
+                        identifier.flags |= .EXTRA_INDIRECTION; // TODO: kind of a hack
+                        if check_flags & .EXPECT_LVALUE {
+                            identifier.flags |= .IS_LVALUE;
+                        }
+                        return identifier.value_type;
+                    }
+                    if identifier.name == "it_index" {
+                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                        identifier.variable_ptr  = *for_loop.iterator_index;
+                        identifier.value_type    = type_info(int);
+                        identifier.flags;
+                        return identifier.value_type;
+                    }
+                }
             }
-            identifier.resolved_type  = .EXTERNAL_VARIABLE;
-            identifier.value_type     = variables[variable_index].binding.type;
-            identifier.variable_index = variable_index;
-            return identifier.value_type;
+                            
+            // TODO: factor this all very differently
+            while scan != null {
+                dbg_print("scan = % %\n", scan, scan.*);
+                defer {
+                    if scan.next == null {
+                        scan = ifx scan.parent then scan.parent.parent;
+                        if scan != null {
+                            assert(scan.node_type == .BLOCK || scan.node_type == .FOR_LOOP);
+                            // special case for FOR_LOOP at the moment
+                            // maybe in future I figure out how to just insert declarations into for loop scope more nicely
+                            if scan.node_type == {
+                              case .BLOCK;
+                                 scan = (cast(*Node_Block)scan).statements;
+                            
+                              case .FOR_LOOP;
+                                for_loop := cast(*Node_For_Loop) scan;
+                                if for_loop.control_expression.node_type == {
+                                  case .RANGE;
+                                    if identifier.name == "it" {
+                                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                                        identifier.variable_ptr  = *for_loop.iterator_index;
+                                        identifier.value_type    = for_loop.control_expression.value_type;
+                                        identifier.flags;
+                                        return identifier.value_type;
+                                    }
+                                    
+                                  case;
+                                    if identifier.name == "it" {
+                                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                                        identifier.variable_ptr  = *for_loop.iterator_ptr;
+                                        identifier.value_type    = (cast(*Type_Info_Array)for_loop.control_expression.value_type).element_type;
+                                        identifier.flags |= .EXTRA_INDIRECTION; // TODO: kind of a hack
+                                        if check_flags & .EXPECT_LVALUE {
+                                            identifier.flags |= .IS_LVALUE;
+                                        }
+                                        return identifier.value_type;
+                                    }
+                                    if identifier.name == "it_index" {
+                                        identifier.resolved_type = .INTERNAL_VARIABLE;
+                                        identifier.variable_ptr  = *for_loop.iterator_index;
+                                        identifier.value_type    = type_info(int);
+                                        identifier.flags;
+                                        return identifier.value_type;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else scan = scan.next;
+                }
+                
+                if scan.node_type == .ASSIGNMENT {
+                    decl := cast(*Node_Assignment) scan;
+                    if decl.is_declaration {
+                        ident := cast(*Node_Identifier) decl.left;
+                        assert(ident.node_type == .IDENTIFIER);
+                        if ident.name == identifier.name {
+                            if ident > identifier  log("Error: identifier % used before its declaration.", identifier.name);
+                            identifier.* = ident.*;   // just copy identifier from declaration
+                            identifier.flags = xx 0;  // but don't copy flags! 
+                            if check_flags & .EXPECT_LVALUE {
+                                identifier.flags |= .IS_LVALUE;
+                            }
+                            return identifier.value_type;
+                        }
+                    }
+                }
+            }
         }
         
-        log("Error: Unable to resolve identifier.");
+        // try to resolve identifier as a variable here
+        {
+            variable_index := resolve_variable(ctxt, identifier.name);
+            if variable_index != -1 {
+                if check_flags & .EXPECT_LVALUE {
+                    identifier.flags |= .IS_LVALUE;
+                }
+                identifier.resolved_type  = .EXTERNAL_VARIABLE;
+                identifier.variable_index = variable_index;
+                identifier.value_type     = variables[variable_index].binding.type;
+                return identifier.value_type;
+            }
+        }
+        
+        // if the identifier is referring to a procedure, that will have to be handled in PROCEDURE_CALL case
+        log("Warning: Unable to resolve identifier '%'.", identifier.name);
         return null;
         
-        
+    
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
         operation := cast(*Node_Operation) node;
@@ -251,6 +362,28 @@ typecheck_node :: (
         if check_flags & .EXPECT_LVALUE  return null;
         assignment := cast(*Node_Assignment) node;
         
+        if assignment.is_declaration {
+            // Currently, type of left side of declaration will always be inferred from right side.
+            // This is because we do not have explicit types.
+            // Also, this means that all declarations are also assignments. 
+            
+            // TODO: we should check that we are not redeclaring a previously declared identifier
+            right_type := typecheck_node(ctxt, assignment.right);
+            if !right_type  return null;
+            
+            identifier := cast(*Node_Identifier) assignment.left;
+            assert(identifier.node_type == .IDENTIFIER);
+            assert(identifier.name != "");
+            assert(identifier.resolved_type == .UNRESOLVED);
+            
+            identifier.value_type    = right_type;
+            identifier.resolved_type = .INTERNAL_VARIABLE;
+            identifier.variable_ptr  = Dynamic_New(right_type,, ctxt.allocator);
+            identifier.flags |= .IS_LVALUE;
+            dbg_print("allocated space for internal variable '%', type %, node %\n", identifier.name, right_type, node);
+            return type_info(void);
+        }
+        
         // get type of left side
         // we expect left side to be an lvalue
         left_type := typecheck_node(ctxt, assignment.left, check_flags = .EXPECT_LVALUE);
@@ -310,8 +443,8 @@ typecheck_node :: (
         control_type: *Type_Info;
         if for_loop.control_expression.node_type == {
           case .RANGE;
-            // TODO: this won't work for negative numbers, since the expect type doesn't get passed up through operation node...
             control_type = typecheck_node(ctxt, for_loop.control_expression, hint_type = type_info(int)); 
+            
           case;
             control_type = typecheck_node(ctxt, for_loop.control_expression, check_flags = .EXPECT_LVALUE);
         }

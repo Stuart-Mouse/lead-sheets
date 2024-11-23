@@ -4,23 +4,10 @@
 #import "String";
 #import "Hash_Table";
 #import "Lead_Sheets";
-
+#import "File";
 
 main :: () {
-    // input := #string DONE
-    // r1 = Vec2(3, 4) * 5;
-    // r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
-    // r3 = a + b;
-    
-    // while r2 > 20 {
-    //     r2 = r2 - 1;
-    //     r3 = r3 + r3;
-    // }
-    
-    // for arr1  if it > 1  it = f32(it_index) * 7;
-    // for arr1  echo(it);
-    
-    // DONE;
+    input := read_entire_file("test.ls");
     
     // input := "r1 = Vec2(3, 4) * 2;"; // assignment to aggr, dyncall, builtin operator
     // input := "r2 = x;";              // assignment to non-aggr
@@ -31,6 +18,15 @@ main :: () {
     // r2 = arr1[1 + sin(3.14159/2)];
     // DONE;
     // input := "r2 = 5 * 2 - 2;";
+    
+    // input := "if 1 > 0  echo(5);";
+    // input := #string DONE 
+    // r2 = 5; 
+    // while r2 > 1 {
+    //     r2 = r2 - 1;
+    //     echo(r2);
+    // }
+    // DONE;
     
     /*
         this was failing because unary minus was being applied as lower precedence than range operator
