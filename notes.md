@@ -338,3 +338,53 @@ IDEAS FOR LATER
 named blocks that can be called like funcitons, but don't take arguments
 these named blocks can then have new statements compiled ad added to them dynamically
 this would be useful for some application(s) maybe
+
+
+
+
+
+Problem:
+    we have two conflicting design issues to deal with
+    
+    resolving identifiers 
+    identifier node contains resolved declaration details
+        this was much nicer than having to point to a separate node for resolved declaration because that would requires us to make nodes for external variable and proceudres 
+        but now this is a problem for iterators, because we need a flag that notifies a node that it's variable_ptr has an additional indirection on it
+            this is because the iterator needs to update a pointer to the `it` value
+            but because there's also no real concept of pointers in the scripts, indirections have to basically be handled automatically
+            and this extra indirection is a problem basically
+            i am not explaining this well
+            in any case, this would not be an actual problem if we instead have a pointer to a single resolved declaration
+            maybe we can still get the best of both worlds though by just making a Node_Declaration again which can be for any of the resolved types that are currently on the Node_Identifier
+             
+    
+
+
+TODO:
+    
+    refactor how declarations and identifiers work
+        identifier will point to resolved declaration
+        solves the indirection problem without requiring too much node bloat from external declarations
+    fix for loops
+    probably make it so that local variables get pushed on scope entry and popped on scope exit
+        this may require some refactoring like collecting all declarations in a scope and putting them in one spot
+        but this will be needed if we do the callable blocks thing, or ever do proper functions
+    add lexer callback or some means to insert declarations while parsing
+    it may be good to actually store the source location on nodes again, so that we can use to check if an identifier is used before its declaration in a more robust way
+    actually try to use scripts to make squares move around and change color
+    declare and call named blocks
+        not really proper preocedures, since they won't take parameters, just subroutines or way of splitting up code into sections
+    
+    
+
+need to write more notes and formalize rules about compilation pipeline
+    
+    can add new declarations of external variables through parsing directives
+    but cannot add or remove external variables once typechecking begins
+    
+    parsing basically produces the full ast
+        we probably should not need to be creating new nodes during the typechecking phase
+            maybe some fringe cases for things like iterators or other such declarations that need to get automatically inserted
+            
+    
+

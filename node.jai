@@ -25,6 +25,7 @@ Node_Type :: enum {
     RANGE;
     
     // statements
+    DECLARATION;
     BLOCK;
     ASSIGNMENT;
     IF_STATEMENT;
@@ -56,7 +57,10 @@ Node_Block :: struct {
 Node_Identifier :: struct {
     using #as node_base: Node;
     name: string;
-    resolved_type: enum { UNRESOLVED; INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    // resolved_declaration: Node_Declaration;
+    
+    // TODO: remove everything below
+    resolved_type:     enum { UNRESOLVED; INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
     union {
         variable_ptr:     *void;    // internal variable
         variable_index:   int;      // external variable
@@ -64,8 +68,24 @@ Node_Identifier :: struct {
     }
 }
 
+Node_Declaration :: struct {
+    using #as node_base:  Node;
+    name:                 string;
+    declaration_type:     enum { INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    union {
+        variable_ptr:     *void;    // internal variable
+        variable_index:   int;      // external variable
+        procedure_index:  int;      // external procedure
+    }
+    
+    // for when we have a combo declaration + assignment
+    // we could just desugar to two separate statements, but that would create extraneous nodes
+    // and this way we can probably use the declaration to do the subexpression thing
+    init_expression:      *Node;    
+}
+
 Node_Procedure_Call :: struct {
-    using #as node_base: Node;
+    using #as node_base:    Node;
     procedure_expression:   *Node;
     arguments:              *Node;
     arguments_count:        int;
@@ -77,6 +97,7 @@ Node_Number :: struct {
     float_value: float;
 }
 
+// TODO: remove this node type and just make this a purely lexical construct for For loops
 Node_Range :: struct {
     using #as node_base: Node;
     lower: *Node;
@@ -117,7 +138,7 @@ Node_If_Statement :: struct {
     statement: *Node;
 }
 
-Node_While_Loop :: struct {
+    Node_While_Loop :: struct {
     using #as node_base: Node;
     condition: *Node;
     statement: *Node;
@@ -134,8 +155,14 @@ Node_For_Loop :: struct {
         }
     */
     statement:       *Node;
-    iterator_ptr:    *void;  // points to some value allocated in pool, iterator node will get a copy of this during typecheck 
-    iterator_index:  int;    // backing value. iterator_index node inside loop will get pointer to this.
+    
+    iterator_ptr:    *void;
+    iterator_index:  int;
+    
+    // just store these directly on the for loop itself
+    // the backing vlaues for both of these can be pushed/popped by the for loop
+    it_identifier,
+    it_index_identifier: Node_Identifier;
 }
 
 for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
@@ -261,6 +288,7 @@ enum_to_type :: (node_type: Node_Type) -> Type {
       case .SUBSCRIPT;       return Node_Subscript;
       case .RANGE;           return Node_Range;
       case .BLOCK;           return Node_Block;
+      case .DECLARATION;     return Node_Declaration;
       case .ASSIGNMENT;      return Node_Assignment;
       case .IF_STATEMENT;    return Node_If_Statement;
       case .WHILE_LOOP;      return Node_While_Loop;
@@ -281,6 +309,7 @@ type_to_enum :: (type: Type) -> Node_Type {
       case Node_Subscript;       return .SUBSCRIPT;
       case Node_Range;           return .RANGE;
       case Node_Block;           return .BLOCK;
+      case Node_Declaration;     return .DECLARATION;
       case Node_Assignment;      return .ASSIGNMENT;
       case Node_If_Statement;    return .IF_STATEMENT;
       case Node_While_Loop;      return .WHILE_LOOP;
