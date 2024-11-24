@@ -18,7 +18,7 @@
 
 
 
-Script_Variable :: struct {
+External_Variable :: struct {
     name    : string;
     binding : Any;
 }
@@ -27,8 +27,8 @@ Script :: struct {
     ast_root:    *Node_Block;
     flags:       Flags;
     
-    variables:   [..] Script_Variable;
-    procedures:  [..] Script_Procedure;
+    variables:   [..] External_Variable;
+    procedures:  [..] External_Procedure;
     
     pool:        Flat_Pool;
     allocator:   Allocator;
@@ -38,6 +38,11 @@ Script :: struct {
     stack_ptr:   *void;
     
     dyncall_vm:  *DCCallVM;
+    
+    // stuff I brought over from Script
+    lexer:                Lexer;
+    current_parent_node:  *Node;
+    
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -144,14 +149,6 @@ set_variable :: (script: *Script, name: string, any: Any) {
     array_add(*script.variables, .{ name, any });
 }
 
-
-Script_Constructor :: struct {
-    using #as script: *Script;
-    lexer: Lexer;
-    
-    current_parent_node: *Node;
-}
-
 init_script :: (script: *Script) {
     script.allocator.proc = flat_pool_allocator_proc;
     script.allocator.data = *script.pool;
@@ -165,33 +162,31 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     success: bool;
     defer if !success  free_script(script);
     
-    constructor: Script_Constructor;
-    constructor.script = script;
-    constructor.lexer.file = source;
-    init_lexer(*constructor.lexer);
+    script.lexer.file = source;
+    init_lexer(*script.lexer);
     
-    script.ast_root = alloc_node(*constructor, Node_Block);
+    script.ast_root = alloc_node(script, Node_Block);
     
-    constructor.current_parent_node = script.ast_root;
+    script.current_parent_node = script.ast_root;
     
-    script.ast_root.statements = parse_statement(*constructor);
+    script.ast_root.statements = parse_statement(script);
     if !script.ast_root.statements  return false;
     
     previous := script.ast_root.statements;
-    while !expect_token_type(*constructor.lexer, .EOF) {
-        node := parse_statement(*constructor);
+    while !expect_token_type(*script.lexer, .EOF) {
+        node := parse_statement(script);
         if !node  return false;
         
         previous.next = node;
         previous      = node;
     }
     
-    assert(constructor.current_parent_node == script.ast_root);
+    assert(script.current_parent_node == script.ast_root);
     
     script.flags |= .PARSED;
     
     dbg_print("\nTYPECHECKING SCRIPT\n");
-    if !typecheck_script(*constructor) {
+    if !typecheck_script(script) {
         print("failed to typecheck script!\n");
         return false;
     }
@@ -215,7 +210,7 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     return true;
 }
 
-parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
+parse_statement :: (using ctxt: *Script) -> *Node {
     next_token := peek_token(*lexer); // TODO: probably just get_toke_or_return(), then switch on type.
     
     if next_token.type == {
@@ -426,7 +421,7 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
     .{ "/", 6 },
 ];
 
-parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
+parse_leaf :: (using ctxt: *Script) -> *Node {
     dbg_print("parse_leaf()\n");
     dbg_print_push_indent();
     
@@ -490,7 +485,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
     
 */
 
-parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *Node {
+parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
     dbg_print_push_indent();
     
@@ -523,7 +518,7 @@ parse_expression :: (using ctxt: *Script_Constructor, min_prec: int) -> *Node {
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, min_prec: int) -> *Node {
+parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int) -> *Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     dbg_print_push_indent();
     
@@ -632,7 +627,7 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
 }
 
 
-create_binary_operation :: (using ctxt: *Script_Constructor, operator_ident: string, left: *Node, right: *Node) -> *Node {
+create_binary_operation :: (using ctxt: *Script, operator_ident: string, left: *Node, right: *Node) -> *Node {
     // dbg_print(
     //     "creating binary operation % % %\n", 
     //     sprint_ast_node(ctxt, left), 

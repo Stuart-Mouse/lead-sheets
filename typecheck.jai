@@ -17,7 +17,7 @@ Typechecking_Flags :: enum_flags {
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
 typecheck_node :: (
-    using ctxt  : *Script_Constructor, 
+    using ctxt  : *Script, 
     node        : *Node, 
     check_flags :  Typechecking_Flags = .NONE, 
     hint_type   : *Type_Info          = null
@@ -424,7 +424,7 @@ typecheck_node :: (
     return null;
 }
 
-typecheck_script :: (script: *Script_Constructor) -> bool {
+typecheck_script :: (script: *Script) -> bool {
     if !script.ast_root                 return false;
     if script.ast_root.node_type != .BLOCK  return false;
     
@@ -453,7 +453,7 @@ is_aggr :: (ti: *Type_Info) -> bool {
     return true;
 }
 
-resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
+resolve_variable :: (using ctxt: *Script, ident: string) -> int {
     for variables {
         if it.name == ident {
             return it_index;

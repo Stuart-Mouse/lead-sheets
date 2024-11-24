@@ -208,7 +208,7 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
 // Two allocate_node functions currently. 
 // May possibly remove the first if we get rid of need for Node_Type enum.
 
-alloc_node :: (ctxt: *Script_Constructor, node_type: Node_Type, parent_node: *Node = null, loc := #caller_location) -> *Node {
+alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, loc := #caller_location) -> *Node {
     node: *Node;
     
     // have to allocate the proper amount of space for the node
@@ -235,7 +235,7 @@ alloc_node :: (ctxt: *Script_Constructor, node_type: Node_Type, parent_node: *No
     return node;
 }
 
-alloc_node :: (ctxt: *Script_Constructor, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
+alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
 #modify {
     ti := cast(*Type_Info_Struct) T_Node;
     return ti.type == .STRUCT && ti.members[0].type == type_info(Node) && (ti.members[0].flags & (.USING | .AS)) == (.USING | .AS);

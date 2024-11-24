@@ -1,5 +1,5 @@
 
-Script_Procedure :: struct {
+External_Procedure :: struct {
     name  : string;
     type  : *Type_Info_Procedure;
     ptr   : *void;
@@ -21,9 +21,9 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
 }
 
 
-// The Any here actually points to the pointer in the given Script_Procedure.
+// The Any here actually points to the pointer in the given External_Procedure.
 // This could be problematic if we were to modify the script's procedures array and cause a realloc, but that should never happen.
-make_procedure_any :: (script_proc: Script_Procedure) -> Any {
+make_procedure_any :: (script_proc: External_Procedure) -> Any {
     return Any.{ script_proc.type, *script_proc.ptr }; 
 }
 
@@ -31,7 +31,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
     // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
     // maybe we will put this behind some debug flag later
     Procedure_Resolution_Error :: struct {
-        proc: *Script_Procedure;
+        proc: *External_Procedure;
         error_type: enum { NONE; ARG_COUNT; ARG_TYPE; };
         details: union {
             arg_count : struct { expected: int; provided: int; };
@@ -63,7 +63,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
             continue proc;
         }
         
-        typecheck_arguments :: (script_proc: *Script_Procedure, expected_list: [] *Type_Info, provided_list: [] *Type_Info) -> (Procedure_Resolution_Error, bool) {
+        typecheck_arguments :: (script_proc: *External_Procedure, expected_list: [] *Type_Info, provided_list: [] *Type_Info) -> (Procedure_Resolution_Error, bool) {
             for expected: expected_list {
                 provided := provided_list[it_index];
                 if expected != provided {
