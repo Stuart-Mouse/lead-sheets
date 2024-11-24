@@ -59,11 +59,21 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     }
     
     if node.node_type == {
+      case .DIRECTIVE;
+        return true; // Directives are run as soon as they are parsed, so just skip this node.
+        
+        
       case .NUMBER;
         number := cast(*Node_Number) node;
-        value: u64 = 0; // just empty space
-        remap_data(Any.{ number.value_type, *value }, number.float_value); // TODO: get rid of need for this by storing value as resolved type
-        stack_push_any(script, Any.{ number.value_type, *value });
+        value: u64 = 0; // just empty space.  TODO: get rid of need for this by storing value as resolved type
+        remap_data(Any.{ number.value_type, *value }, number.float_value); 
+        if !stack_push_any(script, Any.{ number.value_type, *value })  return false;
+        return true;
+        
+        
+      case .STRING;
+        node_string := cast(*Node_String) node;
+        if !stack_push_any(script, node_string.value, node.flags & .IS_LVALUE != 0)  return false;
         return true;
         
         
@@ -74,19 +84,19 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             declaration := identifier.declaration;
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
             dbg_print("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
-            stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0);
+            if !stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.variable_index];
             dbg_print("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
-            stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0);
+            if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.procedure_index];
             dbg_print("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
-            stack_push_any(script, procedure.ptr);
+            if !stack_push_any(script, procedure.ptr)  return false;
             return true;
         }
         return false;
@@ -96,10 +106,10 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         operation := cast(*Node_Operation) node;
         
         if is_aggr(operation.value_type) {
-            stack_push_any(script, Any.{ operation.value_type, operation.return_ptr });         
+            if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
         } else {
             zero: s64 = 0;
-            stack_push_any(script, Any.{ operation.value_type, *zero });  // TODO: this is silly. we need a stack_push_zeroes procedure or something
+            if !stack_push_any(script, Any.{ operation.value_type, *zero })  return false;  // TODO: this is silly. we need a stack_push_zeroes procedure or something
         }
         
         if !execute_node(script, operation.left )  return false;
@@ -129,14 +139,10 @@ execute_node :: (script : *Script, node: *Node) -> bool {
       case .PROCEDURE_CALL;
         procedure_call := cast(*Node_Procedure_Call) node;
         // TODO: this will have to be refactored later for bytecode (to push result ptr after popping args)
-        //       this will require passing script to do_dyncall so that we can push to stack from within that function
-        //       and then we might as well just pass the entire node as well so that we dont have to pass return ptr explicitly.
-        //       I am considering just inlining the do_dyncall code here, but it is already relatively wide on its own...
-        //       maybe we inline it for now so it works all good and stuff and then un-inline it later?
-        //       but we are going to need to use is from the bytecode as well, and also possibly from the eval procs.
         
         if !execute_node(script, procedure_call.procedure_expression)  return false;
-        proc_type  := procedure_call.procedure_expression.value_type;
+        proc_type  := cast(*Type_Info_Procedure) procedure_call.procedure_expression.value_type;
+        assert(proc_type.type == .PROCEDURE);
         dbg_print("proc_type: %\n", as_type(proc_type));
         
         procedure  := stack_pop_any(script, proc_type); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
@@ -145,23 +151,47 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         return_ptr := script.stack_ptr;
         
         if is_aggr(procedure_call.value_type) {
-            stack_push_any(script, Any.{ procedure_call.value_type, procedure_call.return_ptr });         
+            if !stack_push_any(script, Any.{ procedure_call.value_type, procedure_call.return_ptr })  return false;
+            return_ptr = procedure_call.return_ptr;
         } else {
-            zero: s64 = 0;
-            stack_push_any(script, Any.{ procedure_call.value_type, *zero });
+            // stack_push_zeroes(script, procedure_call.value_type.runtime_size);
+            stack_push_zeroes(script, 8);
         }
-        arg_ptr := script.stack_ptr;
+        arg_ptr_start := script.stack_ptr;
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
         // script.stack_ptr -= procedure_call.arg_count * PTR_SIZE;
-        if !do_dyncall(script.dyncall_vm, proc_ptr, xx proc_type, arg_ptr, return_ptr) {
-        // if !do_dyncall(script.dyncall_vm, procedure.ptr, procedure.type, script.stack_ptr, procedure_call.dst) {
-            log("Failed while trying to call procedure '%'!", as_type(procedure.type));
-            return false;
+        {
+            dcReset(script.dyncall_vm);
+            jai_call :: true;
+            if !jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
+                dcArgPointer(script.dyncall_vm, *context);
+            }
+            
+            return_type := ifx proc_type.return_types 
+                then proc_type.return_types[0]
+                else type_info(void);
+            
+            arg_ptr := arg_ptr_start;
+            for arg_type: proc_type.argument_types {
+                value_pointer := arg_ptr;
+                if is_aggr(arg_type)  value_pointer = (cast(**void)value_pointer).*;
+                if !push_argument(script.dyncall_vm, arg_type, value_pointer)  return false;
+                arg_ptr += size_of(*void);
+            }
+            
+            dcArgPointer(script.dyncall_vm, return_ptr);
+            dcCallVoid(script.dyncall_vm, xx proc_ptr);
         }
         
-        script.stack_ptr = arg_ptr;
+        script.stack_ptr = arg_ptr_start;
+        
+        dbg_print("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
+        
+        if procedure_call.flags & .DISCARD_VALUE {
+            stack_pop_any(script, procedure_call.value_type);
+        }
         return true;
         
         
@@ -175,7 +205,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         dbg_print("base value ptr: %\n", base_any.value_pointer);
         dbg_print("member value ptr: %\n", member_any.value_pointer);
         
-        stack_push_any(script, member_any, (member.flags & .IS_LVALUE) == .IS_LVALUE);
+        if !stack_push_any(script, member_any, (member.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
         return true;
         
         
@@ -201,14 +231,13 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
-        // TODO: better method of doing runtime indexing checks ?
         if index_as_s64 < 0 || index_as_s64 >= array_count {
             log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
             return false;
         }
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE);
+        if !stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE)  return false;
         dbg_print("returning result of indexing operation: %\n", element);
         return true;
         
@@ -219,6 +248,8 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         //     log("Error: cannot execute a declaration node with declaration type of %", declaration.declaration_type);
         //     return false;
         // }
+        
+        // TODO: we need to check that the identifier does not refer to a previously declared variable
         
         if !execute_node(script, declaration.init_expression) {
             dbg_print("failed to evaluate init expression of declaration statement!\n");
@@ -392,15 +423,15 @@ execute_node :: (script : *Script, node: *Node) -> bool {
 /*
     Because we know that all arguments will be contiguous on the stack, we simply bump the stack pointer for each argument and push.
     Of course, we still need to know the argument types, so we need the *Type_Info_Procedure.
+    
+    If we make use of the new push_arguments function I finally added to dyncall, maybe we can get rid of need for this function entirely
 */
 do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, arg_ptr: *void, return_ptr: *void) -> bool {
-    dcReset(vm);
-    
     assert(proc_type.return_types.count <= 1);
-    
-    jai_call :: true;
     assert(proc_type.procedure_flags & .IS_C_CALL == 0);
     
+    dcReset(vm);
+    jai_call :: true;
     if !jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
         dcArgPointer(vm, *context);
     }
@@ -417,97 +448,93 @@ do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, 
     }
     
     dbg_print("args: ");
-    
     for arg_type: proc_type.argument_types {    
-        if arg_type.type == {
-          case .POINTER;
-            dcArgPointer(vm, (cast(*DCpointer)arg_ptr).*);
-            
-          case .ENUM; #through;
-          case .BOOL; #through;
-          case .INTEGER;
-            if arg_type.runtime_size == {
-              case 1; dcArgInt8 (vm, (cast(*DCint8 )arg_ptr).*); 
-              case 2; dcArgInt16(vm, (cast(*DCint16)arg_ptr).*); 
-              case 4; dcArgInt32(vm, (cast(*DCint32)arg_ptr).*); 
-              case 8; dcArgInt64(vm, (cast(*DCint64)arg_ptr).*); 
-              case;
-                log("invalid integer size!\n");
-                return false;
-            }
-            
-          case .FLOAT;
-            if arg_type.runtime_size == {
-              case 4; dcArgFloat32(vm, (cast(*DCfloat32)arg_ptr).*); 
-              case 8; dcArgFloat64(vm, (cast(*DCfloat64)arg_ptr).*); 
-              case;
-                log("invalid float size!\n");
-                return false;
-            }
-            
-          case .STRUCT;
-            if jai_call {
-                dcArgPointer(vm, (cast(**void)arg_ptr).*); 
-            } else {
-                ag := find_or_make_and_register_DCaggr(cast(*Type_Info_Struct)arg_type);
-                if !ag  return false;
-                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
-            }
-            
-          case .ARRAY;
-            ti_array := cast(*Type_Info_Array) arg_type;
-            if ti_array.array_type == {
-              case .VIEW;
-                ag := find_or_make_and_register_DCaggr(type_info(Array_View_64));
-                if !ag  return false;
-                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
-                
-              case .RESIZABLE;
-                ag := find_or_make_and_register_DCaggr(type_info(Resizable_Array));
-                if !ag  return false;
-                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
-                
-              case;
-                if !jai_call {
-                    log("Error: cannot pass a fixed array to a #c_call procedure!\n");
-                    return false;
-                }
-                
-                ag := find_or_make_and_register_DCaggr(xx ti_array);
-                if !ag  return false;
-                dcArgAggr(vm, ag, (cast(**void)arg_ptr).*);
-            }
-            
-          case; assert(false, "ERROR: Unimplemented case, unsupported type.");
-        }
+        push_argument(vm, arg_type, arg_ptr);
         
         if is_aggr(arg_type) {
             dbg_print("% % ", as_type(arg_type), Any.{arg_type, (cast(**void)arg_ptr).*});
-            arg_ptr += size_of(*void);
         } else {
             dbg_print("% % ", as_type(arg_type), Any.{arg_type, arg_ptr});
-            arg_ptr += size_of(*void);
         }
+        
+        arg_ptr += size_of(*void);
     }
-    
     dbg_print("\n");
     
-    // TODO: this is dumb, we should just pass the right pointer to this procedure...
-    if is_aggr(return_type) {
-        dcArgPointer(vm, (cast(**void)return_ptr).*);
-    } else {
-        dcArgPointer(vm, return_ptr);
-    }
-    
+    dcArgPointer(vm, return_ptr);
     dcCallVoid(vm, xx proc_ptr);
     
-    if is_aggr(return_type) {
-        dbg_print("returning result of procedure: %\n", Any.{ return_type, (cast(**void)return_ptr).* });
-    } else {
-        dbg_print("returning result of procedure: %\n", Any.{ return_type, return_ptr });
-    }
+    dbg_print("returning result of procedure: %\n", Any.{ return_type, return_ptr });
     
     return true;
 }
 
 
+
+
+
+
+execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
+    procedure := script.directives[directive.directive_index];
+    ti_proc   := procedure.type;
+    
+    // + 2 below for implicitly passing script pointer and data pointer
+    if ti_proc.argument_types.count != directive.arguments_count + 2 {
+        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments_count);
+        return false;
+    }
+    
+    for directive.arguments {
+        argument_type := typecheck_node(script, it);
+        expected_type := ti_proc.argument_types[it_index + 2]; // + 1 for implicitly passing script pointer and data pointer
+        if !argument_type || argument_type != expected_type {
+            log("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(expected_type), as_type(argument_type));
+            return false;
+        }
+    }
+    
+    assert(ti_proc.return_types.count == 1);
+    assert(ti_proc.return_types[0] == type_info(bool));
+    
+    assert(ti_proc.argument_types.count >= 2);
+    assert(ti_proc.argument_types[0] == type_info(*Script));
+    assert(ti_proc.argument_types[1] == type_info(*void));
+    assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
+    
+    return_type := ti_proc.return_types[0];
+    return_ptr  := script.stack_ptr;
+    
+    if is_aggr(return_type) {
+        stack_push_any(script, Any.{ return_type, return_ptr });         
+    } else {
+        stack_push_zeroes(script, 8);
+    }
+    arg_ptr_start := script.stack_ptr;
+    
+    for directive.arguments  if !execute_node(script, it)  return false;
+    
+    dcReset(script.dyncall_vm);
+    jai_call :: true;
+    if !jai_call || !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
+        dcArgPointer(script.dyncall_vm, *context);
+    }
+    
+    if !push_argument(script.dyncall_vm, type_info(*Script), *script)  return false;
+    if !push_argument(script.dyncall_vm, type_info(*void), *procedure.data)  return false;
+    
+    arg_ptr := arg_ptr_start;
+    for arg_type: array_view(ti_proc.argument_types, 2) {
+        value_pointer := arg_ptr;
+        if is_aggr(arg_type)  value_pointer = (cast(**void)value_pointer).*;
+        if !push_argument(script.dyncall_vm, arg_type, value_pointer)  return false;
+        arg_ptr += size_of(*void);
+    }
+    
+    dcArgPointer(script.dyncall_vm, return_ptr);
+    dcCallVoid(script.dyncall_vm, xx procedure.ptr);
+    
+    script.stack_ptr = arg_ptr_start;
+    
+    result := cast(*bool) stack_pop_any(script, return_type).value_pointer;
+    return result.*;
+}

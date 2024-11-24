@@ -20,6 +20,8 @@
     
 */
 
+// TODO: keywords / reserved words should just be their own tokens, probably
+
 Script_Token_Type :: enum {
     EOF           :: 0;
     ERROR         :: 1;
@@ -49,6 +51,7 @@ Script_Token_Type :: enum {
     DIV           :: #char "/";
     
     IDENTIFIER    :: 256;
+    STRING;
     NUMBER;
     COMPARE_EQUAL;
     LESS_THAN_OR_EQUAL_TO;
@@ -58,6 +61,7 @@ Script_Token_Type :: enum {
     LOGICAL_OR;
     
     SPREAD;
+    DIRECTIVE;
 }
 
 Script_Token :: struct {
@@ -158,10 +162,8 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
         return .{ type = .EOF };
     }
     
+    // we grab cursor location at top so that it points to start of token
     src_loc := cursor_location;
-    make_error_token :: (error_string: string = "") -> Script_Token #expand { 
-        return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
-    }
     
     // convenience macro for short tokens
     make_token :: (type: Script_Token_Type, len: int) -> Script_Token #expand {
@@ -197,28 +199,28 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     }
     
     // parse an identifier
-    if is_alpha(file[0]) || file[0] == #char "_" {
-        str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token("Unexpected EOF while parsing identifier.");
-        
-        while file && is_alnum(file[0]) {
-            str.count += 1;
-            if !advance(lexer)  return make_error_token("Unexpected EOF while parsing identifier.");
+    {
+        ident, was_parsed := try_parse_identifier(lexer);
+        if was_parsed  return ident;
+    }
+    
+    // parse a directive
+    {
+        if file[0] == #char "#" {
+            advance(lexer);
+            ident, was_parsed := try_parse_identifier(lexer);
+            if was_parsed {
+                ident.type = .DIRECTIVE;
+                return ident;
+            }
+            return make_error_token(src_loc, "Unexpected character encountered while attempting to parse a directive name.");
         }
-        
-        // TODO: Check if the identifier is a reserved word
-        
-        return .{
-            type    = .IDENTIFIER,
-            text    = str,
-            src_loc = src_loc
-        };
     }
     
     // parse a number
     if is_digit(file[0]) || file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
+        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing number.");
         
         after_dot := false;
         while file {
@@ -230,7 +232,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
             }
             
             str.count += 1;
-            if !advance(lexer)  return make_error_token("Unexpected EOF while parsing number.");
+            if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing number.");
         }
         
         val, ok, rem := string_to_float(str);
@@ -241,8 +243,59 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
         };
     }
     
-    return make_error_token("Unexpected character encountered.");
+    // parse string
+    if file[0] == #char "\"" { 
+        quote_char := file[0];
+        
+        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing string.");
+        string_value: string = ---;
+        string_value.data  = file.data;
+        string_value.count = 0;
+        
+        while file[0] != quote_char {
+            // TODO: handle escape sequences more properly
+            adv := 1 + cast(int) (file[0] == #char "\\"); 
+            string_value.count += adv;
+            if !advance(lexer, adv)  
+                return make_error_token(src_loc, "Unexpected EOF while parsing string.");
+        }
+        advance(lexer);
+        
+        return .{ 
+            type = .STRING, 
+            text = string_value, 
+            src_loc = src_loc 
+        };
+    }
+    
+    return make_error_token(src_loc, "Unexpected character encountered.");
 }
+
+make_error_token :: (src_loc: Source_Location, error_string: string = "") -> Script_Token { 
+    return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
+}
+
+// returns true if we even start to parse an identifier, not only on success
+try_parse_identifier :: (using lexer: *Lexer) -> (Script_Token, bool) {
+    src_loc := cursor_location;
+    if is_alpha(file[0]) || file[0] == #char "_" {
+        str: string = .{ 1, *file[0] };
+        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing identifier."), true;
+        
+        while file && is_alnum(file[0]) {
+            str.count += 1;
+            if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing identifier."), true;
+        }
+        
+        return .{
+            type    = .IDENTIFIER,
+            text    = str,
+            src_loc = src_loc
+        }, true;
+    }
+    return .{}, false;
+}
+
 
 /* 
     For now, we are not pre-tokenizing the file, since it is really simple to just get the tokens lazily.
@@ -282,12 +335,13 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
         while is_whitespace(file[0]) {
             if !advance(lexer)  return false;
         }
-        if file[0] == #char "#" {
-            while file[0] != #char "\n" {
-                if !advance(lexer)  return false;
-            }
-        }
-        else return true;
+        // if file[0] == #char "#" {
+        //     while file[0] != #char "\n" {
+        //         if !advance(lexer)  return false;
+        //     }
+        // }
+        // else
+        return true;
     }
     return true;
 }

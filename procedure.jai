@@ -20,12 +20,33 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     });
 }
 
-
-// The Any here actually points to the pointer in the given External_Procedure.
-// This could be problematic if we were to modify the script's procedures array and cause a realloc, but that should never happen.
-make_procedure_any :: (script_proc: External_Procedure) -> Any {
-    return Any.{ script_proc.type, *script_proc.ptr }; 
+// TODO: maybe we want to add some procedure to sub out the data pointer for a directive?
+//       for now this does not really matter since we only parse once, but maybe in the future we will want to do this
+Directive :: struct {
+    using #as proc: External_Procedure;
+    data: *void;
 }
+
+register_directive :: (script: *Script, name: string, procedure: Any, data: *void) {
+    assert(procedure.type.type == .PROCEDURE);
+    
+    ti_proc := cast(*Type_Info_Procedure) procedure.type;
+    assert(ti_proc.return_types.count == 1);
+    assert(ti_proc.return_types[0] == type_info(bool));
+    
+    // assert(ti_proc.argument_types.count >= 2);
+    assert(ti_proc.argument_types[0] == type_info(*Script));
+    // assert(ti_proc.argument_types[1] == type_info(*void));
+    assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
+    
+    array_add(*script.directives, .{
+        name = name,
+        type = xx procedure.type,
+        ptr  = (cast(**void)procedure.value_pointer).*,
+        data = data
+    });
+}
+
 
 resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *Type_Info, is_operator := false) -> (index: int, swap_args: bool) {
     // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch

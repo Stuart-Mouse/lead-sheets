@@ -5,24 +5,17 @@
 //       only reason to keep enum around would be to serialize, but I don't think we would never want to serialize the AST instead of just using the source
 
 Node_Type :: enum {
+    INVALID :: 0;
+    
     // expressions
     NUMBER;
-    // LITERAL; // TODO
-    
+    STRING;
+    // LITERAL;     // TODO
     IDENTIFIER;
-    // SUBEXPRESSION;  // basically a 'local variable', but less opaque at AST level
-    VARIABLE;       // externally declared variable
-    PROCEDURE;
-    
     OPERATION;
     PROCEDURE_CALL;
     MEMBER;
     SUBSCRIPT;
-    
-    ITERATOR;
-    ITERATOR_INDEX;
-    
-    RANGE;
     
     // statements
     DECLARATION;
@@ -31,6 +24,9 @@ Node_Type :: enum {
     IF_STATEMENT;
     WHILE_LOOP;
     FOR_LOOP;
+    
+    // special
+    DIRECTIVE;
 }
 
 Node :: struct {
@@ -81,9 +77,22 @@ Node_Procedure_Call :: struct {
     return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
 }
 
+Node_Directive :: struct {
+    using #as node_base: Node;
+    name:                string;
+    directive_index:     int;
+    arguments:           *Node;
+    arguments_count:     int;
+}
+
 Node_Number :: struct {
     using #as node_base: Node;
     float_value: float;
+}
+
+Node_String :: struct {
+    using #as node_base: Node;
+    value: string;
 }
 
 Node_Operation :: struct {
@@ -212,13 +221,14 @@ alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, l
     node: *Node;
     
     // have to allocate the proper amount of space for the node
-    if node_type == {
+    if #complete node_type == {
       case .NUMBER;          node = New(Node_Number,,         ctxt.allocator);
+      case .STRING;          node = New(Node_String,,         ctxt.allocator);
       case .IDENTIFIER;      node = New(Node_Identifier,,     ctxt.allocator);
       case .DECLARATION;     node = New(Node_Declaration,,    ctxt.allocator);
-      case .VARIABLE;        node = New(Node_Variable,,       ctxt.allocator);
       case .OPERATION;       node = New(Node_Operation,,      ctxt.allocator);
       case .PROCEDURE_CALL;  node = New(Node_Procedure_Call,, ctxt.allocator);
+      case .DIRECTIVE;       node = New(Node_Directive,,      ctxt.allocator);
       case .MEMBER;          node = New(Node_Member,,         ctxt.allocator);
       case .SUBSCRIPT;       node = New(Node_Subscript,,      ctxt.allocator);
       case .BLOCK;           node = New(Node_Block,,          ctxt.allocator);
@@ -253,9 +263,11 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
 enum_to_type :: (node_type: Node_Type) -> Type {
     if #complete node_type == {
       case .NUMBER;          return Node_Number;
+      case .STRING;          return Node_String;
       case .IDENTIFIER;      return Node_Identifier;
       case .OPERATION;       return Node_Operation;
       case .PROCEDURE_CALL;  return Node_Procedure_Call;
+      case .DIRECTIVE;       return Node_Directive;
       case .MEMBER;          return Node_Member;
       case .SUBSCRIPT;       return Node_Subscript;
       case .BLOCK;           return Node_Block;
@@ -273,9 +285,11 @@ enum_to_type :: (node_type: Node_Type) -> Type {
 type_to_enum :: (type: Type) -> Node_Type {
     if type == {
       case Node_Number;          return .NUMBER;
+      case Node_String;          return .STRING;
       case Node_Identifier;      return .IDENTIFIER;
       case Node_Operation;       return .OPERATION;
       case Node_Procedure_Call;  return .PROCEDURE_CALL;
+      case Node_Directive;       return .DIRECTIVE;
       case Node_Member;          return .MEMBER;
       case Node_Subscript;       return .SUBSCRIPT;
       case Node_Block;           return .BLOCK;

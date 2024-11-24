@@ -29,6 +29,7 @@ Script :: struct {
     
     variables:   [..] External_Variable;
     procedures:  [..] External_Procedure;
+    directives:  [..] Directive;
     
     pool:        Flat_Pool;
     allocator:   Allocator;
@@ -110,7 +111,7 @@ stack_get_top :: inline (stack_ptr: *void, $$by_ptr := false) -> *void {
 
 stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
     if script.stack_ptr >= script.stack_base + script.stack_size {
-        dbg_print("Runtime Error: ran out of space on stack!\n");
+        log("Runtime Error: ran out of space on stack!\n");
         return false;
     }
     defer script.stack_ptr += PTR_SIZE;
@@ -122,19 +123,43 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
         
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
-    dbg_print("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
+    // dbg_print("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
+    return true;
+}
+
+stack_push_zeroes :: (script: *Script, size: int) -> bool {
+    if script.stack_ptr + size >= script.stack_base + script.stack_size {
+        log("Runtime Error: ran out of space on stack!\n");
+        return false;
+    }
+    
+    dbg_print("stack ptr: %\n", script.stack_ptr);
+    memset(script.stack_ptr, 0, size);
+    script.stack_ptr += size;
     return true;
 }
 
 stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
     assert(script.stack_ptr >= script.stack_base);
-
+    
     script.stack_ptr -= PTR_SIZE;
     if is_aggr(ti) || is_lvalue {
         return Any.{ ti, (cast(**void)script.stack_ptr).* }; // additional dereference to get pointer to value
     } else {
         assert(ti.runtime_size <= PTR_SIZE);
         return Any.{ ti, script.stack_ptr };
+    }
+}
+
+stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
+    assert(script.stack_ptr >= script.stack_base);
+    ptr := script.stack_ptr - PTR_SIZE;
+    
+    if is_aggr(ti) || is_lvalue {
+        return Any.{ ti, (cast(**void)ptr).* }; // additional dereference to get pointer to value
+    } else {
+        assert(ti.runtime_size <= PTR_SIZE);
+        return Any.{ ti, ptr };
     }
 }
 
@@ -149,9 +174,20 @@ set_variable :: (script: *Script, name: string, any: Any) {
     array_add(*script.variables, .{ name, any });
 }
 
-init_script :: (script: *Script) {
+init_script :: (script: *Script, stack_size := 1024) {
     script.allocator.proc = flat_pool_allocator_proc;
     script.allocator.data = *script.pool;
+    
+    script.stack_size = stack_size;
+    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
+    script.stack_ptr  = script.stack_base;
+    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
+    sentinel.* = STACK_SENTINEL_VALUE;
+    
+    // allocate dyncall vm that will be reused
+    script.dyncall_vm = dcNewCallVM(2048);
+    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
+    dcReset(script.dyncall_vm);
     
     script.flags |= .INITIALIZED;
 }
@@ -166,7 +202,6 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     init_lexer(*script.lexer);
     
     script.ast_root = alloc_node(script, Node_Block);
-    
     script.current_parent_node = script.ast_root;
     
     script.ast_root.statements = parse_statement(script);
@@ -185,26 +220,10 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     
     script.flags |= .PARSED;
     
-    dbg_print("\nTYPECHECKING SCRIPT\n");
     if !typecheck_script(script) {
-        print("failed to typecheck script!\n");
+        log("Error: failed to typecheck script.\n");
         return false;
     }
-    
-    // TODO: we should have some way to configure the stack size that gets allocated. perhaps should be passed by user as a parameter
-    script.stack_size = 1024;
-    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
-    
-    dbg_print("stack size: %\n", script.stack_size);
-    dbg_print("stack base: %\n", script.stack_base);
-    
-    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
-    sentinel.* = STACK_SENTINEL_VALUE;
-    
-    // allocate dyncall vm that will be reused
-    script.dyncall_vm = dcNewCallVM(2048);
-    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
-    dcReset(script.dyncall_vm);
     
     success = true;
     return true;
@@ -216,9 +235,6 @@ parse_statement :: (using ctxt: *Script) -> *Node {
     if next_token.type == {
       case .IDENTIFIER; 
         if is_reserved_word(next_token.text) {
-            // looking for keywords here
-            // no default fail case since identifier could just be part of some expression handled below
-            // TODO: maybe check if token text is a reserved word before switch? Then we can error early if a reserved word is used inappropriately
             if next_token.text == {
               case "if";
                 dbg_print("parsing if\n"); dbg_print_push_indent();
@@ -346,8 +362,12 @@ parse_statement :: (using ctxt: *Script) -> *Node {
     
     // check if expression can be used as a statement
     if expect_token_type(*lexer, .SEMICOLON) {
-        if left.node_type == .PROCEDURE_CALL {
+        if left.node_type == {
+          case .PROCEDURE_CALL;
             left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
+            return left;
+            
+          case .DIRECTIVE;
             return left;
         }
         
@@ -364,16 +384,6 @@ is_reserved_word :: (str: string) -> bool {
         case "while";     return true;
     }
     return false;
-}
-
-// we probably don't need this here since this was just for it and it_index
-// this will be generalized in resolve_identifier
-get_enclosing_for_loop :: (parent: *Node) -> *Node {
-    while parent {
-        if parent.type == .FOR_LOOP  return parent;
-        parent = parent.parent;
-    }
-    return null;
 }
 
 get_operator_precedence :: (op: string) -> int {
@@ -405,7 +415,6 @@ token_is_binary_operator :: (token: Script_Token) -> bool {
         || token.type == .COMPARE_EQUAL;
 }
 
-// need to remember how to not have to specify the count explicitly here
 operator_precedence_table :: struct { op: string; prec: int; } .[
     .{ "&&", 1 },
     .{ "||", 1 },
@@ -440,11 +449,50 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
         }
         return node;
         
+        
       case .NUMBER;
         node := alloc_node(ctxt, Node_Number);
         node.float_value = token.number;
         return node;
         
+        
+      case .STRING;
+        node := alloc_node(ctxt, Node_String);
+        node.value = token.text;
+        return node;
+        
+    
+      case .DIRECTIVE;
+        node := alloc_node(ctxt, Node_Directive);
+        node.name = token.text;
+        
+        node.directive_index = -1;
+        for ctxt.directives {
+            if it.name == node.name {
+                node.directive_index = it_index;
+            }
+        }
+        if node.directive_index == -1  return null;
+        
+        if !expect_token_type(*lexer, .OPEN_PAREN) {
+            dbg_print("Error, expected an open paren after directive name!\n");
+            return null;
+        }
+        
+        node.arguments, node.arguments_count = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        if node.arguments == null  return null;
+        
+        if !expect_token_type(*lexer, .CLOSE_PAREN) {
+            dbg_print("Error, expected a close paren at the end of parameter list!\n");
+            return null;
+        }
+        
+        if !execute_directive(ctxt, node) {
+            log("Error: failed while trying to execute a directive.");
+            return null;
+        }
+        
+        return node;
         
       case .IDENTIFIER;
         if is_reserved_word(token.text) {
@@ -517,6 +565,30 @@ parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
     return left;
 }
 
+parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Script_Token_Type) -> (*Node, int) {
+    first: *Node;
+    count: int;
+    
+    if peek_token(*lexer).type != expected_end_token {
+        first = parse_expression(script, 0);
+        if first == null  return null, 0;
+        count = 1;
+        
+        prev := first;
+        while expect_token_type(*lexer, .COMMA) {
+            next := parse_expression(script, 0);
+            if next == null  return null, 0;
+            
+            next.prev = prev;
+            prev.next = next;
+            prev = next;
+            count += 1;
+        }
+    }
+    
+    return first, count;
+}
+
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int) -> *Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
@@ -530,43 +602,18 @@ parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int)
     if next_token.type == {
       case .OPEN_PAREN;
         get_token(*lexer);
-        dbg_print("parsing argument list\n");
-        dbg_print_push_indent();
-        
-        first_arg_node : *Node;
-        arg_count      :=  0;
         
         node := alloc_node(ctxt, Node_Procedure_Call);
+        node.procedure_expression = left;
         
-        if peek_token(*lexer).type != .CLOSE_PAREN {
-            first_arg_node = parse_expression(ctxt, 0);
-            if first_arg_node == null  return null;
-            arg_count = 1;
-            
-            dbg_print("parsed first arg\n");
-            
-            prev_arg_node := first_arg_node;
-            while expect_token_type(*lexer, .COMMA) {
-                dbg_print("parsing another arg\n");
-                arg_node := parse_expression(ctxt, 0);
-                if arg_node == null  return null;
-                
-                arg_node.prev = prev_arg_node;
-                prev_arg_node.next = arg_node;
-                prev_arg_node = arg_node;
-                arg_count += 1;
-            }
-        }
-        dbg_print("done parsing arg list, expecting close paren.\n");
+        node.arguments, node.arguments_count = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        if node.arguments == null  return null;
         
         if !expect_token_type(*lexer, .CLOSE_PAREN) {
             dbg_print("Error, expected a close paren at the end of parameter list!\n");
             return null;
         }
         
-        node.procedure_expression = left;
-        node.arguments            = first_arg_node;
-        node.arguments_count      = arg_count;
         return node;
         
         
@@ -642,13 +689,6 @@ create_binary_operation :: (using ctxt: *Script, operator_ident: string, left: *
 }
 
 
-// Local_Variable :: struct {
-//     local_type: enum { CONSTANT; SUBEXPR_VAL; INTERMEDIATE; EXT_VAR; };
-//     value: Any;
-// }
-
-
-
 #scope_module
 
 memzero :: (t: *$T) { memset(t, 0, size_of(T)); };
@@ -699,7 +739,7 @@ as_type :: inline (ti: *Type_Info) -> Type {
 
 
 
-DEBUG :: false;
+DEBUG :: true;
 
 #if DEBUG {#add_context dbg_print_indent: int;}
 

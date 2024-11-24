@@ -16,3 +16,16 @@ echo(local/2);
 
 
 for -5..9  echo(it);
+
+#declare("named_1");
+
+print(str);
+print("this is also a string");
+
+local_str := "this is yet another string";
+print(local_str);
+str = local_str;
+
+echo(named_1);
+named_1 = 7;
+

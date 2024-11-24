@@ -372,7 +372,8 @@ TODO:
     declare and call named blocks
         not really proper preocedures, since they won't take parameters, just subroutines or way of splitting up code into sections
     
-    
+    for strings, we will probably want to make it so that we can push larger things than single-register values
+    also, I'm not sure I actually made dyncall work with strings in the first place (lol, lmao even)
 
 need to write more notes and formalize rules about compilation pipeline
     
@@ -382,6 +383,25 @@ need to write more notes and formalize rules about compilation pipeline
     parsing basically produces the full ast
         we probably should not need to be creating new nodes during the typechecking phase
             maybe some fringe cases for things like iterators or other such declarations that need to get automatically inserted
-            
     
+    what if we want to parse thigns from multiple files and insert them into the same script?
+        maybe these should be considered separate named blocks?
+            then how to link and call between blocks?
+    
+If I can keep the script syntactically and semantically very close to native Jai code, then it should be a trivial conversion int he case that I ever want to simply convert soem of my scripts into real jai code.
+
+
+
+Directives:
+
+for now, we will jsut evaluate all arguments in parameter list and pass them to directive procedure straightforwardly
+for now, we will only accept a single bool return as a signifier of whether an error has occured
+
+in future, we should allow a directive to return values
+    probably only one value though
+    if directive returns a `*Node`, we insert that node in the place where the directive was
+    if directive returns a different type, we will insert that value as a literal
+    
+also, in the future we should definitely just pass the raw `*Node` if that is the argument type that a directive accepts
+
 

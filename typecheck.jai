@@ -33,6 +33,9 @@ typecheck_node :: (
     if node.value_type  return node.value_type;
     
     if node.node_type == {
+      case .DIRECTIVE;
+        return type_info(void);
+    
       case .NUMBER;
         number := cast(*Node_Number) node;
         if check_flags & .EXPECT_LVALUE {
@@ -49,6 +52,12 @@ typecheck_node :: (
         
         number.value_type = type_info(type_of(number.float_value)); 
         return number.value_type;
+        
+    
+      case .STRING;
+        // TODO: this is stupid. we should actually just have a real Node_Literal
+        node.value_type = type_info(string);
+        return node.value_type;
         
         
       case .IDENTIFIER;
