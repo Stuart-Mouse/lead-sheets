@@ -53,19 +53,35 @@ typecheck_node :: (
         
       case .IDENTIFIER;
         identifier := cast(*Node_Identifier) node;
-        // if type was resolved, then we should have returned early above.
-        assert(identifier.resolved_type == .UNRESOLVED); 
         
         // try to resolve to internal declaration
         {
             parent_block := identifier.parent;
             while parent_block {
-                if parent_block.node_type == .BLOCK {
-                    ident := find_declaration_in_block(xx parent_block, identifier.name);
-                    if ident {
-                        if ident > identifier  log("Error: identifier % used before its declaration.", identifier.name);
-                        identifier.* = ident.*;   // just copy identifier from declaration
-                        identifier.flags = xx 0;  // but don't copy flags! 
+                if parent_block.node_type == {
+                  case .BLOCK;
+                    declaration := find_declaration_in_block(xx parent_block, identifier.name);
+                    if declaration {
+                        if cast(*void)declaration > cast(*void)identifier {
+                            log("Error: identifier % used before its declaration.", identifier.name);
+                            return null;
+                        }
+                        identifier.resolved_type = .DECLARATION;
+                        identifier.declaration = declaration;
+                        identifier.value_type = declaration.value_type;
+                        if check_flags & .EXPECT_LVALUE {
+                            identifier.flags |= .IS_LVALUE;
+                        }
+                        return identifier.value_type;
+                    }
+                    
+                  case .FOR_LOOP;
+                    dbg_print("checking for iterator with identifier '%'\n", identifier.name);
+                    declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
+                    if declaration {
+                        identifier.resolved_type = .DECLARATION;
+                        identifier.declaration   = declaration;
+                        identifier.value_type    = declaration.value_type;
                         if check_flags & .EXPECT_LVALUE {
                             identifier.flags |= .IS_LVALUE;
                         }
@@ -267,31 +283,43 @@ typecheck_node :: (
         return subscript.value_type;
         
         
+      case .DECLARATION;
+        // declaration node cannot be an lvalue itself, but may be ok to use as a left value
+        // instead of marking this node with .IS_LVALUE, which would affect all instances where this declaration is used,
+        //      we will instead mark the individual identifier nodes which refer to a declaration
+        //      in execute proc, thse identifiers will just reach into resolved declaration directly to get value pointer
+        if check_flags & .EXPECT_LVALUE  return null;
+        
+        // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
+        //       this is different from how other statements are done, which all return void instead.
+        //       may have to change this if it creates issues, I suppose.
+        declaration := cast(*Node_Declaration) node;
+        
+        // if type_expression {
+            // TODO
+            // must resolve to a Type, obviously
+        // }
+        
+        right_type: *Type_Info;
+        if declaration.init_expression {
+            // TODO: if type expression is present, then we need to pass resolved type as type hint to init_expression
+            //       for now, we will just typecheck the init expression and use that to set declaration LHS type
+            right_type = typecheck_node(ctxt, declaration.init_expression);
+            if right_type == null  return null;
+        } else {
+            log("Error: init_expression is missing on declaration node.");
+            return null;
+        }
+        
+        declaration.value_type    = right_type;
+        declaration.value_pointer = Dynamic_New(right_type,, ctxt.allocator);
+        dbg_print("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
+        return declaration.value_type;
+        
+        
       case .ASSIGNMENT;
         if check_flags & .EXPECT_LVALUE  return null;
         assignment := cast(*Node_Assignment) node;
-        
-        if assignment.is_declaration {
-            // Currently, type of left side of declaration will always be inferred from right side.
-            // This is because we do not have explicit types.
-            // Also, this means that all declarations are also assignments. 
-            
-            // TODO: we should check that we are not redeclaring a previously declared identifier
-            right_type := typecheck_node(ctxt, assignment.right);
-            if !right_type  return null;
-            
-            identifier := cast(*Node_Identifier) assignment.left;
-            assert(identifier.node_type == .IDENTIFIER);
-            assert(identifier.name != "");
-            assert(identifier.resolved_type == .UNRESOLVED);
-            
-            identifier.value_type    = right_type;
-            identifier.resolved_type = .INTERNAL_VARIABLE;
-            identifier.variable_ptr  = Dynamic_New(right_type,, ctxt.allocator);
-            identifier.flags |= .IS_LVALUE;
-            dbg_print("allocated space for internal variable '%', type %, node %\n", identifier.name, right_type, node);
-            return type_info(void);
-        }
         
         // get type of left side
         // we expect left side to be an lvalue
@@ -349,17 +377,43 @@ typecheck_node :: (
         if check_flags & .EXPECT_LVALUE  return null;
         for_loop := cast(*Node_For_Loop) node;
         
-        control_type: *Type_Info;
-        if for_loop.control_expression.node_type == {
+        // value_pointer for it and it_index decls get set later when actually iterating for loop
+        for_loop.it_index_decl = .{
+            name       = "it_index",
+            value_type = type_info(int),
+        };
+        
+        if #complete for_loop.control_type == {
           case .RANGE;
-            control_type = typecheck_node(ctxt, for_loop.control_expression, hint_type = type_info(int)); 
+            dbg_print("typechecking range lower\n");
+            assert(for_loop.range.lower != null);
+            lower_type := typecheck_node(ctxt, for_loop.range.lower, hint_type = type_info(int));
+            if lower_type == null  return null;
             
-          case;
-            control_type = typecheck_node(ctxt, for_loop.control_expression, check_flags = .EXPECT_LVALUE);
+            dbg_print("typechecking range upper\n");
+            assert(for_loop.range.upper != null);
+            upper_type := typecheck_node(ctxt, for_loop.range.upper, hint_type = lower_type);
+            if lower_type != upper_type { 
+                dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
+                return null;
+            }
+            
+            if !lower_type || (lower_type.type != .INTEGER && lower_type.type != .FLOAT)  return null; 
+            for_loop.it_decl = .{        
+                name       = "it",
+                value_type = lower_type,
+            };
+            
+          case .ARRAY;
+            ti_array := cast(*Type_Info_Array) typecheck_node(ctxt, for_loop.array_expression, check_flags = .EXPECT_LVALUE);
+            if !ti_array && ti_array.type != .ARRAY  return null;
+            for_loop.it_decl = .{
+                name       = "it",
+                value_type = ti_array.element_type,
+            };
         }
         
         // TODO: may not allow float here?
-        if !control_type || (control_type.type != .ARRAY && control_type.type != .INTEGER && control_type.type != .FLOAT)  return null; 
         
         if !typecheck_node(ctxt, for_loop.statement)  return null;
         
@@ -367,71 +421,25 @@ typecheck_node :: (
         return for_loop.value_type;
         
         
-      case .RANGE;
-        if check_flags & .EXPECT_LVALUE  return null;
-        range := cast(*Node_Range) node;
-        
-        dbg_print("typechecking range lower\n");
-        assert(range.lower != null);
-        lower_type := typecheck_node(ctxt, range.lower, hint_type = type_info(int));
-        if lower_type == null  return null;
-        
-        dbg_print("typechecking range upper\n");
-        assert(range.upper != null);
-        upper_type := typecheck_node(ctxt, range.upper, hint_type = lower_type);
-        if lower_type != upper_type { 
-            dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
-            return null;
-        }
-        
-        range.value_type = lower_type;
-        return range.value_type;
-        
-      // case .ITERATOR;
-      //   node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
-      //   if !node.iterator.parent_for {
-      //       dbg_print("Error: Attempt to use 'it' ouside of the context of a for loop!\n");
-      //       return null;
-      //   }
-        
-      //   control_type := node.iterator.parent_for.for_loop.control_expression.value_type;
-      //   if control_type.type == {
-      //     case .ARRAY;
-      //       node.value_type = (cast(*Type_Info_Array)control_type).element_type;
-      //       // in future, may need checks on whether array itself is an lvalue
-      //       // this would be important if we wanted to have array literals in scripts
-      //       if check_flags & .EXPECT_LVALUE {
-      //           node.flags |= .IS_LVALUE;
-      //       }
-      //       return node.value_type;
-            
-      //     case .FLOAT; #through; // ehh...
-      //     case .INTEGER;
-      //       node.value_type = control_type;
-      //       if check_flags & .EXPECT_LVALUE {
-      //           dbg_print("Error: attempt to use an integer-typed iterator as an lvalue.\n");
-      //           return null;
-      //       }
-      //       return node.value_type;
-      //   }
-        
-      //   dbg_print("Error: Iterator used in a for loop with an invalid control type? (%)\n", as_type(control_type));
-      //   return null;
-        
-        
-      // case .ITERATOR_INDEX;
+      // case .RANGE;
       //   if check_flags & .EXPECT_LVALUE  return null;
+      //   range := cast(*Node_Range) node;
         
-      //   node.iterator.parent_for = get_enclosing_for_loop(node.enclosing_scope);
-      //   if !node.iterator.parent_for  return null;
+      //   dbg_print("typechecking range lower\n");
+      //   assert(range.lower != null);
+      //   lower_type := typecheck_node(ctxt, range.lower, hint_type = type_info(int));
+      //   if lower_type == null  return null;
         
-      //   if node.iterator.parent_for.for_loop.control_expression.value_type.type != .ARRAY {
-      //       dbg_print("Error: attempt to use it_index in a range-based for loop.\n");
+      //   dbg_print("typechecking range upper\n");
+      //   assert(range.upper != null);
+      //   upper_type := typecheck_node(ctxt, range.upper, hint_type = lower_type);
+      //   if lower_type != upper_type { 
+      //       dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
       //       return null;
       //   }
         
-      //   node.value_type = type_info(int);
-      //   return node.value_type;
+      //   range.value_type = lower_type;
+      //   return range.value_type;
     }
     
     return null;
@@ -475,17 +483,29 @@ resolve_variable :: (using ctxt: *Script_Constructor, ident: string) -> int {
     return -1;
 }
 
-find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_Identifier {
+find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
-        if it.node_type == .ASSIGNMENT {
-            decl := cast(*Node_Assignment) it;
-            if decl.is_declaration {
-                ident := cast(*Node_Identifier) decl.left;
-                assert(ident.node_type == .IDENTIFIER);
-                if ident.name == identifier {
-                    return ident;
-                }
+        if it.node_type == .DECLARATION {
+            declaration := cast(*Node_Declaration) it;
+            if declaration.name == identifier {
+                return declaration;
             }
         }
     }
+    return null;
 }
+
+find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need_lvalue := false) -> *Node_Declaration {
+    if for_loop.it_decl.name == identifier {
+        return *for_loop.it_decl;
+    }
+    if for_loop.it_index_decl.name == identifier {
+        if need_lvalue {
+            log("Error: it_index cannot be used as an lvalue.");
+            return null;
+        }
+        return *for_loop.it_index_decl;
+    }
+    return null;
+}
+

@@ -8,10 +8,11 @@ while echo(r2) > 20 {
     r3 = r3 + r3;
 }
 
-# for arr1  if it > 1  it = f32(it_index) * 7;
-# for arr1  echo(it);
+for arr1  if it > 1  it = f32(it_index) * 7;
+for arr1  echo(it);
 
 local := 5 + 5 * 2;
 echo(local/2);
 
 
+for -5..9  echo(it);

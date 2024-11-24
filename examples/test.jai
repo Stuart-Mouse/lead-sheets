@@ -46,6 +46,7 @@ main :: () {
     // input := "r2 = struct1.func(struct1.value);";
     
     script: Script;
+    init_script(*script);
     
     register_procedure(*script, "Vec2", (x: float, y: float) -> Vector2 { return .{ x, y }; });
     register_procedure(*script, "pow", pow);
@@ -105,7 +106,7 @@ main :: () {
     print("*r3: %\n", *r3);
 
     print("\nCONSTRUCTING SCRIPT\n");
-    if !construct_script_from_source_string(*script, input) {
+    if !parse_source_file(*script, input) {
         print("failed to construct script from source!\n");
         return;
     }

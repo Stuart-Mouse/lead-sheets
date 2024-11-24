@@ -57,30 +57,19 @@ Node_Block :: struct {
 Node_Identifier :: struct {
     using #as node_base: Node;
     name: string;
-    // resolved_declaration: Node_Declaration;
-    
-    // TODO: remove everything below
-    resolved_type:     enum { UNRESOLVED; INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
-    union {
-        variable_ptr:     *void;    // internal variable
-        variable_index:   int;      // external variable
-        procedure_index:  int;      // external procedure
+    resolved_type: enum { UNRESOLVED; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+        union {
+        variable_index:   int; // external variable
+        procedure_index:  int; // external procedure
+        declaration:      *Node_Declaration;
     }
 }
 
 Node_Declaration :: struct {
     using #as node_base:  Node;
     name:                 string;
-    declaration_type:     enum { INTERNAL_VARIABLE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
-    union {
-        variable_ptr:     *void;    // internal variable
-        variable_index:   int;      // external variable
-        procedure_index:  int;      // external procedure
-    }
-    
-    // for when we have a combo declaration + assignment
-    // we could just desugar to two separate statements, but that would create extraneous nodes
-    // and this way we can probably use the declaration to do the subexpression thing
+    value_pointer:        *void;
+    type_expression:      *Node_Identifier; // must resolve to a type declaration
     init_expression:      *Node;    
 }
 
@@ -95,13 +84,6 @@ Node_Procedure_Call :: struct {
 Node_Number :: struct {
     using #as node_base: Node;
     float_value: float;
-}
-
-// TODO: remove this node type and just make this a purely lexical construct for For loops
-Node_Range :: struct {
-    using #as node_base: Node;
-    lower: *Node;
-    upper: *Node;
 }
 
 Node_Operation :: struct {
@@ -128,7 +110,6 @@ Node_Subscript :: struct {
 
 Node_Assignment :: struct {
     using #as node_base: Node;
-    is_declaration: bool;
     left, right: *Node; 
 }
 
@@ -138,7 +119,7 @@ Node_If_Statement :: struct {
     statement: *Node;
 }
 
-    Node_While_Loop :: struct {
+Node_While_Loop :: struct {
     using #as node_base: Node;
     condition: *Node;
     statement: *Node;
@@ -147,22 +128,14 @@ Node_If_Statement :: struct {
 Node_For_Loop :: struct {
     using #as node_base: Node;
     control_type: enum { RANGE; ARRAY; };
-    control_expression: *Node;
-    /*
-        union {
-            array_expression: *Node;
-            range: struct { lower, upper: *Node };
-        }
-    */
-    statement:       *Node;
+    union {
+        array_expression:  *Node;
+        range:  struct { lower, upper: *Node; };
+    }
+    statement:  *Node;
     
-    iterator_ptr:    *void;
-    iterator_index:  int;
-    
-    // just store these directly on the for loop itself
-    // the backing vlaues for both of these can be pushed/popped by the for loop
-    it_identifier,
-    it_index_identifier: Node_Identifier;
+    // just storing these directly on the for loop itself
+    it_decl, it_index_decl: Node_Declaration;
 }
 
 for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
@@ -286,7 +259,6 @@ enum_to_type :: (node_type: Node_Type) -> Type {
       case .PROCEDURE_CALL;  return Node_Procedure_Call;
       case .MEMBER;          return Node_Member;
       case .SUBSCRIPT;       return Node_Subscript;
-      case .RANGE;           return Node_Range;
       case .BLOCK;           return Node_Block;
       case .DECLARATION;     return Node_Declaration;
       case .ASSIGNMENT;      return Node_Assignment;
@@ -307,7 +279,6 @@ type_to_enum :: (type: Type) -> Node_Type {
       case Node_Procedure_Call;  return .PROCEDURE_CALL;
       case Node_Member;          return .MEMBER;
       case Node_Subscript;       return .SUBSCRIPT;
-      case Node_Range;           return .RANGE;
       case Node_Block;           return .BLOCK;
       case Node_Declaration;     return .DECLARATION;
       case Node_Assignment;      return .ASSIGNMENT;
@@ -319,38 +290,3 @@ type_to_enum :: (type: Type) -> Node_Type {
     }
     return xx 0;
 }
-
-// replace_node :: (old: *Node, new: *Node) {
-//     new.prev   = old.prev;
-//     new.next   = old.next;
-//     new.parent = old.parent;
-    
-//     old.prev.next = new;
-//     old.next.prev = new;
-    
-//     // TODO: if we actually end up needing to use this proceudre, then figure out what to do about parent/child references to node
-//     // frankly this seems like something we just should not do...
-    
-//     // // the lame part, we need to maintain logic here for fixing up all other places where old may be referenced
-//     // // perhaps it would still be better to use some union for nodes so that we can do this more easily...
-//     // if old.parent {
-//     //     if old.parent.type == {
-//     //       case .BLOCK;
-//     //         block := cast(*Node_Block) old.parent;
-//     //         if block.statements == old  block.statements = new;
-            
-            
-//     //       case .IF_STATMENT;
-//     //         if_statement := cast(*Node_If_Statement) old.parent;
-//     //         if if_statement.condition == old  if_statement.condition = new;
-//     //         if if_statement.statement == old  if_statement.statement = new;
-            
-//     //       case .WHILE_LOOP;
-//     //         while_loop := cast(*Node_If_Statement) old.parent;
-//     //         if while_loop.condition == old  while_loop.condition = new;
-//     //         if while_loop.statement == old  while_loop.statement = new;
-            
-//     //     }
-//     // } 
-    
-// }

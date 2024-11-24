@@ -68,15 +68,11 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         
       case .IDENTIFIER;
-        identifier := cast(*Node_Identifier) node;
+        identifier  := cast(*Node_Identifier) node;
         if identifier.resolved_type == {
-          case .INTERNAL_VARIABLE;
-            dbg_print("identifier.variable_ptr is %\n", identifier.variable_ptr);
-            variable_any := Any.{ identifier.value_type, identifier.variable_ptr };
-            if (identifier.flags & .EXTRA_INDIRECTION) {
-                variable_any.value_pointer = (cast(**void)variable_any.value_pointer).*;
-            }
-            
+          case .DECLARATION;
+            declaration := identifier.declaration;
+            variable_any := Any.{ identifier.value_type, declaration.value_pointer };
             dbg_print("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
             stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0);
             return true;
@@ -89,6 +85,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.procedure_index];
+            dbg_print("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             stack_push_any(script, procedure.ptr);
             return true;
         }
@@ -202,17 +199,42 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
         }
         
-        arr_count, arr_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
+        array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
         // TODO: better method of doing runtime indexing checks ?
-        if index_as_s64 < 0 || index_as_s64 >= arr_count {
-            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, arr_count-1);
+        if index_as_s64 < 0 || index_as_s64 >= array_count {
+            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
             return false;
         }
         
-        element := Any.{ node.value_type, arr_data + index_as_s64 * node.value_type.runtime_size };
+        element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
         stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE);
         dbg_print("returning result of indexing operation: %\n", element);
+        return true;
+        
+    
+      case .DECLARATION;
+        declaration := cast(*Node_Declaration) node;
+        // if declaration.declaration_type != .INTERNAL_VARIABLE {
+        //     log("Error: cannot execute a declaration node with declaration type of %", declaration.declaration_type);
+        //     return false;
+        // }
+        
+        if !execute_node(script, declaration.init_expression) {
+            dbg_print("failed to evaluate init expression of declaration statement!\n");
+            return false;
+        }
+        
+        r_value := stack_pop_any(script, declaration.init_expression.value_type);
+        l_value := Any.{ declaration.value_type, declaration.value_pointer };
+        
+        dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
+        dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
+        
+        dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
+        dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
+        
+        memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         return true;
         
         
@@ -296,38 +318,27 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
       case .FOR_LOOP;
         for_loop := cast(*Node_For_Loop) node;
-        if !execute_node(script, for_loop.control_expression) {
-            dbg_print("failed to evaluate for loop control node!\n");
-            return false;
-        }
-        
-        control_type := for_loop.control_expression.value_type;
-        if control_type.type == {
+        if for_loop.control_type == {
           case .ARRAY;
-            ti_array := cast(*Type_Info_Array) control_type;
-            array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
-            
-            base_ptr := array.value_pointer;
-            array_count: int;
-            if ti_array.array_type == {
-              case .FIXED;
-                array_count = ti_array.array_count;
-                
-              case .RESIZABLE; #through;
-              case .VIEW; 
-                raw_array := cast(*Array_View_64) base_ptr;
-                array_count = raw_array.count;
-                base_ptr    = raw_array.data;
+            if !execute_node(script, for_loop.array_expression) {
+                dbg_print("failed to evaluate for loop control node!\n");
+                return false;
             }
             
-            // these will be accessed by iterator and iterator_index nodes during iteration
-            for_loop.iterator_ptr   = base_ptr;
-            for_loop.iterator_index = 0;
+            ti_array := cast(*Type_Info_Array) for_loop.array_expression.value_type;
+            array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
             
-            while for_loop.iterator_index < array_count {
+            array_count, array_data := get_array_count_and_data(array.value_pointer, xx array.type);
+            
+            // these will be accessed by iterator and iterator_index nodes during iteration
+            it_index: int;
+            for_loop.it_decl.value_pointer       = array_data;
+            for_loop.it_index_decl.value_pointer = *it_index;
+            
+            while it_index < array_count {
                 defer {
-                    for_loop.iterator_ptr   += ti_array.element_type.runtime_size;
-                    for_loop.iterator_index += 1;
+                    for_loop.it_decl.value_pointer += ti_array.element_type.runtime_size;
+                    it_index += 1;
                 }
                 
                 if !execute_node(script, for_loop.statement) {
@@ -337,12 +348,17 @@ execute_node :: (script : *Script, node: *Node) -> bool {
             }
             return true;
             
-          case .FLOAT; #through; // ehh...
-          case .INTEGER;
-            // This is a bit weird. 
-            // So the way I'm doing this right now is that a range node will just push two values, lower and upper when evaluated
-            // but those values may come as integer types other than s64, so we will have to dynamically cast them back and forth
-            control_type := for_loop.control_expression.value_type;
+          case .RANGE;
+            if !execute_node(script, for_loop.range.lower) {
+                dbg_print("failed to evaluate for_loop.range.lower!\n");
+                return false;
+            }
+            if !execute_node(script, for_loop.range.upper) {
+                dbg_print("failed to evaluate for_loop.range.upper!\n");
+                return false;
+            }
+            
+            control_type := for_loop.range.lower.value_type;
             upper := stack_pop_any(script, control_type);
             lower := stack_pop_any(script, control_type);
             upper_as_s64: int;
@@ -354,7 +370,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
                 _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
                 remap_data(Any.{ control_type, *_it }, it);
                 
-                for_loop.iterator_ptr = *_it;
+                for_loop.it_decl.value_pointer = *_it;
                 // TODO: for now we just don't set it_index. 
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
@@ -368,11 +384,11 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         
         return false;
         
-      case .RANGE;
-        range := cast(*Node_Range) node;
-        if !execute_node(script, range.lower)  return false;
-        if !execute_node(script, range.upper)  return false;
-        return true;
+      // case .RANGE;
+      //   range := cast(*Node_Range) node;
+      //   if !execute_node(script, range.lower)  return false;
+      //   if !execute_node(script, range.upper)  return false;
+      //   return true;
     }
     
     assert(false);

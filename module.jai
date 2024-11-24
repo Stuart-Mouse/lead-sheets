@@ -24,25 +24,23 @@ Script_Variable :: struct {
 }
 
 Script :: struct {
-    ast_root    : *Node_Block;
-    flags       : Flags;
+    ast_root:    *Node_Block;
+    flags:       Flags;
     
-    // TODO: we may actually not need to store these on script as dynamic arrays after all
-    //       these can go on script constructor, then we actually should copy only what we need onto node
-    //       we will still want to have slice for variables, but we can duplicate the Any's for variables actually used into script's pool
-    variables   : [..] Script_Variable;
-    procedures  : [..] Script_Procedure;
+    variables:   [..] Script_Variable;
+    procedures:  [..] Script_Procedure;
     
-    pool        : Flat_Pool;
-    allocator   : Allocator;
+    pool:        Flat_Pool;
+    allocator:   Allocator;
     
-    stack_base  : *void;
-    stack_size  : int;
-    stack_ptr   : *void; // state used by execution procs
+    stack_base:  *void;
+    stack_size:  int;
+    stack_ptr:   *void;
     
-    dyncall_vm  : *DCCallVM;
+    dyncall_vm:  *DCCallVM;
     
     Flags :: enum_flags {
+        INITIALIZED;
         PARSED;
         TYPECHECKED;
     }
@@ -154,14 +152,18 @@ Script_Constructor :: struct {
     current_parent_node: *Node;
 }
 
-// TODO: split up so that we can init script, then insert declarations into main block, then construct rest of script
-construct_script_from_source_string :: (script: *Script, source: string) -> bool {
-    success: bool;
-    defer if !success  free_script(script);
-    
-    // setup allocator. maybe move this to init proc later?
+init_script :: (script: *Script) {
     script.allocator.proc = flat_pool_allocator_proc;
     script.allocator.data = *script.pool;
+    
+    script.flags |= .INITIALIZED;
+}
+
+parse_source_file :: (script: *Script, source: string) -> bool {
+    if !(script.flags & .INITIALIZED)  return false;
+    
+    success: bool;
+    defer if !success  free_script(script);
     
     constructor: Script_Constructor;
     constructor.script = script;
@@ -259,8 +261,19 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
                 for_loop := alloc_node(ctxt, Node_For_Loop);
                 current_parent_node = for_loop; 
                 
-                for_loop.control_expression = parse_expression(ctxt, 0);
-                if for_loop.control_expression == null  return null;
+                expr := parse_expression(ctxt, 0);
+                if !expr  return null;
+                
+                if expect_token_type(*lexer, .SPREAD) {
+                    for_loop.control_type = .RANGE;
+                    for_loop.range.lower  = expr;
+                    for_loop.range.upper  = parse_expression(ctxt, 0);
+                    if !for_loop.range.upper  return null;
+                } else {
+                    for_loop.control_type = .ARRAY;
+                    for_loop.array_expression = expr;
+                    if for_loop.array_expression == null  return null;
+                }
                 
                 for_loop.statement = parse_statement(ctxt);
                 if for_loop.statement == null  return null;
@@ -297,26 +310,40 @@ parse_statement :: (using ctxt: *Script_Constructor) -> *Node {
         return block;
     }
     
-    
     left := parse_expression(ctxt, 0);
     if left == null  return null;
     
-    is_declaration := expect_token_type(*lexer, .COLON);
-    is_assignment  := expect_token_type(*lexer, .ASSIGN_EQUAL);
-    
-    if is_declaration && !is_assignment {
-        log("Error: colon must be followd by equals in declaration.");
-        return null;
+    if expect_token_type(*lexer, .COLON) {
+        if !expect_token_type(*lexer, .ASSIGN_EQUAL) {
+            log("Error: colon must be followed by equals in declaration.");
+            return null;
+        }
+        
+        // maybe a bit of a hack, but for now I will just throw away the 
+        // identifier node here and transfer the name/src_loc to a declaration node 
+        if left.node_type != .IDENTIFIER {
+            log("Error: left hand side of a declaration must be an identifier.");
+            return null;
+        }
+        
+        right := parse_expression(ctxt, 0);
+        if right == null  return null;
+        
+        if !expect_token_type(*lexer, .SEMICOLON)  return null;
+        
+        declaration := alloc_node(ctxt, Node_Declaration);
+        declaration.name            = (cast(*Node_Identifier)left).name;
+        declaration.init_expression = right;
+        return declaration;
     }
     
-    if is_assignment {
+    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
         right := parse_expression(ctxt, 0);
         if right == null  return null;
         
         if !expect_token_type(*lexer, .SEMICOLON)  return null;
 
         assignment := alloc_node(ctxt, Node_Assignment);
-        assignment.is_declaration = is_declaration;
         assignment.left  = left;
         assignment.right = right;
         return assignment;
@@ -435,7 +462,7 @@ parse_leaf :: (using ctxt: *Script_Constructor) -> *Node {
         
         
       case;
-        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
+        assert(false, "Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
         return null;
     }
     
@@ -578,19 +605,18 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         node.indexing_expression = indexing_expr;
         return node;
         
+      // case .SPREAD;
+      //   get_token(*lexer);
+      //   dbg_print("parsing range\n");
         
-      case .SPREAD;
-        get_token(*lexer);
-        dbg_print("parsing range\n");
+      //   lower := left;
+      //   upper := parse_expression(ctxt, 0);
+      //   if upper == null  return null;
         
-        lower := left;
-        upper := parse_expression(ctxt, 0);
-        if upper == null  return null;
-        
-        node := alloc_node(ctxt, Node_Range);
-        node.lower = lower;
-        node.upper = upper;
-        return node;
+      //   node := alloc_node(ctxt, Node_Range);
+      //   node.lower = lower;
+      //   node.upper = upper;
+      //   return node;
     }
     
     if token_is_binary_operator(next_token) {
@@ -691,14 +717,14 @@ as_type :: inline (ti: *Type_Info) -> Type {
 
 
 
-DEBUG :: true;
+DEBUG :: false;
 
 #if DEBUG {#add_context dbg_print_indent: int;}
 
-dbg_print :: (format_string: string, args: .. Any, to_standard_error := false) -> bytes_printed: s64 {
+dbg_print :: (format_string: string, args: .. Any) {
     #if DEBUG {
         for 0..context.dbg_print_indent  print("  ");
-        return print(format_string, ..args, to_standard_error);
+        print(format_string, ..args);
     }
 }
 dbg_print_push_indent :: () #expand {

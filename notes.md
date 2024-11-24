@@ -362,10 +362,7 @@ Problem:
 
 TODO:
     
-    refactor how declarations and identifiers work
-        identifier will point to resolved declaration
-        solves the indirection problem without requiring too much node bloat from external declarations
-    fix for loops
+    use linked list for things that acutally need to have next/prev nodes instead of just having that on every node type
     probably make it so that local variables get pushed on scope entry and popped on scope exit
         this may require some refactoring like collecting all declarations in a scope and putting them in one spot
         but this will be needed if we do the callable blocks thing, or ever do proper functions
