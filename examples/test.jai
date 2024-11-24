@@ -65,6 +65,8 @@ main :: () {
     // TODO: add some proc for 'add_constant' or 'add_local_variable' that will make a copy of the value in the script's pool
     //       this will allow us to pass temporary values, which we cannot do with set_variable
     //       all variables are assumed to be modifiable lvalues, with an externally defined storage duration
+    //       better option would be to just add functions for naviagting AST and inserting declarations into a block
+    //       we could already add top-level declarations pretty trivially
     
     set_variable(*script, "x", x);
     set_variable(*script, "y", y);

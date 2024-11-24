@@ -15,11 +15,11 @@
 
 execute_script :: (script: *Script) -> bool {
     if !(script.flags & .PARSED) {
-        dbg_print("Error: cannot execute script before AST has been constructed!\n");
+        log("Error: cannot execute script before AST has been constructed!\n");
         return false;
     }
     if !(script.flags & .TYPECHECKED) {
-        dbg_print("Error: cannot execute script before AST has been typechecked!\n");
+        log("Error: cannot execute script before AST has been typechecked!\n");
         return false;
     }
     
@@ -32,7 +32,7 @@ execute_script :: (script: *Script) -> bool {
     
     sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
     if sentinel.* != STACK_SENTINEL_VALUE {
-        dbg_print("ERROR: sentinel value was overwritten! was %\n", sentinel.*);
+        log("Error: sentinel value was overwritten! was %\n", sentinel.*);
         return false;
     }
     
@@ -47,7 +47,7 @@ execute_script :: (script: *Script) -> bool {
     When moving to bytecode though, we should be just use stack_push and stack_pop, 
         which are probably slightly faster and don't require passing type info.
 */
-execute_node :: (script : *Script, node: *Node) -> bool {
+execute_node :: (script: *Script, node: *Node) -> bool {
     dbg_print("evaluating node %: %\n", node, node.node_type);
     dbg_print_push_indent();
     
@@ -55,7 +55,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     if node.flags & .IS_LVALUE  dbg_print("expecting lvalue\n");
     
     if !node.value_type {
-        dbg_print("BIG TIME ERROR: node has no set value type!\n");
+        dbg_print("Warning: node has no set value type!\n");
     }
     
     if node.node_type == {
@@ -225,9 +225,7 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         // TODO: maybe improve this
         //       for bytecode, could do an instruction for inplace type cast
         index_as_s64: s64;
-        if !remap_int(index_as_s64, index_any) {
-            dbg_print("ERROR REMAPPING INDEXING EXPRESSION TO INT\n");
-        }
+        assert(remap_int(index_as_s64, index_any));
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
@@ -419,56 +417,6 @@ execute_node :: (script : *Script, node: *Node) -> bool {
     assert(false);
     return false;
 }
-
-/*
-    Because we know that all arguments will be contiguous on the stack, we simply bump the stack pointer for each argument and push.
-    Of course, we still need to know the argument types, so we need the *Type_Info_Procedure.
-    
-    If we make use of the new push_arguments function I finally added to dyncall, maybe we can get rid of need for this function entirely
-*/
-do_dyncall :: (vm: *DCCallVM, proc_ptr: *void, proc_type: *Type_Info_Procedure, arg_ptr: *void, return_ptr: *void) -> bool {
-    assert(proc_type.return_types.count <= 1);
-    assert(proc_type.procedure_flags & .IS_C_CALL == 0);
-    
-    dcReset(vm);
-    jai_call :: true;
-    if !jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
-        dcArgPointer(vm, *context);
-    }
-    
-    return_type := ifx proc_type.return_types 
-        then proc_type.return_types[0]
-        else type_info(void);
-    
-    dbg_print("calling proc %\n", as_type(proc_type));
-    
-    #if DEBUG {
-        context.dbg_print_indent += 1;
-        defer context.dbg_print_indent -= 1;
-    }
-    
-    dbg_print("args: ");
-    for arg_type: proc_type.argument_types {    
-        push_argument(vm, arg_type, arg_ptr);
-        
-        if is_aggr(arg_type) {
-            dbg_print("% % ", as_type(arg_type), Any.{arg_type, (cast(**void)arg_ptr).*});
-        } else {
-            dbg_print("% % ", as_type(arg_type), Any.{arg_type, arg_ptr});
-        }
-        
-        arg_ptr += size_of(*void);
-    }
-    dbg_print("\n");
-    
-    dcArgPointer(vm, return_ptr);
-    dcCallVoid(vm, xx proc_ptr);
-    
-    dbg_print("returning result of procedure: %\n", Any.{ return_type, return_ptr });
-    
-    return true;
-}
-
 
 
 
