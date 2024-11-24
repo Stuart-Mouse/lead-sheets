@@ -383,12 +383,6 @@ execute_node :: (script : *Script, node: *Node) -> bool {
         }
         
         return false;
-        
-      // case .RANGE;
-      //   range := cast(*Node_Range) node;
-      //   if !execute_node(script, range.lower)  return false;
-      //   if !execute_node(script, range.upper)  return false;
-      //   return true;
     }
     
     assert(false);

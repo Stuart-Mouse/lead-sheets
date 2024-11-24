@@ -419,27 +419,6 @@ typecheck_node :: (
         
         for_loop.value_type = type_info(void);
         return for_loop.value_type;
-        
-        
-      // case .RANGE;
-      //   if check_flags & .EXPECT_LVALUE  return null;
-      //   range := cast(*Node_Range) node;
-        
-      //   dbg_print("typechecking range lower\n");
-      //   assert(range.lower != null);
-      //   lower_type := typecheck_node(ctxt, range.lower, hint_type = type_info(int));
-      //   if lower_type == null  return null;
-        
-      //   dbg_print("typechecking range upper\n");
-      //   assert(range.upper != null);
-      //   upper_type := typecheck_node(ctxt, range.upper, hint_type = lower_type);
-      //   if lower_type != upper_type { 
-      //       dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
-      //       return null;
-      //   }
-        
-      //   range.value_type = lower_type;
-      //   return range.value_type;
     }
     
     return null;

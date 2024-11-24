@@ -604,19 +604,6 @@ parse_increasing_precedence :: (using ctxt: *Script_Constructor, left: *Node, mi
         node.base_expression     = left;
         node.indexing_expression = indexing_expr;
         return node;
-        
-      // case .SPREAD;
-      //   get_token(*lexer);
-      //   dbg_print("parsing range\n");
-        
-      //   lower := left;
-      //   upper := parse_expression(ctxt, 0);
-      //   if upper == null  return null;
-        
-      //   node := alloc_node(ctxt, Node_Range);
-      //   node.lower = lower;
-      //   node.upper = upper;
-      //   return node;
     }
     
     if token_is_binary_operator(next_token) {

@@ -221,7 +221,6 @@ alloc_node :: (ctxt: *Script_Constructor, node_type: Node_Type, parent_node: *No
       case .PROCEDURE_CALL;  node = New(Node_Procedure_Call,, ctxt.allocator);
       case .MEMBER;          node = New(Node_Member,,         ctxt.allocator);
       case .SUBSCRIPT;       node = New(Node_Subscript,,      ctxt.allocator);
-      case .RANGE;           node = New(Node_Range,,          ctxt.allocator);
       case .BLOCK;           node = New(Node_Block,,          ctxt.allocator);
       case .ASSIGNMENT;      node = New(Node_Assignment,,     ctxt.allocator);
       case .IF_STATEMENT;    node = New(Node_If_Statement,,   ctxt.allocator);
