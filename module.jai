@@ -17,6 +17,8 @@
 #load "binary_op.jai";
 
 
+#module_parameters (DEBUG := false);
+
 
 External_Variable :: struct {
     name    : string;
@@ -739,7 +741,6 @@ as_type :: inline (ti: *Type_Info) -> Type {
 
 
 
-DEBUG :: true;
 
 #if DEBUG {#add_context dbg_print_indent: int;}
 

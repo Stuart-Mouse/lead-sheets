@@ -177,7 +177,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             for arg_type: proc_type.argument_types {
                 value_pointer := arg_ptr;
                 if is_aggr(arg_type)  value_pointer = (cast(**void)value_pointer).*;
-                if !push_argument(script.dyncall_vm, arg_type, value_pointer)  return false;
+                if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
                 arg_ptr += size_of(*void);
             }
             
@@ -474,7 +474,7 @@ execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     for arg_type: array_view(ti_proc.argument_types, 2) {
         value_pointer := arg_ptr;
         if is_aggr(arg_type)  value_pointer = (cast(**void)value_pointer).*;
-        if !push_argument(script.dyncall_vm, arg_type, value_pointer)  return false;
+        if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
         arg_ptr += size_of(*void);
     }
     

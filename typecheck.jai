@@ -116,7 +116,7 @@ typecheck_node :: (
         }
         
         // if the identifier is referring to a procedure, that will have to be handled in PROCEDURE_CALL case
-        log("Warning: Unable to resolve identifier '%'.", identifier.name);
+        dbg_print("Warning: Unable to resolve identifier '%'.", identifier.name);
         return null;
         
     
@@ -254,7 +254,7 @@ typecheck_node :: (
       case .MEMBER;
         member := cast(*Node_Member) node;
         base_type := typecheck_node(ctxt, member.base_expression, check_flags & .EXPECT_LVALUE);
-        if base_type.type != .STRUCT  return null;
+        if !base_type || base_type.type != .STRUCT  return null;
         
         member_ti, member_offset := get_field(xx base_type, member.identifier);
         if member_ti == null  return null;
