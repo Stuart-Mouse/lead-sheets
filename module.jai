@@ -5,6 +5,7 @@
 #import "Hash_Table";
 #import "Flat_Pool";
 #import "Reflection";
+#import "Compiler"; // for 'is_subclass_of'
 
 #import "Data_Packer";
 #import "dyncall";
@@ -32,6 +33,7 @@ Script :: struct {
     variables:   [..] External_Variable;
     procedures:  [..] External_Procedure;
     directives:  [..] Directive;
+    type_table:  [..] struct { name: string; type: *Type_Info; };
     
     pool:        Flat_Pool;
     allocator:   Allocator;
@@ -122,7 +124,6 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
         (cast(**void)script.stack_ptr).* = any.value_pointer; // store the pointer itself instead of the value
     } else {
         assert(any.type.runtime_size <= PTR_SIZE);
-        
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
     // dbg_print("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
@@ -174,6 +175,17 @@ set_variable :: (script: *Script, name: string, any: Any) {
         }
     }
     array_add(*script.variables, .{ name, any });
+}
+
+// ensures no name conflicts
+register_type :: (script: *Script, name: string, type: *Type_Info) {
+    for *script.type_table {
+        if it.name == name {
+            log("Warning: attempt register a type with same name as previously registered type.");
+            return;
+        }
+    }
+    array_add(*script.type_table, .{ name, type });
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
@@ -438,6 +450,12 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
     
     token := get_token_or_return(*lexer, null);
     if token.type == {
+      // case .DOT;
+        // TODO: identifer -> unary dot enum thing
+        // TODO: open brace -> struct literal
+        // TODO: open bracket -> array literal
+        
+        
       case .OPEN_PAREN;
         open_paren_location := token.src_loc;
         
@@ -453,14 +471,16 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
         
         
       case .NUMBER;
-        node := alloc_node(ctxt, Node_Number);
-        node.float_value = token.number;
+        node := alloc_node(ctxt, Node_Literal);
+        node.literal_type = .NUMBER;
+        node.number = token.number;
         return node;
         
         
       case .STRING;
-        node := alloc_node(ctxt, Node_String);
-        node.value = token.text;
+        node := alloc_node(ctxt, Node_Literal);
+        node.literal_type = .STRING;
+        node.text = token.text;
         return node;
         
     
@@ -495,6 +515,7 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
         }
         
         return node;
+        
         
       case .IDENTIFIER;
         if is_reserved_word(token.text) {
@@ -548,8 +569,9 @@ parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
     
     // makes a binary op of -1 * node
     if do_unary_minus {
-        neg := alloc_node(ctxt, Node_Number);
-        neg.float_value = -1;
+        neg := alloc_node(ctxt, Node_Literal);
+        neg.literal_type = .NUMBER;
+        neg.number = -1;
         left = create_binary_operation(ctxt, "*", neg, left);
     }
     

@@ -8,9 +8,9 @@ Node_Type :: enum {
     INVALID :: 0;
     
     // expressions
-    NUMBER;
-    STRING;
-    // LITERAL;     // TODO
+    // NUMBER;
+    // STRING;
+    LITERAL;
     IDENTIFIER;
     OPERATION;
     PROCEDURE_CALL;
@@ -85,14 +85,32 @@ Node_Directive :: struct {
     arguments_count:     int;
 }
 
-Node_Number :: struct {
-    using #as node_base: Node;
-    float_value: float;
-}
+// Node_Number :: struct {
+//     using #as node_base: Node;
+//     float_value: float;
+// }
 
-Node_String :: struct {
+// Node_String :: struct {
+//     using #as node_base: Node;
+//     value: string;
+// }
+
+Node_Literal :: struct {
     using #as node_base: Node;
-    value: string;
+    literal_type: enum { INVALID; STRING; NUMBER; STRUCT; ARRAY; };
+    using value_union: union {
+        number:  float;
+        text:    string;
+        aggr: struct {
+            initializer_expressions: *Node; // expressions to init struct members or array values by. later maybe also accepting statements
+            value_pointer: *void;           // once type is resolved, we store pointer to allocated value here
+        }
+        
+        // used to store backing value for numeric values 
+        // once a concrete type has been determined
+        // in theory we could also store small structs here (but that's probably ill-informed...)
+        bytes:   [16] u8; 
+    }
 }
 
 Node_Operation :: struct {
@@ -106,9 +124,9 @@ Node_Operation :: struct {
 
 Node_Member :: struct {
     using #as node_base: Node;
-    base_expression:    *Node;
-    identifier:         string;
-    offset:             int;
+    base_expression:     *Node;
+    identifier:          string;
+    offset:              int;
 }
 
 Node_Subscript :: struct {
@@ -222,8 +240,9 @@ alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, l
     
     // have to allocate the proper amount of space for the node
     if #complete node_type == {
-      case .NUMBER;          node = New(Node_Number,,         ctxt.allocator);
-      case .STRING;          node = New(Node_String,,         ctxt.allocator);
+      // case .NUMBER;          node = New(Node_Number,,         ctxt.allocator);
+      // case .STRING;          node = New(Node_String,,         ctxt.allocator);
+      case .LITERAL;         node = New(Node_Literal,,        ctxt.allocator);
       case .IDENTIFIER;      node = New(Node_Identifier,,     ctxt.allocator);
       case .DECLARATION;     node = New(Node_Declaration,,    ctxt.allocator);
       case .OPERATION;       node = New(Node_Operation,,      ctxt.allocator);
@@ -248,7 +267,8 @@ alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, l
 alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
 #modify {
     ti := cast(*Type_Info_Struct) T_Node;
-    return ti.type == .STRUCT && ti.members[0].type == type_info(Node) && (ti.members[0].flags & (.USING | .AS)) == (.USING | .AS);
+    return is_subclass_of(ti, "Node");
+    // return ti.type == .STRUCT && ti.members[0].type == type_info(Node) && (ti.members[0].flags & (.USING | .AS)) == (.USING | .AS);
 } {
     node := New(T_Node,, ctxt.allocator);
     node.node_type = #run type_to_enum(T_Node);
@@ -262,8 +282,9 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
 
 enum_to_type :: (node_type: Node_Type) -> Type {
     if #complete node_type == {
-      case .NUMBER;          return Node_Number;
-      case .STRING;          return Node_String;
+      // case .NUMBER;          return Node_Number;
+      // case .STRING;          return Node_String;
+      case .LITERAL;         return Node_Literal;
       case .IDENTIFIER;      return Node_Identifier;
       case .OPERATION;       return Node_Operation;
       case .PROCEDURE_CALL;  return Node_Procedure_Call;
@@ -284,8 +305,9 @@ enum_to_type :: (node_type: Node_Type) -> Type {
 
 type_to_enum :: (type: Type) -> Node_Type {
     if type == {
-      case Node_Number;          return .NUMBER;
-      case Node_String;          return .STRING;
+      // case Node_Number;          return .NUMBER;
+      // case Node_String;          return .STRING;
+      case Node_Literal;         return .LITERAL;
       case Node_Identifier;      return .IDENTIFIER;
       case Node_Operation;       return .OPERATION;
       case Node_Procedure_Call;  return .PROCEDURE_CALL;

@@ -44,7 +44,6 @@ Script_Token_Type :: enum {
     LESS_THAN     :: #char "<";
     GREATER_THAN  :: #char ">";
     
-    
     ADD           :: #char "+";
     SUB           :: #char "-";
     MUL           :: #char "*";

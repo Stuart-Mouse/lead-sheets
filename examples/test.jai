@@ -28,7 +28,7 @@ main :: () {
         array := cast(*[..] Named_Value) data;
         new := array_add(array);
         // new := array_add(*named_values);
-        print("name: \n", name);
+        // print("name: \n", name);
         new.name = name;
         set_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
         

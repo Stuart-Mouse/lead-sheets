@@ -63,18 +63,26 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true; // Directives are run as soon as they are parsed, so just skip this node.
         
         
-      case .NUMBER;
-        number := cast(*Node_Number) node;
-        value: u64 = 0; // just empty space.  TODO: get rid of need for this by storing value as resolved type
-        remap_data(Any.{ number.value_type, *value }, number.float_value); 
-        if !stack_push_any(script, Any.{ number.value_type, *value })  return false;
-        return true;
-        
-        
-      case .STRING;
-        node_string := cast(*Node_String) node;
-        if !stack_push_any(script, node_string.value, node.flags & .IS_LVALUE != 0)  return false;
-        return true;
+      case .LITERAL;
+        literal := cast(*Node_Literal) node;
+        if literal.literal_type == {
+          case .STRING;
+            if !stack_push_any(script, literal.text, node.flags & .IS_LVALUE != 0)  return false;
+            return true;
+            
+          case .NUMBER;
+            value: u64 = 0; // just empty space.  TODO: get rid of need for this by storing value as resolved type
+            remap_data(Any.{ literal.value_type, *value }, literal.number); 
+            if !stack_push_any(script, Any.{ literal.value_type, *value })  return false;
+            return true;
+            
+          case .STRUCT;
+            log("Error: struct literals not yet implemented.");
+            
+          case .ARRAY;
+            log("Error: array literals not yet implemented.");
+        }
+        return false;
         
         
       case .IDENTIFIER;

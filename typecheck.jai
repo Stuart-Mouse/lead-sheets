@@ -35,28 +35,35 @@ typecheck_node :: (
     if node.node_type == {
       case .DIRECTIVE;
         return type_info(void);
-    
-      case .NUMBER;
-        number := cast(*Node_Number) node;
+        
+        
+      case .LITERAL;
         if check_flags & .EXPECT_LVALUE {
-            log("Error: number literal cannot be used as an lvalue.\n");
+            log("Error: a literal cannot be used as an lvalue.");
             return null;
         }
         
-        // TODO: we could store any numeric literal type in the same space so that we don't have to call remap_data every time we execute node
-        if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
-            dbg_print("returning hinted type: %\n", as_type(hint_type));
-            number.value_type = hint_type;
-            return hint_type;
+        literal := cast(*Node_Literal) node;
+        if literal.literal_type == {
+          case .STRING;
+            node.value_type = type_info(string);
+            
+          case .NUMBER;
+            if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
+                dbg_print("returning hinted type: %\n", as_type(hint_type));
+                literal.value_type = hint_type;
+                // TODO: we could store any numeric literal type in the same space 
+                // so that we don't have to call remap_data every time we execute node
+            } else {
+                literal.value_type = type_info(type_of(literal.number)); 
+            }
+            
+          case .STRUCT;
+            log("Error: struct literals not yet implemented.");
+            
+          case .ARRAY;
+            log("Error: array literals not yet implemented.");
         }
-        
-        number.value_type = type_info(type_of(number.float_value)); 
-        return number.value_type;
-        
-    
-      case .STRING;
-        // TODO: this is stupid. we should actually just have a real Node_Literal
-        node.value_type = type_info(string);
         return node.value_type;
         
         
