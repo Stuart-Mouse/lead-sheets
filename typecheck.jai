@@ -1,13 +1,10 @@
 
 /*
-        
-    I thought that we may need to have 2 passes for typechecking
-    second pass being necessary to put info on each node about stack position
-    but that should actually not be necessary
-    and, we actually should be able to calculate maxiumum require stack space from leaves to root, since we can just add up sizes of types and pass that info back up the call stack
-    
-    so TODO: return running stack size from typechecking routines
-    also TODO: these procedures should take a script constructor rather than jsut a script, since we will probably remove the dynamic arrays from script itself
+    TODO: Constant evaluation
+        we could mark certain node types as constants and do constant evaluation where applicable
+        this would not be something we really want to do on initial pass, since we don't want to modify the AST that much
+        but it would certainly be a good idea to do before going to bytecode
+
 */
 
 Typechecking_Flags :: enum_flags {
@@ -46,7 +43,7 @@ typecheck_node :: (
         literal := cast(*Node_Literal) node;
         if literal.literal_type == {
           case .STRING;
-            node.value_type = type_info(string);
+            literal.value_type = type_info(string);
             
           case .NUMBER;
             if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
@@ -59,12 +56,40 @@ typecheck_node :: (
             }
             
           case .STRUCT;
-            log("Error: struct literals not yet implemented.");
+            // right now, we need to have a hint type or else we cannot infer what the struct literal is for
+            // later we will allow parsing explicit type
+            ti_struct := cast(*Type_Info_Struct) hint_type;
+            if ti_struct.type != .STRUCT {
+                log("Error: type hint provided to struct literal is not a struct type.");
+                return null;
+            }
+            
+            literal.value_type = ti_struct;
+            literal.aggr.value_pointer = Dynamic_New(literal.value_type,, ctxt.allocator);
+            dbg_print("allocated space for literal of type %, node %\n", literal.value_type, literal);
+            
+            // TODO: we could reduce space required for storing intermediate values
+            //       if we pass a value_pointer alongside hint_type in typechecking
+            //       that way if hint type is accepted, then it can also use value_pointer 
+            //       for its backing value instead of allocating its own space for value
+            for literal.aggr.expressions {
+                if it_index >= ti_struct.members.count {
+                    log("Error: too many values provided in struct literal.");
+                    return null;
+                }
+                member  := ti_struct.members[it_index];
+                expr_ti := typecheck_node(ctxt, it, hint_type = member.type); 
+                if expr_ti != member.type {
+                    log("Error: value type provided in struct initializer for field '%' was incorrect. Expected '%', got '%'.", member.name, as_type(member.type), as_type(expr_ti));
+                    return null;
+                }
+            }
+            
             
           case .ARRAY;
             log("Error: array literals not yet implemented.");
         }
-        return node.value_type;
+        return literal.value_type;
         
         
       case .IDENTIFIER;
@@ -126,7 +151,7 @@ typecheck_node :: (
         dbg_print("Warning: Unable to resolve identifier '%'.", identifier.name);
         return null;
         
-    
+        
       case .OPERATION;
         if check_flags & .EXPECT_LVALUE  return null;
         operation := cast(*Node_Operation) node;
@@ -159,33 +184,7 @@ typecheck_node :: (
         
         log("Error: operator overloading is currently broken!");
         return null;
-        
-        // // if it was not one of the builtin operators, 
-        // // then we will try checking for an overloaded procedure that performs the operation
-        // operation.left.next = operation.right;
-        
-        // // need to create a new node for the procedure itself, kinda dumb
-        // proc_node := alloc_node(ctxt, Node_Identifier);
-        // proc_node.src_text        = node.src_text;
-        // proc_node.src_loc         = node.src_loc;
-        // proc_node.enclosing_scope = node.enclosing_scope;
-        
-        // // then replace the current operation node with a procedure_call node
-        // proc_call_node := Node.{
-        //     type            = .PROCEDURE_CALL,
-        //     src_loc         = node.src_loc,
-        //     src_text        = node.src_text,
-        //     flags           = node.flags | .OVERLOAD_OP,
-        //     enclosing_scope = node.enclosing_scope,
-        //     procedure_call  = .{
-        //         procedure_expression = proc_node,
-        //         arg_nodes = operation.left,
-        //         arg_count = 2, // TODO: what if unary op
-        //     }
-        // };
-        // node.* = proc_call_node;
-        
-        // #through;
+
         
       case .PROCEDURE_CALL;
         if check_flags & .EXPECT_LVALUE  return null;
@@ -194,18 +193,18 @@ typecheck_node :: (
         dbg_print("typechecking arguments...\n");
         dbg_print("arg_count: %\n", procedure_call.arguments_count);
         
-        argument_types := NewArray(procedure_call.arguments_count, *Type_Info,, temp); // TODO
-        for procedure_call.arguments {
-            argument_type := typecheck_node(ctxt, it);
-            if !argument_type  return null;
-            argument_types[it_index] = argument_type;
-        }
-        
         ti_proc := cast(*Type_Info_Procedure) typecheck_node(ctxt, procedure_call.procedure_expression);
         
         if procedure_call.procedure_expression.node_type == .IDENTIFIER && ti_proc == null {
             identifier := cast(*Node_Identifier) procedure_call.procedure_expression;
             assert(identifier.resolved_type == .UNRESOLVED);
+            
+            argument_types := NewArray(procedure_call.arguments_count, *Type_Info,, temp); // TODO
+            for procedure_call.arguments {
+                argument_type := typecheck_node(ctxt, it);
+                if !argument_type  return null;
+                argument_types[it_index] = argument_type;
+            }
             
             procedure_index := resolve_procedure_index(ctxt, identifier.name, argument_types, node.flags & .OVERLOAD_OP != 0);
             if procedure_index == -1  return null; // error logged by above
@@ -235,13 +234,15 @@ typecheck_node :: (
             
             // typecheck arguments. we know what they must be, so we just straightforwardly match. can also easily add logic to coerce/cast
             // TODO: coerce/up-cast arguments
-            if ti_proc.argument_types.count != argument_types.count {
-                dbg_print("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, argument_types.count);
+            if ti_proc.argument_types.count != procedure_call.arguments_count {
+                log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, procedure_call.arguments_count);
                 return null;
             }
-            for 0..argument_types.count-1 {
-                if ti_proc.argument_types[it] != argument_types[it] {
-                    dbg_print("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(ti_proc.argument_types[it]), as_type(argument_types[it]));
+            for procedure_call.arguments {
+                expected_type := ti_proc.argument_types[it_index];
+                argument_type := typecheck_node(ctxt, it, hint_type = expected_type);
+                if argument_type != expected_type {
+                    log("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(expected_type), as_type(argument_type));
                     return null;
                 }
             }

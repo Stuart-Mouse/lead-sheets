@@ -77,7 +77,18 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             return true;
             
           case .STRUCT;
-            log("Error: struct literals not yet implemented.");
+            if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer })  return false;
+            write_ptr := literal.aggr.value_pointer;
+            // TODO: if we enhance typechecking to pass value pointer for these values, 
+            //       then we don't need to do any pushing or popping from stack here.
+            //       will require changes to almost all execute cases though...
+            //       if node.dst_provided  memcpy directly  else push stack
+            for literal.aggr.expressions {
+                if !execute_node(script, it)  return false;
+                memcpy(write_ptr, stack_pop_any(script, it.value_type).value_pointer, it.value_type.runtime_size);
+                write_ptr += it.value_type.runtime_size;
+            }
+            return true;
             
           case .ARRAY;
             log("Error: array literals not yet implemented.");

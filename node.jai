@@ -4,12 +4,14 @@
 //       and then we do not need to maintain alloc_node as we add new node types
 //       only reason to keep enum around would be to serialize, but I don't think we would never want to serialize the AST instead of just using the source
 
+// TODO: reimplement something like sprint_node 
+
+// TODO: probably remove prev pointer from node, I don't think we need it after all
+
 Node_Type :: enum {
     INVALID :: 0;
     
     // expressions
-    // NUMBER;
-    // STRING;
     LITERAL;
     IDENTIFIER;
     OPERATION;
@@ -40,8 +42,6 @@ Node :: struct {
         UNARY_OP; 
         OVERLOAD_OP; 
         DISCARD_VALUE; 
-        
-        EXTRA_INDIRECTION; // used on internal variables in certain cases (e.g. iterators)
     };
 }
 
@@ -85,16 +85,6 @@ Node_Directive :: struct {
     arguments_count:     int;
 }
 
-// Node_Number :: struct {
-//     using #as node_base: Node;
-//     float_value: float;
-// }
-
-// Node_String :: struct {
-//     using #as node_base: Node;
-//     value: string;
-// }
-
 Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { INVALID; STRING; NUMBER; STRUCT; ARRAY; };
@@ -102,8 +92,8 @@ Node_Literal :: struct {
         number:  float;
         text:    string;
         aggr: struct {
-            initializer_expressions: *Node; // expressions to init struct members or array values by. later maybe also accepting statements
-            value_pointer: *void;           // once type is resolved, we store pointer to allocated value here
+            expressions:    *Node; // expressions to init struct members or array values by. later maybe also accepting statements
+            value_pointer:  *void; // once type is resolved, we store pointer to allocated value here
         }
         
         // used to store backing value for numeric values 
@@ -186,50 +176,6 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
     }
 }
 
-// TODO
-// sprint_ast_node :: (script: *Script, node: Node) -> string {
-//     if node.node_type == {
-//       case .NUMBER;
-//         return tprint(".NUMBER: %", node.number);
-        
-//       case .VARIABLE;
-//         return tprint(".VARIABLE: %", node.src_text);
-        
-//       case .OPERATION;
-//         if script.flags & .TYPECHECKED {
-//             return tprint(".OPERATION: %", BUILTIN_OPERATIONS[node.operation.operator_index].operator_ident);
-//         } else {
-//             return node.src_text;
-//         }
-        
-//       case .PROCEDURE_CALL;
-//         if script.flags & .TYPECHECKED {
-//             // return tprint(".PROCEDURE_CALL: %", node_get_procedure(script, node).name);
-//             return tprint(".PROCEDURE_CALL: %", as_type(node.procedure_call.procedure_expression.value_type));
-//         } else {
-//             return node.src_text;
-//         }
-        
-//       case .PROCEDURE;
-//         return tprint(".PROCEDURE: %", node.src_text);
-        
-//       case .IF_STATEMENT;
-//         return tprint(".IF_STATEMENT: if %  %", sprint_ast_node(script, node.if_statement.condition), sprint_ast_node(script, node.if_statement.statement));
-        
-//       case .WHILE_LOOP;
-//         return tprint(".WHILE_LOOP: while %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
-        
-//       case .FOR_LOOP;
-//         return tprint(".FOR_LOOP: for %  %", sprint_ast_node(script, node.while_loop.condition), sprint_ast_node(script, node.while_loop.statement));
-        
-//       case .BLOCK;
-//         return "{ ... }";
-        
-//       case;
-//         return tprint("%: ??? ", node.type);
-//     }
-//     return "";
-// }
 
 
 // Two allocate_node functions currently. 
@@ -268,7 +214,6 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
 #modify {
     ti := cast(*Type_Info_Struct) T_Node;
     return is_subclass_of(ti, "Node");
-    // return ti.type == .STRUCT && ti.members[0].type == type_info(Node) && (ti.members[0].flags & (.USING | .AS)) == (.USING | .AS);
 } {
     node := New(T_Node,, ctxt.allocator);
     node.node_type = #run type_to_enum(T_Node);
@@ -282,8 +227,6 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
 
 enum_to_type :: (node_type: Node_Type) -> Type {
     if #complete node_type == {
-      // case .NUMBER;          return Node_Number;
-      // case .STRING;          return Node_String;
       case .LITERAL;         return Node_Literal;
       case .IDENTIFIER;      return Node_Identifier;
       case .OPERATION;       return Node_Operation;
@@ -305,8 +248,6 @@ enum_to_type :: (node_type: Node_Type) -> Type {
 
 type_to_enum :: (type: Type) -> Node_Type {
     if type == {
-      // case Node_Number;          return .NUMBER;
-      // case Node_String;          return .STRING;
       case Node_Literal;         return .LITERAL;
       case Node_Identifier;      return .IDENTIFIER;
       case Node_Operation;       return .OPERATION;

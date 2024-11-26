@@ -450,11 +450,31 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
     
     token := get_token_or_return(*lexer, null);
     if token.type == {
-      // case .DOT;
-        // TODO: identifer -> unary dot enum thing
-        // TODO: open brace -> struct literal
-        // TODO: open bracket -> array literal
+      case .DOT;
+        if expect_token_type(*lexer, .OPEN_BRACE) {
+            node := alloc_node(ctxt, Node_Literal);
+            node.literal_type = .STRUCT;
+            
+            ok: bool;
+            node.aggr.expressions, _, ok = parse_comma_separated_expressions(ctxt, .CLOSE_BRACE);
+            if !ok  return null;
+            
+            return node;
+        }
+        // if expect_token_type(*lexer, .OPEN_BRACKET) {
+        //     node := alloc_node(ctxt, Node_Literal);
+        //     node.literal_type = .ARRAY;
+            
+        //     ok: bool;
+        //     node.aggr.expressions, node.aggr.expressions_count, ok = parse_comma_separated_expressions(*lexer, .CLOSE_BRACKET);
+        //     if !ok  return null;
+            
+        //     return node;
+        // }
         
+        // TODO: identifer -> unary dot enum thing
+        log("Error: unexpected DOT token at (%:%)", token.src_loc.line, token.src_loc.char);
+        return null;
         
       case .OPEN_PAREN;
         open_paren_location := token.src_loc;
@@ -501,13 +521,9 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
             return null;
         }
         
-        node.arguments, node.arguments_count = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
-        if node.arguments == null  return null;
-        
-        if !expect_token_type(*lexer, .CLOSE_PAREN) {
-            dbg_print("Error, expected a close paren at the end of parameter list!\n");
-            return null;
-        }
+        ok: bool;
+        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        if !ok  return null;
         
         if !execute_directive(ctxt, node) {
             log("Error: failed while trying to execute a directive.");
@@ -589,28 +605,34 @@ parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
     return left;
 }
 
-parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Script_Token_Type) -> (*Node, int) {
+// needs to also return bool since node can be null validly if there were no arguments
+parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Script_Token_Type) -> (*Node, int, bool) {
     first: *Node;
     count: int;
     
-    if peek_token(*lexer).type != expected_end_token {
+    if !expect_token_type(*lexer, expected_end_token) {
         first = parse_expression(script, 0);
-        if first == null  return null, 0;
+        if first == null  return null, 0, false;
         count = 1;
         
         prev := first;
         while expect_token_type(*lexer, .COMMA) {
             next := parse_expression(script, 0);
-            if next == null  return null, 0;
+            if next == null  return null, 0, false;
             
             next.prev = prev;
             prev.next = next;
             prev = next;
             count += 1;
         }
+        
+        if !expect_token_type(*lexer, expected_end_token) {
+            log("Error, expected a % token at the end of comma separated expressions!\n", expected_end_token);
+            return null, 0, false;
+        }
     }
     
-    return first, count;
+    return first, count, true;
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
@@ -630,13 +652,9 @@ parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int)
         node := alloc_node(ctxt, Node_Procedure_Call);
         node.procedure_expression = left;
         
-        node.arguments, node.arguments_count = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
-        if node.arguments == null  return null;
-        
-        if !expect_token_type(*lexer, .CLOSE_PAREN) {
-            dbg_print("Error, expected a close paren at the end of parameter list!\n");
-            return null;
-        }
+        ok: bool;
+        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        if !ok  return null;
         
         return node;
         

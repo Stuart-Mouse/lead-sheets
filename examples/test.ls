@@ -29,3 +29,7 @@ str = local_str;
 echo(named_1);
 named_1 = 7;
 
+r1 = .{ 35, 5 + 3 };
+
+
+
