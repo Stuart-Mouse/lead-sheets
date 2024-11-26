@@ -335,13 +335,12 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
         while is_whitespace(file[0]) {
             if !advance(lexer)  return false;
         }
-        // if file[0] == #char "#" {
-        //     while file[0] != #char "\n" {
-        //         if !advance(lexer)  return false;
-        //     }
-        // }
-        // else
-        return true;
+        if file.count >= 2 && file[0] == #char "/" && file[1] == #char "/" {
+            while file[0] != #char "\n" {
+                if !advance(lexer)  return false;
+            }
+        }
+        else return true;
     }
     return true;
 }
