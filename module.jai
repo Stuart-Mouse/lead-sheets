@@ -243,23 +243,23 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     return true;
 }
 
-parse_statement :: (using ctxt: *Script) -> *Node {
-    next_token := peek_token(*lexer); // TODO: probably just get_toke_or_return(), then switch on type.
+parse_statement :: (using script: *Script) -> *Node {
+    token := peek_token(*lexer); // TODO: probably just get_toke_or_return(), then switch on type.
     
-    if next_token.type == {
+    if token.type == {
       case .IDENTIFIER; 
-        if is_reserved_word(next_token.text) {
-            if next_token.text == {
+        if is_reserved_word(token.text) {
+            if token.text == {
               case "if";
                 dbg_print("parsing if\n"); dbg_print_push_indent();
                 get_token(*lexer);
-                if_statement := alloc_node(ctxt, Node_If_Statement);
+                if_statement := alloc_node(script, Node_If_Statement);
                 current_parent_node = if_statement; 
                 
-                if_statement.condition = parse_expression(ctxt, 0);
+                if_statement.condition = parse_expression(script, 0);
                 if if_statement.condition == null  return null;
                 
-                if_statement.statement = parse_statement(ctxt);
+                if_statement.statement = parse_statement(script);
                 if if_statement.statement == null  return null;
                 
                 current_parent_node = if_statement.parent; 
@@ -268,13 +268,13 @@ parse_statement :: (using ctxt: *Script) -> *Node {
               case "while";
                 dbg_print("parsing while\n"); dbg_print_push_indent();
                 get_token(*lexer);
-                while_loop := alloc_node(ctxt, Node_While_Loop);
+                while_loop := alloc_node(script, Node_While_Loop);
                 current_parent_node = while_loop; 
                 
-                while_loop.condition = parse_expression(ctxt, 0);
+                while_loop.condition = parse_expression(script, 0);
                 if while_loop.condition == null  return null;
                 
-                while_loop.statement = parse_statement(ctxt);
+                while_loop.statement = parse_statement(script);
                 if while_loop.statement == null  return null;
                 
                 current_parent_node = while_loop.parent; 
@@ -283,16 +283,16 @@ parse_statement :: (using ctxt: *Script) -> *Node {
               case "for";
                 dbg_print("parsing for\n"); dbg_print_push_indent();
                 get_token(*lexer);
-                for_loop := alloc_node(ctxt, Node_For_Loop);
+                for_loop := alloc_node(script, Node_For_Loop);
                 current_parent_node = for_loop; 
                 
-                expr := parse_expression(ctxt, 0);
+                expr := parse_expression(script, 0);
                 if !expr  return null;
                 
                 if expect_token_type(*lexer, .SPREAD) {
                     for_loop.control_type = .RANGE;
                     for_loop.range.lower  = expr;
-                    for_loop.range.upper  = parse_expression(ctxt, 0);
+                    for_loop.range.upper  = parse_expression(script, 0);
                     if !for_loop.range.upper  return null;
                 } else {
                     for_loop.control_type = .ARRAY;
@@ -300,30 +300,30 @@ parse_statement :: (using ctxt: *Script) -> *Node {
                     if for_loop.array_expression == null  return null;
                 }
                 
-                for_loop.statement = parse_statement(ctxt);
+                for_loop.statement = parse_statement(script);
                 if for_loop.statement == null  return null;
                 
                 current_parent_node = for_loop.parent; 
                 return for_loop;
                 
               case;
-                log("Error: unexpected token '%' at line %, char %", next_token.text, next_token.src_loc.line, next_token.src_loc.char);
+                log("Error: unexpected token '%' at line %, char %", token.text, token.src_loc.line, token.src_loc.char);
             }
         }
         
         
       case .OPEN_BRACE;
         get_token(*lexer);
-        block := alloc_node(ctxt, Node_Block);
+        block := alloc_node(script, Node_Block);
         current_parent_node = block; 
         
-        statement := parse_statement(ctxt);
+        statement := parse_statement(script);
         if !statement  return null;
         block.statements = statement;
         
         previous := statement;
         while !expect_token_type(*lexer, .CLOSE_BRACE) {
-            statement = parse_statement(ctxt);
+            statement = parse_statement(script);
             if !statement  return null;
             
             statement.prev = previous;
@@ -335,15 +335,10 @@ parse_statement :: (using ctxt: *Script) -> *Node {
         return block;
     }
     
-    left := parse_expression(ctxt, 0);
+    left := parse_expression(script, 0);
     if left == null  return null;
     
     if expect_token_type(*lexer, .COLON) {
-        if !expect_token_type(*lexer, .ASSIGN_EQUAL) {
-            log("Error: colon must be followed by equals in declaration.");
-            return null;
-        }
-        
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/src_loc to a declaration node 
         if left.node_type != .IDENTIFIER {
@@ -351,24 +346,36 @@ parse_statement :: (using ctxt: *Script) -> *Node {
             return null;
         }
         
-        right := parse_expression(ctxt, 0);
-        if right == null  return null;
+        declaration := alloc_node(script, Node_Declaration);
+        declaration.name = (cast(*Node_Identifier)left).name;
+        // declaration.src_loc = left.src_loc;
+        
+        if peek_token(*lexer).type != .ASSIGN_EQUAL {
+            declaration.type_expression = xx parse_expression(script, 0);
+            if !declaration.type_expression  return null;
+            if declaration.type_expression.node_type != .IDENTIFIER {
+                log("Error: type expression of a declaration must be an identifier.");
+                return null;
+            }
+        }
+        
+        if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+            declaration.init_expression = parse_expression(script, 0);
+            if declaration.init_expression == null  return null;
+        }
         
         if !expect_token_type(*lexer, .SEMICOLON)  return null;
         
-        declaration := alloc_node(ctxt, Node_Declaration);
-        declaration.name            = (cast(*Node_Identifier)left).name;
-        declaration.init_expression = right;
         return declaration;
     }
     
     if expect_token_type(*lexer, .ASSIGN_EQUAL) {
-        right := parse_expression(ctxt, 0);
+        right := parse_expression(script, 0);
         if right == null  return null;
         
         if !expect_token_type(*lexer, .SEMICOLON)  return null;
 
-        assignment := alloc_node(ctxt, Node_Assignment);
+        assignment := alloc_node(script, Node_Assignment);
         assignment.left  = left;
         assignment.right = right;
         return assignment;
@@ -444,7 +451,7 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
     .{ "/", 6 },
 ];
 
-parse_leaf :: (using ctxt: *Script) -> *Node {
+parse_leaf :: (using script: *Script) -> *Node {
     dbg_print("parse_leaf()\n");
     dbg_print_push_indent();
     
@@ -452,17 +459,17 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
     if token.type == {
       case .DOT;
         if expect_token_type(*lexer, .OPEN_BRACE) {
-            node := alloc_node(ctxt, Node_Literal);
+            node := alloc_node(script, Node_Literal);
             node.literal_type = .STRUCT;
             
             ok: bool;
-            node.aggr.expressions, _, ok = parse_comma_separated_expressions(ctxt, .CLOSE_BRACE);
+            node.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
             if !ok  return null;
             
             return node;
         }
         // if expect_token_type(*lexer, .OPEN_BRACKET) {
-        //     node := alloc_node(ctxt, Node_Literal);
+        //     node := alloc_node(script, Node_Literal);
         //     node.literal_type = .ARRAY;
             
         //     ok: bool;
@@ -479,7 +486,7 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
       case .OPEN_PAREN;
         open_paren_location := token.src_loc;
         
-        node := parse_expression(ctxt, 0);
+        node := parse_expression(script, 0);
         if node == null  return null;
         
         token = get_token_or_return(*lexer, null);
@@ -491,25 +498,25 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
         
         
       case .NUMBER;
-        node := alloc_node(ctxt, Node_Literal);
+        node := alloc_node(script, Node_Literal);
         node.literal_type = .NUMBER;
         node.number = token.number;
         return node;
         
         
       case .STRING;
-        node := alloc_node(ctxt, Node_Literal);
+        node := alloc_node(script, Node_Literal);
         node.literal_type = .STRING;
         node.text = token.text;
         return node;
         
     
       case .DIRECTIVE;
-        node := alloc_node(ctxt, Node_Directive);
+        node := alloc_node(script, Node_Directive);
         node.name = token.text;
         
         node.directive_index = -1;
-        for ctxt.directives {
+        for script.directives {
             if it.name == node.name {
                 node.directive_index = it_index;
             }
@@ -522,10 +529,10 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
         }
         
         ok: bool;
-        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
         if !ok  return null;
         
-        if !execute_directive(ctxt, node) {
+        if !execute_directive(script, node) {
             log("Error: failed while trying to execute a directive.");
             return null;
         }
@@ -538,9 +545,7 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
             log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.src_loc.line, token.src_loc.char);
             return null;
         }
-        node := alloc_node(ctxt, Node_Identifier);
-        node.name = token.text;
-        return node;
+        return make_identifier(script, token.text);
         
         
       case;
@@ -572,7 +577,7 @@ parse_leaf :: (using ctxt: *Script) -> *Node {
     
 */
 
-parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
+parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     dbg_print("parse_expression(min_prec = %)\n", min_prec); 
     dbg_print_push_indent();
     
@@ -580,23 +585,23 @@ parse_expression :: (using ctxt: *Script, min_prec: int) -> *Node {
     //       this is a really bad way to handle unary minus... 
     do_unary_minus := expect_token_type(*lexer, .SUB);
     
-    left := parse_leaf(ctxt);
+    left := parse_leaf(script);
     if left == null  return null;
     
     // makes a binary op of -1 * node
     if do_unary_minus {
-        neg := alloc_node(ctxt, Node_Literal);
+        neg := alloc_node(script, Node_Literal);
         neg.literal_type = .NUMBER;
         neg.number = -1;
-        left = create_binary_operation(ctxt, "*", neg, left);
+        left = make_binary_operation(script, "*", neg, left);
     }
     
-    // dbg_print("parsed a leaf: %\n", sprint_ast_node(ctxt, left));
+    // dbg_print("parsed a leaf: %\n", sprint_ast_node(script, left));
     
     // going iteratively, precedence can only decrease
     while true {
         // but going only recursively, precedence will only increase
-        node := parse_increasing_precedence(ctxt, left, min_prec);
+        node := parse_increasing_precedence(script, left, min_prec);
         if node == null  return null;
         if node == left  break;
         left = node;
@@ -636,24 +641,24 @@ parse_comma_separated_expressions :: (using script: *Script, expected_end_token:
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int) -> *Node {
+parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     dbg_print_push_indent();
     
-    next_token := peek_token(*lexer);
-    // dbg_print("next_token: %\n", sprint_token(next_token));
+    token := peek_token(*lexer);
+    // dbg_print("token: %\n", sprint_token(token));
     
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
-    if next_token.type == {
+    if token.type == {
       case .OPEN_PAREN;
         get_token(*lexer);
         
-        node := alloc_node(ctxt, Node_Procedure_Call);
+        node := alloc_node(script, Node_Procedure_Call);
         node.procedure_expression = left;
         
         ok: bool;
-        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(ctxt, .CLOSE_PAREN);
+        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
         if !ok  return null;
         
         return node;
@@ -661,69 +666,108 @@ parse_increasing_precedence :: (using ctxt: *Script, left: *Node, min_prec: int)
         
       case .DOT;
         get_token(*lexer);
-        dbg_print("parsing struct member access\n");
+        dbg_print("parsing dot dereference\n");
         
-        identifier := get_token(*lexer);
-        if identifier.type != .IDENTIFIER {
-            dbg_print("ERROR: expected identifier, got %\n", identifier);
-            return null;
+        // next token must either be an identifier or an open brace, no other options
+        node := alloc_node(script, Node_Dot);
+        
+        token := get_token(*lexer);
+        if token.type == {
+          case .IDENTIFIER;
+            node.dot_type = .STRUCT_MEMBER;
+            node.left     = left;
+            node.right    = make_identifier(script, token.text);
+            return node;
+            
+          case .OPEN_BRACE;
+            node.dot_type = .LITERAL;
+            node.left     = left;
+            
+            struct_literal: *Node_Literal;
+            {
+                struct_literal := alloc_node(script, Node_Literal);
+                struct_literal.literal_type = .STRUCT;
+                ok: bool;
+                struct_literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
+                if !ok  return null;
+            }
+            node.right = struct_literal;
+            return node;
+            
+          // case .OPEN_BRACKET;
+          //   node.dot_type = .LITERAL;
+          //   node.left     = left;
+            
+          //   array_literal: *Node_Literal;
+          //   {
+          //       array_literal := alloc_node(script, Node_Literal);
+          //       array_literal.literal_type = .ARRAY;
+          //       ok: bool;
+          //       array_literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACKET);
+          //       if !ok  return null;
+          //   }
+          //   node.right = array_literal;
+          //   return node;
         }
         
-        node := alloc_node(ctxt, Node_Member);
-        node.base_expression = left;
-        node.identifier      = identifier.text;
-        return node;
-        
+        log("Error: undexpected token '%' after dot at (%:%)", token.type, token.src_loc.line, token.src_loc.char);
+        return null;
         
       case .OPEN_BRACKET;
         get_token(*lexer);
         dbg_print("parsing array subscript\n");
         
-        indexing_expr := parse_expression(ctxt, 0);
+        indexing_expr := parse_expression(script, 0);
         if indexing_expr == null  return null;
         
         if !expect_token_type(*lexer, .CLOSE_BRACKET)  return null;
         
-        node := alloc_node(ctxt, Node_Subscript);
+        node := alloc_node(script, Node_Subscript);
         node.base_expression     = left;
         node.indexing_expression = indexing_expr;
         return node;
     }
     
-    if token_is_binary_operator(next_token) {
-        next_token_prec := get_operator_precedence(next_token.text);
-        if next_token_prec <= min_prec {
+    if token_is_binary_operator(token) {
+        token_prec := get_operator_precedence(token.text);
+        if token_prec <= min_prec {
             // dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
-            //     sprint_token(next_token), 
-            //     next_token_prec,
+            //     sprint_token(token), 
+            //     token_prec,
             //     min_prec,
-            //     sprint_ast_node(ctxt, left), 
+            //     sprint_ast_node(script, left), 
             // );
             return left;
         }
         
         get_token(*lexer);
         
-        right := parse_expression(ctxt, next_token_prec);
+        right := parse_expression(script, token_prec);
         if right == null  return null;
         
-        dbg_print("return create_binary_operation\n");
-        return create_binary_operation(ctxt, next_token.text, left, right);
+        dbg_print("return make_binary_operation\n");
+        return make_binary_operation(script, token.text, left, right);
     }
     
     dbg_print("return left\n");
     return left;
 }
 
+// TODO: add source location parameter. we should actually do this for all nodes
+make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
+    node := alloc_node(script, Node_Identifier);
+    node.name = name;
+    return node;
+}
 
-create_binary_operation :: (using ctxt: *Script, operator_ident: string, left: *Node, right: *Node) -> *Node {
+make_binary_operation :: (script: *Script, operator_ident: string, left: *Node, right: *Node) -> *Node {
     // dbg_print(
     //     "creating binary operation % % %\n", 
-    //     sprint_ast_node(ctxt, left), 
+    //     sprint_ast_node(script, left), 
     //     operator_ident, 
-    //     sprint_ast_node(ctxt, right)
+    //     sprint_ast_node(script, right)
     // );
-    node := alloc_node(ctxt, Node_Operation);
+    node := alloc_node(script, Node_Operation);
     node.name  = operator_ident;
     node.left  = left;
     node.right = right;

@@ -20,6 +20,9 @@ main :: () {
     register_procedure(*script, "print", (value: string) -> string { print("%\n", value); return value; });
     register_procedure(*script, "f32", (value: int) -> float { return xx value; });
     
+    register_type(*script, "float", type_info(float));
+    register_type(*script, "int", type_info(int));
+    
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;
     

@@ -16,7 +16,7 @@ Node_Type :: enum {
     IDENTIFIER;
     OPERATION;
     PROCEDURE_CALL;
-    MEMBER;
+    DOT;
     SUBSCRIPT;
     
     // statements
@@ -51,13 +51,15 @@ Node_Block :: struct {
 }
 
 Node_Identifier :: struct {
-    using #as node_base: Node;
-    name: string;
-    resolved_type: enum { UNRESOLVED; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
-        union {
-        variable_index:   int; // external variable
-        procedure_index:  int; // external procedure
-        declaration:      *Node_Declaration;
+    using #as node_base:    Node;
+    name:                   string;
+    resolved_type:          enum { UNRESOLVED; TYPE; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    union {
+        variable_index:     int; // external variable
+        procedure_index:    int; // external procedure
+        declaration:        *Node_Declaration;
+        member_type:        *Type_Info_Struct_Member;
+        type_info_pointer:  *Type_Info;
     }
 }
 
@@ -85,9 +87,14 @@ Node_Directive :: struct {
     arguments_count:     int;
 }
 
+// NOTE: may need something like the Many_Any for doing arrays in the future
+//       this is because we can't construct a type info for an array literal
+//       bue to this and other reasons, we probably need our own internal version of a type_info
+//       theoretically we could just construct type_infos for the array literals dynamically, but not sure if that's a great idea
+//       also we could do some kind of modified Any which also captures the semantics we need around additional indirections to value_pointers
 Node_Literal :: struct {
     using #as node_base: Node;
-    literal_type: enum { INVALID; STRING; NUMBER; STRUCT; ARRAY; };
+    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
     using value_union: union {
         number:  float;
         text:    string;
@@ -112,11 +119,15 @@ Node_Operation :: struct {
     // TODO: just point to procedure for overloaded operators?
 }
 
-Node_Member :: struct {
-    using #as node_base: Node;
-    base_expression:     *Node;
-    identifier:          string;
-    offset:              int;
+
+// can be either a struct member access or a struct / array literal with explicit type
+Node_Dot :: struct {
+    using #as node_base:  Node;
+    dot_type:             enum { UNRESOLVED; STRUCT_MEMBER; LITERAL; };
+    left, right:          *Node;
+    union {
+        member_offset: int;
+    }
 }
 
 Node_Subscript :: struct {
@@ -186,15 +197,13 @@ alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, l
     
     // have to allocate the proper amount of space for the node
     if #complete node_type == {
-      // case .NUMBER;          node = New(Node_Number,,         ctxt.allocator);
-      // case .STRING;          node = New(Node_String,,         ctxt.allocator);
       case .LITERAL;         node = New(Node_Literal,,        ctxt.allocator);
       case .IDENTIFIER;      node = New(Node_Identifier,,     ctxt.allocator);
       case .DECLARATION;     node = New(Node_Declaration,,    ctxt.allocator);
       case .OPERATION;       node = New(Node_Operation,,      ctxt.allocator);
       case .PROCEDURE_CALL;  node = New(Node_Procedure_Call,, ctxt.allocator);
       case .DIRECTIVE;       node = New(Node_Directive,,      ctxt.allocator);
-      case .MEMBER;          node = New(Node_Member,,         ctxt.allocator);
+      case .DOT;             node = New(Node_Dot,,            ctxt.allocator);
       case .SUBSCRIPT;       node = New(Node_Subscript,,      ctxt.allocator);
       case .BLOCK;           node = New(Node_Block,,          ctxt.allocator);
       case .ASSIGNMENT;      node = New(Node_Assignment,,     ctxt.allocator);
@@ -232,7 +241,7 @@ enum_to_type :: (node_type: Node_Type) -> Type {
       case .OPERATION;       return Node_Operation;
       case .PROCEDURE_CALL;  return Node_Procedure_Call;
       case .DIRECTIVE;       return Node_Directive;
-      case .MEMBER;          return Node_Member;
+      case .DOT;             return Node_Dot;   
       case .SUBSCRIPT;       return Node_Subscript;
       case .BLOCK;           return Node_Block;
       case .DECLARATION;     return Node_Declaration;
@@ -253,7 +262,7 @@ type_to_enum :: (type: Type) -> Node_Type {
       case Node_Operation;       return .OPERATION;
       case Node_Procedure_Call;  return .PROCEDURE_CALL;
       case Node_Directive;       return .DIRECTIVE;
-      case Node_Member;          return .MEMBER;
+      case Node_Dot;             return .DOT;   
       case Node_Subscript;       return .SUBSCRIPT;
       case Node_Block;           return .BLOCK;
       case Node_Declaration;     return .DECLARATION;

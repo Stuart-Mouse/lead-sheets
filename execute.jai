@@ -214,19 +214,22 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .MEMBER;
-        member := cast(*Node_Member) node;
-        
-        if !execute_node(script, member.base_expression)  return false;  
-        base_any   := stack_pop_any(script, member.base_expression.value_type, true);
-        member_any := Any.{ member.value_type, base_any.value_pointer + member.offset };
-        
-        dbg_print("base value ptr: %\n", base_any.value_pointer);
-        dbg_print("member value ptr: %\n", member_any.value_pointer);
-        
-        if !stack_push_any(script, member_any, (member.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
-        return true;
-        
+      case .DOT;
+        dot := cast(*Node_Dot) node;
+        if dot.dot_type == {
+          case .STRUCT_MEMBER;
+            if !execute_node(script, dot.left)  return false;  
+            struct_any := stack_pop_any(script, dot.left.value_type, true);
+            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+            
+            dbg_print("struct value ptr: %\n", struct_any.value_pointer);
+            dbg_print("member value ptr: %\n", member_any.value_pointer);
+            
+            if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            return true;
+          
+        }
+        return false;
         
       case .SUBSCRIPT;
         subscript := cast(*Node_Subscript) node;
@@ -267,22 +270,26 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         // }
         
         // TODO: we need to check that the identifier does not refer to a previously declared variable
+        if declaration.init_expression {
+            if !execute_node(script, declaration.init_expression) {
+                dbg_print("failed to evaluate init expression of declaration statement!\n");
+                return false;
+            }
         
-        if !execute_node(script, declaration.init_expression) {
-            dbg_print("failed to evaluate init expression of declaration statement!\n");
-            return false;
+            r_value := stack_pop_any(script, declaration.init_expression.value_type);
+            l_value := Any.{ declaration.value_type, declaration.value_pointer };
+            
+            dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
+            dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
+            
+            dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
+            dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
+            
+            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
+        } else {
+            l_value := Any.{ declaration.value_type, declaration.value_pointer };
+            memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
-        
-        r_value := stack_pop_any(script, declaration.init_expression.value_type);
-        l_value := Any.{ declaration.value_type, declaration.value_pointer };
-        
-        dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
-        dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
-        
-        dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
-        dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
-        
-        memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         return true;
         
         
