@@ -22,6 +22,7 @@ main :: () {
     
     register_type(*script, "float", type_info(float));
     register_type(*script, "int", type_info(int));
+    register_type(*script, "Vector2", type_info(Vector2));
     
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;
@@ -30,8 +31,6 @@ main :: () {
         print("data %\n", data);
         array := cast(*[..] Named_Value) data;
         new := array_add(array);
-        // new := array_add(*named_values);
-        // print("name: \n", name);
         new.name = name;
         set_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
         

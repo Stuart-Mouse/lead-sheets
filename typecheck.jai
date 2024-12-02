@@ -297,6 +297,29 @@ typecheck_node :: (
             if check_flags & .EXPECT_LVALUE {
                 dot.flags |= .IS_LVALUE;
             }
+            
+          case .TYPE;
+            if check_flags & .EXPECT_LVALUE  return null;
+            
+            assert(dot.left.node_type == .IDENTIFIER);
+            type_identifier := cast(*Node_Identifier) dot.left;
+            assert(type_identifier.resolved_type == .TYPE);
+            literal_type := type_identifier.type_info_pointer;
+            
+            dot.dot_type = .LITERAL;
+            literal := cast(*Node_Literal) dot.right;
+            if !literal  log("Error: literal was null!");
+            if literal.node_type != .LITERAL {
+                log("Error: RHS of dot literal is not a literal.");
+                return null;
+            }
+            
+            if typecheck_node(script, literal, hint_type = literal_type) != literal_type {
+                log("Error: type of RHS of dot literal did not match type of LHS.");
+                return null;
+            }
+            
+            dot.value_type = literal_type;
         }
         return dot.value_type;
         
@@ -425,7 +448,7 @@ typecheck_node :: (
         for_loop.it_index_decl = .{
             name       = "it_index",
             value_type = type_info(int),
-        };
+        };        
         
         if #complete for_loop.control_type == {
           case .RANGE;
@@ -442,6 +465,7 @@ typecheck_node :: (
                 return null;
             }
             
+            // TODO: may not allow float here?
             if !lower_type || (lower_type.type != .INTEGER && lower_type.type != .FLOAT)  return null; 
             for_loop.it_decl = .{        
                 name       = "it",
@@ -450,6 +474,8 @@ typecheck_node :: (
             
           case .ARRAY;
             ti_array := cast(*Type_Info_Array) typecheck_node(script, for_loop.array_expression, check_flags = .EXPECT_LVALUE);
+            // TODO: special case for something like a Many_Any / Any_Array_View
+            // better option than creating new array view type info's dynamically
             if !ti_array && ti_array.type != .ARRAY  return null;
             for_loop.it_decl = .{
                 name       = "it",
@@ -457,7 +483,6 @@ typecheck_node :: (
             };
         }
         
-        // TODO: may not allow float here?
         
         if !typecheck_node(script, for_loop.statement)  return null;
         

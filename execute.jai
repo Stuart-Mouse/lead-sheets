@@ -227,6 +227,9 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             
             if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
             return true;
+            
+          case .LITERAL;
+            return execute_node(script, dot.right);
           
         }
         return false;

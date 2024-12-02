@@ -61,6 +61,8 @@ STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
+    array_free(directives);
+    array_free(type_table);
     fini(*pool);
     if script.dyncall_vm  dcFree(script.dyncall_vm);
     
@@ -685,7 +687,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             
             struct_literal: *Node_Literal;
             {
-                struct_literal := alloc_node(script, Node_Literal);
+                struct_literal = alloc_node(script, Node_Literal);
                 struct_literal.literal_type = .STRUCT;
                 ok: bool;
                 struct_literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
