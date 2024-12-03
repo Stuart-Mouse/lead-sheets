@@ -18,6 +18,7 @@ typecheck_node :: (
     node:           *Node, 
     check_flags:    Typechecking_Flags = .NONE, 
     hint_type:      *Type_Info         = null
+    // hint_storage:   *void              = null
 ) -> (
     value_type:     *Type_Info
 ) {
@@ -30,11 +31,11 @@ typecheck_node :: (
     if node.value_type  return node.value_type;
     
     if node.node_type == {
-      case .DIRECTIVE;
+      case Node_Directive;
         return type_info(void);
         
         
-      case .LITERAL;
+      case Node_Literal;
         if check_flags & .EXPECT_LVALUE {
             log("Error: a literal cannot be used as an lvalue.");
             return null;
@@ -64,14 +65,6 @@ typecheck_node :: (
                 return null;
             }
             
-            literal.value_type = ti_struct;
-            literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
-            dbg_print("allocated space for literal of type %, node %\n", literal.value_type, literal);
-            
-            // TODO: we could reduce space required for storing intermediate values
-            //       if we pass a value_pointer alongside hint_type in typechecking
-            //       that way if hint type is accepted, then it can also use value_pointer 
-            //       for its backing value instead of allocating its own space for value
             for literal.aggr.expressions {
                 if it_index >= ti_struct.members.count {
                     log("Error: too many values provided in struct literal.");
@@ -85,6 +78,13 @@ typecheck_node :: (
                 }
             }
             
+            // TODO: we could reduce space required for storing intermediate values
+            //       if we pass a value_pointer alongside hint_type in typechecking
+            //       that way if hint type is accepted, then it can also use value_pointer 
+            //       for its backing value instead of allocating its own space for value
+            literal.value_type = ti_struct;
+            literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
+            dbg_print("allocated space for literal of type %, node %\n", literal.value_type, literal);
             
           case .ARRAY;
             log("Error: array literals not yet implemented.");
@@ -92,7 +92,7 @@ typecheck_node :: (
         return literal.value_type;
         
         
-      case .IDENTIFIER;
+      case Node_Identifier;
         identifier := cast(*Node_Identifier) node;
         
         // try to resolve to internal declaration
@@ -100,7 +100,7 @@ typecheck_node :: (
             parent_block := identifier.parent;
             while parent_block {
                 if parent_block.node_type == {
-                  case .BLOCK;
+                  case Node_Block;
                     declaration := find_declaration_in_block(xx parent_block, identifier.name);
                     if declaration {
                         if cast(*void)declaration > cast(*void)identifier {
@@ -116,7 +116,7 @@ typecheck_node :: (
                         return identifier.value_type;
                     }
                     
-                  case .FOR_LOOP;
+                  case Node_For_Loop;
                     dbg_print("checking for iterator with identifier '%'\n", identifier.name);
                     declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
                     if declaration {
@@ -164,7 +164,7 @@ typecheck_node :: (
         return null;
         
         
-      case .OPERATION;
+      case Node_Operation;
         if check_flags & .EXPECT_LVALUE  return null;
         operation := cast(*Node_Operation) node;
         
@@ -204,7 +204,7 @@ typecheck_node :: (
         return operation.value_type;
         
         
-      case .PROCEDURE_CALL;
+      case Node_Procedure_Call;
         if check_flags & .EXPECT_LVALUE  return null;
         procedure_call := cast(*Node_Procedure_Call) node;
         
@@ -213,7 +213,7 @@ typecheck_node :: (
         
         ti_proc := cast(*Type_Info_Procedure) typecheck_node(script, procedure_call.procedure_expression);
         
-        if procedure_call.procedure_expression.node_type == .IDENTIFIER && ti_proc == null {
+        if procedure_call.procedure_expression.node_type == Node_Identifier && ti_proc == null {
             identifier := cast(*Node_Identifier) procedure_call.procedure_expression;
             assert(identifier.resolved_type == .UNRESOLVED);
             
@@ -277,7 +277,7 @@ typecheck_node :: (
         return node.value_type;
         
         
-      case .DOT;
+      case Node_Dot;
         dot := cast(*Node_Dot) node;
         left_type := typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
         if !left_type  return null;
@@ -285,7 +285,7 @@ typecheck_node :: (
         if left_type.type == {
           case .STRUCT;
             dot.dot_type = .STRUCT_MEMBER;
-            if dot.right.node_type != .IDENTIFIER {
+            if dot.right.node_type != Node_Identifier {
                 log("Error: right side of struct member access expression must be an identifier.");
                 return null;
             }
@@ -307,7 +307,7 @@ typecheck_node :: (
           case .TYPE;
             if check_flags & .EXPECT_LVALUE  return null;
             
-            assert(dot.left.node_type == .IDENTIFIER);
+            assert(dot.left.node_type == Node_Identifier);
             type_identifier := cast(*Node_Identifier) dot.left;
             assert(type_identifier.resolved_type == .TYPE);
             literal_type := type_identifier.type_info_pointer;
@@ -315,7 +315,7 @@ typecheck_node :: (
             dot.dot_type = .LITERAL;
             literal := cast(*Node_Literal) dot.right;
             if !literal  log("Error: literal was null!");
-            if literal.node_type != .LITERAL {
+            if literal.node_type != Node_Literal {
                 log("Error: RHS of dot literal is not a literal.");
                 return null;
             }
@@ -330,7 +330,7 @@ typecheck_node :: (
         return dot.value_type;
         
         
-      case .SUBSCRIPT;
+      case Node_Subscript;
         subscript := cast(*Node_Subscript) node;
         base_type :=  cast(*Type_Info_Array) typecheck_node(script, subscript.base_expression, check_flags & .EXPECT_LVALUE);
         if base_type.type != .ARRAY {
@@ -351,7 +351,7 @@ typecheck_node :: (
         return subscript.value_type;
         
         
-      case .DECLARATION;
+      case Node_Declaration;
         // declaration node cannot be an lvalue itself, but may be ok to use as a left value
         // instead of marking this node with .IS_LVALUE, which would affect all instances where this declaration is used,
         //      we will instead mark the individual identifier nodes which refer to a declaration
@@ -365,7 +365,7 @@ typecheck_node :: (
         
         explicit_type: *Type_Info;
         if declaration.type_expression {
-            assert(declaration.type_expression.node_type == .IDENTIFIER);
+            assert(declaration.type_expression.node_type == Node_Identifier);
             type_identifier := declaration.type_expression;
             type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
             if !type_type || type_type.type != .TYPE || type_identifier.resolved_type != .TYPE {
@@ -390,7 +390,7 @@ typecheck_node :: (
         return declaration.value_type;
         
         
-      case .ASSIGNMENT;
+      case Node_Assignment;
         if check_flags & .EXPECT_LVALUE  return null;
         assignment := cast(*Node_Assignment) node;
         
@@ -412,7 +412,7 @@ typecheck_node :: (
         return assignment.value_type;
         
         
-      case .BLOCK;
+      case Node_Block;
         if check_flags & .EXPECT_LVALUE  return null;
         block := cast(*Node_Block) node;
         
@@ -424,7 +424,7 @@ typecheck_node :: (
         return block.value_type;
         
         
-      case .IF_STATEMENT;
+      case Node_If_Statement;
         if check_flags & .EXPECT_LVALUE  return null;
         if_statement := cast(*Node_If_Statement) node;
         
@@ -435,7 +435,7 @@ typecheck_node :: (
         return if_statement.value_type;
         
         
-      case .WHILE_LOOP;
+      case Node_While_Loop;
         if check_flags & .EXPECT_LVALUE  return null;
         while_loop := cast(*Node_While_Loop) node;
         
@@ -446,7 +446,7 @@ typecheck_node :: (
         return while_loop.value_type;
         
         
-      case .FOR_LOOP;
+      case Node_For_Loop;
         if check_flags & .EXPECT_LVALUE  return null;
         for_loop := cast(*Node_For_Loop) node;
         
@@ -500,8 +500,8 @@ typecheck_node :: (
 }
 
 typecheck_script :: (script: *Script) -> bool {
-    if !script.ast_root                 return false;
-    if script.ast_root.node_type != .BLOCK  return false;
+    if script.ast_root == null                  return false;
+    if script.ast_root.node_type != Node_Block  return false;
     
     for *script.ast_root.statements {
         // TODO: probably check specifically that type returned here is void, since statements should not have a value_type.
@@ -539,7 +539,7 @@ resolve_variable :: (using script: *Script, ident: string) -> int {
 
 find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
-        if it.node_type == .DECLARATION {
+        if it.node_type == Node_Declaration {
             declaration := cast(*Node_Declaration) it;
             if declaration.name == identifier {
                 return declaration;

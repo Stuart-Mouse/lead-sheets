@@ -1,36 +1,8 @@
 
-// TODO: what if we just use the actual Type value as the tag for node type?
-//       this would allow use to simplify alloc_node to just take the type
-//       and then we do not need to maintain alloc_node as we add new node types
-//       only reason to keep enum around would be to serialize, but I don't think we would never want to serialize the AST instead of just using the source
-
 // TODO: reimplement something like sprint_node 
 
-Node_Type :: enum {
-    INVALID :: 0;
-    
-    // expressions
-    LITERAL;
-    IDENTIFIER;
-    OPERATION;
-    PROCEDURE_CALL;
-    DOT;
-    SUBSCRIPT;
-    
-    // statements
-    DECLARATION;
-    BLOCK;
-    ASSIGNMENT;
-    IF_STATEMENT;
-    WHILE_LOOP;
-    FOR_LOOP;
-    
-    // special
-    DIRECTIVE;
-}
-
 Node :: struct {
-    node_type:              Node_Type;
+    node_type:              Type;
     parent, next:           *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
@@ -193,90 +165,14 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
 }
 
 
-
-// Two allocate_node functions currently. 
-// May possibly remove the first if we get rid of need for Node_Type enum.
-
-alloc_node :: (ctxt: *Script, node_type: Node_Type, parent_node: *Node = null, loc := #caller_location) -> *Node {
-    node: *Node;
-    
-    // have to allocate the proper amount of space for the node
-    if #complete node_type == {
-      case .LITERAL;         node = New(Node_Literal,,        ctxt.allocator);
-      case .IDENTIFIER;      node = New(Node_Identifier,,     ctxt.allocator);
-      case .DECLARATION;     node = New(Node_Declaration,,    ctxt.allocator);
-      case .OPERATION;       node = New(Node_Operation,,      ctxt.allocator);
-      case .PROCEDURE_CALL;  node = New(Node_Procedure_Call,, ctxt.allocator);
-      case .DIRECTIVE;       node = New(Node_Directive,,      ctxt.allocator);
-      case .DOT;             node = New(Node_Dot,,            ctxt.allocator);
-      case .SUBSCRIPT;       node = New(Node_Subscript,,      ctxt.allocator);
-      case .BLOCK;           node = New(Node_Block,,          ctxt.allocator);
-      case .ASSIGNMENT;      node = New(Node_Assignment,,     ctxt.allocator);
-      case .IF_STATEMENT;    node = New(Node_If_Statement,,   ctxt.allocator);
-      case .WHILE_LOOP;      node = New(Node_While_Loop,,     ctxt.allocator);
-      case .FOR_LOOP;        node = New(Node_For_Loop,,       ctxt.allocator);
-      case;
-        assert(false, "Invalid node type!");    
-    }
-    
-    node.type   = node_type;
-    node.parent = ifx parent_node else ctxt.current_parent_node;
-    return node;
-}
-
 alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
 #modify {
     ti := cast(*Type_Info_Struct) T_Node;
     return is_subclass_of(ti, "Node");
 } {
     node := New(T_Node,, ctxt.allocator);
-    node.node_type = #run type_to_enum(T_Node);
+    node.node_type = T_Node;
     node.parent    = ifx parent_node else ctxt.current_parent_node;
     dbg_print("allocated % at %\n", T_Node, loc);
     return node;
-}
-
-
-// Conversion functions to go back and forth between Node_Type and corresponding Type
-
-enum_to_type :: (node_type: Node_Type) -> Type {
-    if #complete node_type == {
-      case .LITERAL;         return Node_Literal;
-      case .IDENTIFIER;      return Node_Identifier;
-      case .OPERATION;       return Node_Operation;
-      case .PROCEDURE_CALL;  return Node_Procedure_Call;
-      case .DIRECTIVE;       return Node_Directive;
-      case .DOT;             return Node_Dot;   
-      case .SUBSCRIPT;       return Node_Subscript;
-      case .BLOCK;           return Node_Block;
-      case .DECLARATION;     return Node_Declaration;
-      case .ASSIGNMENT;      return Node_Assignment;
-      case .IF_STATEMENT;    return Node_If_Statement;
-      case .WHILE_LOOP;      return Node_While_Loop;
-      case .FOR_LOOP;        return Node_For_Loop;
-      case;
-        assert(false, "Invalid node type!");    
-    }
-    return null;
-}
-
-type_to_enum :: (type: Type) -> Node_Type {
-    if type == {
-      case Node_Literal;         return .LITERAL;
-      case Node_Identifier;      return .IDENTIFIER;
-      case Node_Operation;       return .OPERATION;
-      case Node_Procedure_Call;  return .PROCEDURE_CALL;
-      case Node_Directive;       return .DIRECTIVE;
-      case Node_Dot;             return .DOT;   
-      case Node_Subscript;       return .SUBSCRIPT;
-      case Node_Block;           return .BLOCK;
-      case Node_Declaration;     return .DECLARATION;
-      case Node_Assignment;      return .ASSIGNMENT;
-      case Node_If_Statement;    return .IF_STATEMENT;
-      case Node_While_Loop;      return .WHILE_LOOP;
-      case Node_For_Loop;        return .FOR_LOOP;
-      case;
-        assert(false, "Invalid node type!");    
-    }
-    return xx 0;
 }

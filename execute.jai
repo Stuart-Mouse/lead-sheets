@@ -59,11 +59,11 @@ execute_node :: (script: *Script, node: *Node) -> bool {
     }
     
     if node.node_type == {
-      case .DIRECTIVE;
+      case Node_Directive;
         return true; // Directives are run as soon as they are parsed, so just skip this node.
         
         
-      case .LITERAL;
+      case Node_Literal;
         literal := cast(*Node_Literal) node;
         if literal.literal_type == {
           case .STRING;
@@ -96,7 +96,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return false;
         
         
-      case .IDENTIFIER;
+      case Node_Identifier;
         identifier  := cast(*Node_Identifier) node;
         if identifier.resolved_type == {
           case .DECLARATION;
@@ -121,7 +121,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return false;
 
         
-      case .OPERATION;
+      case Node_Operation;
         operation := cast(*Node_Operation) node;
         
         if operation.overload_procedure {
@@ -159,7 +159,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .PROCEDURE_CALL;
+      case Node_Procedure_Call;
         procedure_call := cast(*Node_Procedure_Call) node;
         // TODO: this will have to be refactored later for bytecode (to push result ptr after popping args)
         
@@ -218,7 +218,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .DOT;
+      case Node_Dot;
         dot := cast(*Node_Dot) node;
         if dot.dot_type == {
           case .STRUCT_MEMBER;
@@ -238,7 +238,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         }
         return false;
         
-      case .SUBSCRIPT;
+      case Node_Subscript;
         subscript := cast(*Node_Subscript) node;
         
         if !execute_node(script, subscript.base_expression)  return false;      
@@ -269,7 +269,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
     
-      case .DECLARATION;
+      case Node_Declaration;
         declaration := cast(*Node_Declaration) node;
         // if declaration.declaration_type != .INTERNAL_VARIABLE {
         //     log("Error: cannot execute a declaration node with declaration type of %", declaration.declaration_type);
@@ -300,7 +300,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .ASSIGNMENT;
+      case Node_Assignment;
         assignment := cast(*Node_Assignment) node;
         
         if !execute_node(script, assignment.left) {
@@ -325,7 +325,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .BLOCK;
+      case Node_Block;
         block := cast(*Node_Block) node;
         for block.statements {
             dbg_print("executing statement #%\n", it_index);
@@ -334,7 +334,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .IF_STATEMENT;
+      case Node_If_Statement;
         if_statement := cast(*Node_If_Statement) node;
         if !execute_node(script, if_statement.condition) {
             dbg_print("failed to evaluate left side of assignment statement!\n");
@@ -355,7 +355,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .WHILE_LOOP;
+      case Node_While_Loop;
         while_loop := cast(*Node_While_Loop) node;
         while loop := true {
             if !execute_node(script, while_loop.condition) {
@@ -378,7 +378,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
-      case .FOR_LOOP;
+      case Node_For_Loop;
         for_loop := cast(*Node_For_Loop) node;
         if for_loop.control_type == {
           case .ARRAY;

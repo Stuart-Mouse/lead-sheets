@@ -343,7 +343,7 @@ parse_statement :: (using script: *Script) -> *Node {
     if expect_token_type(*lexer, .COLON) {
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/src_loc to a declaration node 
-        if left.node_type != .IDENTIFIER {
+        if left.node_type != Node_Identifier {
             log("Error: left hand side of a declaration must be an identifier.");
             return null;
         }
@@ -355,7 +355,7 @@ parse_statement :: (using script: *Script) -> *Node {
         if peek_token(*lexer).type != .ASSIGN_EQUAL {
             declaration.type_expression = xx parse_expression(script, 0);
             if !declaration.type_expression  return null;
-            if declaration.type_expression.node_type != .IDENTIFIER {
+            if declaration.type_expression.node_type != Node_Identifier {
                 log("Error: type expression of a declaration must be an identifier.");
                 return null;
             }
@@ -386,11 +386,11 @@ parse_statement :: (using script: *Script) -> *Node {
     // check if expression can be used as a statement
     if expect_token_type(*lexer, .SEMICOLON) {
         if left.node_type == {
-          case .PROCEDURE_CALL;
+          case Node_Procedure_Call;
             left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
             return left;
             
-          case .DIRECTIVE;
+          case Node_Directive;
             return left;
         }
         
