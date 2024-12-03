@@ -6,8 +6,6 @@
 
 // TODO: reimplement something like sprint_node 
 
-// TODO: probably remove prev pointer from node, I don't think we need it after all
-
 Node_Type :: enum {
     INVALID :: 0;
     
@@ -32,10 +30,10 @@ Node_Type :: enum {
 }
 
 Node :: struct {
-    node_type:            Node_Type;
-    parent, prev, next:   *Node;              // used for argument lists or connecting statements in a block
-    flags:                Flags;
-    value_type:           *Type_Info;         // null if not yet typechecked
+    node_type:              Node_Type;
+    parent, next:           *Node;              // used for argument lists or connecting statements in a block
+    flags:                  Flags;
+    value_type:             *Type_Info;         // null if not yet typechecked
     
     Flags :: enum_flags { 
         IS_LVALUE; 
@@ -46,8 +44,8 @@ Node :: struct {
 }
 
 Node_Block :: struct {
-    using #as node_base: Node;
-    statements: *Node; 
+    using #as node_base:    Node;
+    statements:             *Node; 
 }
 
 Node_Identifier :: struct {
@@ -64,11 +62,11 @@ Node_Identifier :: struct {
 }
 
 Node_Declaration :: struct {
-    using #as node_base:  Node;
-    name:                 string;
-    value_pointer:        *void;
-    type_expression:      *Node_Identifier; // must resolve to a type declaration
-    init_expression:      *Node;    
+    using #as node_base:    Node;
+    name:                   string;
+    value_pointer:          *void;
+    type_expression:        *Node_Identifier; // must resolve to a type declaration
+    init_expression:        *Node;    
 }
 
 Node_Procedure_Call :: struct {
@@ -80,11 +78,11 @@ Node_Procedure_Call :: struct {
 }
 
 Node_Directive :: struct {
-    using #as node_base: Node;
-    name:                string;
-    directive_index:     int;
-    arguments:           *Node;
-    arguments_count:     int;
+    using #as node_base:    Node;
+    name:                   string;
+    directive_index:        int;
+    arguments:              *Node;
+    arguments_count:        int;
 }
 
 // NOTE: may need something like the Many_Any for doing arrays in the future
@@ -111,46 +109,45 @@ Node_Literal :: struct {
 }
 
 Node_Operation :: struct {
-    using #as node_base: Node;
-    name:            string;     // TODO: hmmm...
-    operator_index:  int;
-    left, right:     *Node;
-    return_ptr:      *Node;      // only if return type is aggregate
-    // TODO: just point to procedure for overloaded operators?
+    using #as node_base:    Node;
+    name:                   string;     // TODO: hmmm...
+    operator_index:         int;
+    left, right:            *Node;
+    return_ptr:             *Node;      // only if return type is aggregate
+    overload_procedure:     *Node_Procedure_Call;
 }
-
 
 // can be either a struct member access or a struct / array literal with explicit type
 Node_Dot :: struct {
-    using #as node_base:  Node;
-    dot_type:             enum { UNRESOLVED; STRUCT_MEMBER; LITERAL; };
-    left, right:          *Node;
+    using #as node_base:    Node;
+    dot_type:               enum { UNRESOLVED; STRUCT_MEMBER; LITERAL; };
+    left, right:            *Node;
     union {
-        member_offset: int;
+        member_offset:      int;
     }
 }
 
 Node_Subscript :: struct {
-    using #as node_base: Node;
-    base_expression:       *Node;
-    indexing_expression:   *Node;
+    using #as node_base:    Node;
+    base_expression:        *Node;
+    indexing_expression:    *Node;
 }
 
 Node_Assignment :: struct {
     using #as node_base: Node;
-    left, right: *Node; 
+    left, right:            *Node; 
 }
 
 Node_If_Statement :: struct {
-    using #as node_base: Node;
-    condition: *Node;
-    statement: *Node;
+    using #as node_base:    Node;
+    condition:              *Node;
+    statement:              *Node;
 }
 
 Node_While_Loop :: struct {
-    using #as node_base: Node;
-    condition: *Node;
-    statement: *Node;
+    using #as node_base:    Node;
+    condition:              *Node;
+    statement:              *Node;
 }
 
 Node_For_Loop :: struct {

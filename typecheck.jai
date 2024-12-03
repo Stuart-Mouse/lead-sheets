@@ -14,12 +14,12 @@ Typechecking_Flags :: enum_flags {
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
 typecheck_node :: (
-    using script  : *Script, 
-    node        : *Node, 
-    check_flags :  Typechecking_Flags = .NONE, 
-    hint_type   : *Type_Info          = null
+    using script:   *Script, 
+    node:           *Node, 
+    check_flags:    Typechecking_Flags = .NONE, 
+    hint_type:      *Type_Info         = null
 ) -> (
-    value_type  : *Type_Info
+    value_type:     *Type_Info
 ) {
     dbg_print("typechecking node % %\n", node, node.node_type);
     dbg_print("expecting type: %\n", as_type(hint_type));
@@ -398,7 +398,7 @@ typecheck_node :: (
         if !right_type  return null;
         
         if left_type != right_type {
-            dbg_print("types on left and right side of assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
+            log("Error: left and right types in assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
             return null;
         }
         
@@ -461,7 +461,7 @@ typecheck_node :: (
             assert(for_loop.range.upper != null);
             upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
             if lower_type != upper_type { 
-                dbg_print("Error: type mismatch on lower and upper bounds of range.\n");
+                log("Error: type mismatch on lower and upper bounds of range.\n");
                 return null;
             }
             

@@ -22,8 +22,8 @@
 
 
 External_Variable :: struct {
-    name    : string;
-    binding : Any;
+    name:       string;
+    binding:    Any;
 }
 
 Script :: struct {
@@ -44,9 +44,10 @@ Script :: struct {
     
     dyncall_vm:  *DCCallVM;
     
-    // stuff I brought over from Script
+    // stuff I brought over from Script Constructor
+    // this is parser state, basically
     lexer:                Lexer;
-    current_parent_node:  *Node;
+    current_parent_node:  *Node;    // perhaps this should be passed on stack
     
     
     Flags :: enum_flags {
@@ -328,7 +329,6 @@ parse_statement :: (using script: *Script) -> *Node {
             statement = parse_statement(script);
             if !statement  return null;
             
-            statement.prev = previous;
             previous.next  = statement;
             previous       = statement;
         }
@@ -627,7 +627,6 @@ parse_comma_separated_expressions :: (using script: *Script, expected_end_token:
             next := parse_expression(script, 0);
             if next == null  return null, 0, false;
             
-            next.prev = prev;
             prev.next = next;
             prev = next;
             count += 1;
