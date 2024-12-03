@@ -48,6 +48,14 @@ Node_Block :: struct {
     statements:             *Node; 
 }
 
+/*
+    A note about identifiers and declarations:
+    Because identifiers can refer to both internal declarations and external variables and procedures, 
+        it is simpler to put the resolved type on the identifier node itself rather than 
+        creating and maintaining declaration nodes for the external variables and procedures.
+    The external variables in particular add complication because they can be subbed out, 
+        so we need an additional indirection in accessing them from scripts.
+*/
 Node_Identifier :: struct {
     using #as node_base:    Node;
     name:                   string;
@@ -110,7 +118,7 @@ Node_Literal :: struct {
 
 Node_Operation :: struct {
     using #as node_base:    Node;
-    name:                   string;     // TODO: hmmm...
+    name:                   string;
     operator_index:         int;
     left, right:            *Node;
     return_ptr:             *Node;      // only if return type is aggregate

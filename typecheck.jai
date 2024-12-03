@@ -192,11 +192,17 @@ typecheck_node :: (
             return operation.value_type;
         } 
         
-        // TODO: fix operator overloading later. for now it is just disabled so I can get the major refactor on nodes working
+        // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
+        procedure_call := alloc_node(script, Node_Procedure_Call);
+        procedure_call.procedure_expression = make_identifier(script, operation.name);
+        procedure_call.arguments = operation.left;
+        operation.left.next = operation.right;      // link these as we do for procedure arguments
+        procedure_call.arguments_count = 2;
+        operation.overload_procedure = procedure_call;
         
-        log("Error: operator overloading is currently broken!");
-        return null;
-
+        operation.value_type = typecheck_node(script, procedure_call);
+        return operation.value_type;
+        
         
       case .PROCEDURE_CALL;
         if check_flags & .EXPECT_LVALUE  return null;

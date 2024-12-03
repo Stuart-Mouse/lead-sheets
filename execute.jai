@@ -124,6 +124,10 @@ execute_node :: (script: *Script, node: *Node) -> bool {
       case .OPERATION;
         operation := cast(*Node_Operation) node;
         
+        if operation.overload_procedure {
+            return execute_node(script, operation.overload_procedure);
+        }
+        
         if is_aggr(operation.value_type) {
             if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
         } else {
