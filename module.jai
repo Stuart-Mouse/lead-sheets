@@ -250,72 +250,74 @@ parse_statement :: (using script: *Script) -> *Node {
     token := peek_token(*lexer); // TODO: probably just get_toke_or_return(), then switch on type.
     
     if token.type == {
-      case .IDENTIFIER; 
-        if is_reserved_word(token.text) {
-            if token.text == {
-              case "if";
-                dbg_print("parsing if\n"); dbg_print_push_indent();
-                get_token(*lexer);
-                if_statement := alloc_node(script, Node_If_Statement);
-                current_parent_node = if_statement; 
-                
-                if_statement.condition = parse_expression(script, 0);
-                if if_statement.condition == null  return null;
-                
-                if_statement.statement = parse_statement(script);
-                if if_statement.statement == null  return null;
-                
-                current_parent_node = if_statement.parent; 
-                return if_statement;
-                
-              case "while";
-                dbg_print("parsing while\n"); dbg_print_push_indent();
-                get_token(*lexer);
-                while_loop := alloc_node(script, Node_While_Loop);
-                current_parent_node = while_loop; 
-                
-                while_loop.condition = parse_expression(script, 0);
-                if while_loop.condition == null  return null;
-                
-                while_loop.statement = parse_statement(script);
-                if while_loop.statement == null  return null;
-                
-                current_parent_node = while_loop.parent; 
-                return while_loop;
-                
-              case "for";
-                dbg_print("parsing for\n"); dbg_print_push_indent();
-                get_token(*lexer);
-                for_loop := alloc_node(script, Node_For_Loop);
-                current_parent_node = for_loop; 
-                
-                expr := parse_expression(script, 0);
-                if !expr  return null;
-                
-                if expect_token_type(*lexer, .SPREAD) {
-                    for_loop.control_type = .RANGE;
-                    for_loop.range.lower  = expr;
-                    for_loop.range.upper  = parse_expression(script, 0);
-                    if !for_loop.range.upper  return null;
-                } else {
-                    for_loop.control_type = .ARRAY;
-                    for_loop.array_expression = expr;
-                    if for_loop.array_expression == null  return null;
-                }
-                
-                for_loop.statement = parse_statement(script);
-                if for_loop.statement == null  return null;
-                
-                current_parent_node = for_loop.parent; 
-                return for_loop;
-                
-              case;
-                log("Error: unexpected token '%' at line %, char %", token.text, token.src_loc.line, token.src_loc.char);
-            }
+      case .IF; 
+        dbg_print("IF STATEMENT\n"); dbg_print_push_indent();
+        get_token(*lexer);
+        if_statement := alloc_node(script, Node_If_Statement);
+        current_parent_node = if_statement; 
+        
+        dbg_print("CONDITION\n"); dbg_print_push_indent();
+        if_statement.condition = parse_expression(script, 0);
+        if if_statement.condition == null  return null;
+        
+        dbg_print("STATEMENT\n"); dbg_print_push_indent();
+        if_statement.statement = parse_statement(script);
+        if if_statement.statement == null  return null;
+        
+        current_parent_node = if_statement.parent; 
+        return if_statement;
+        
+      case .WHILE;
+        dbg_print("WHILE LOOP\n"); dbg_print_push_indent();
+        get_token(*lexer);
+        while_loop := alloc_node(script, Node_While_Loop);
+        current_parent_node = while_loop; 
+        
+        dbg_print("CONDITION\n");
+        while_loop.condition = parse_expression(script, 0);
+        if while_loop.condition == null  return null;
+        
+        dbg_print("STATEMENT\n");
+        while_loop.statement = parse_statement(script);
+        if while_loop.statement == null  return null;
+        
+        current_parent_node = while_loop.parent; 
+        return while_loop;
+        
+      case .FOR;
+        dbg_print("FOR LOOP\n"); dbg_print_push_indent();
+        get_token(*lexer);
+        for_loop := alloc_node(script, Node_For_Loop);
+        current_parent_node = for_loop; 
+        
+        dbg_print("CONTROL EXPRESSION\n");
+        expr := parse_expression(script, 0);
+        if !expr  return null;
+        
+        // TODO: maybe allow comma separated list of elements to iterate over instead of array literals? 
+        //       may jive better with lack of pointers, since lvalue-ness can be implicit
+        if expect_token_type(*lexer, .SPREAD) {
+            dbg_print("CONTROL TYPE IS RANGE\n");
+            for_loop.control_type = .RANGE;
+            for_loop.range.lower  = expr;
+            for_loop.range.upper  = parse_expression(script, 0);
+            if !for_loop.range.upper  return null;
+        } else {
+            dbg_print("CONTROL TYPE IS ARRAY\n");
+            for_loop.control_type = .ARRAY;
+            for_loop.array_expression = expr;
+            if for_loop.array_expression == null  return null;
         }
         
+        dbg_print("STATEMENT\n");
+        for_loop.statement = parse_statement(script);
+        if for_loop.statement == null  return null;
+        
+        current_parent_node = for_loop.parent; 
+        return for_loop;
         
       case .OPEN_BRACE;
+        dbg_print("BLOCK\n"); dbg_print_push_indent();
         get_token(*lexer);
         block := alloc_node(script, Node_Block);
         current_parent_node = block; 
@@ -337,10 +339,14 @@ parse_statement :: (using script: *Script) -> *Node {
         return block;
     }
     
+    dbg_print("EXPRESSION...\n");
+    
     left := parse_expression(script, 0);
     if left == null  return null;
     
     if expect_token_type(*lexer, .COLON) {
+        dbg_print("DECLARATION\n"); dbg_print_push_indent();
+    
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/src_loc to a declaration node 
         if left.node_type != Node_Identifier {
@@ -353,6 +359,7 @@ parse_statement :: (using script: *Script) -> *Node {
         // declaration.src_loc = left.src_loc;
         
         if peek_token(*lexer).type != .ASSIGN_EQUAL {
+            dbg_print("WITH EXPLICIT TYPE\n");
             declaration.type_expression = xx parse_expression(script, 0);
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
@@ -362,6 +369,7 @@ parse_statement :: (using script: *Script) -> *Node {
         }
         
         if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+            dbg_print("WITH ASSIGNMENT\n");
             declaration.init_expression = parse_expression(script, 0);
             if declaration.init_expression == null  return null;
         }
@@ -372,6 +380,7 @@ parse_statement :: (using script: *Script) -> *Node {
     }
     
     if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+        dbg_print("ASSIGNMENT\n"); dbg_print_push_indent();
         right := parse_expression(script, 0);
         if right == null  return null;
         
@@ -454,12 +463,13 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
 ];
 
 parse_leaf :: (using script: *Script) -> *Node {
-    dbg_print("parse_leaf()\n");
-    dbg_print_push_indent();
+    // dbg_print("parse_leaf()\n");
+    // dbg_print_push_indent();
     
     token := get_token_or_return(*lexer, null);
     if token.type == {
       case .DOT;
+        dbg_print("DOT (UNARY)\n");
         if expect_token_type(*lexer, .OPEN_BRACE) {
             node := alloc_node(script, Node_Literal);
             node.literal_type = .STRUCT;
@@ -470,16 +480,6 @@ parse_leaf :: (using script: *Script) -> *Node {
             
             return node;
         }
-        // if expect_token_type(*lexer, .OPEN_BRACKET) {
-        //     node := alloc_node(script, Node_Literal);
-        //     node.literal_type = .ARRAY;
-            
-        //     ok: bool;
-        //     node.aggr.expressions, node.aggr.expressions_count, ok = parse_comma_separated_expressions(*lexer, .CLOSE_BRACKET);
-        //     if !ok  return null;
-            
-        //     return node;
-        // }
         
         // TODO: identifer -> unary dot enum thing
         log("Error: unexpected DOT token at (%:%)", token.src_loc.line, token.src_loc.char);
@@ -500,6 +500,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .NUMBER;
+        dbg_print("NUMBER (%)\n", token.number);
         node := alloc_node(script, Node_Literal);
         node.literal_type = .NUMBER;
         node.number = token.number;
@@ -507,6 +508,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .STRING;
+        dbg_print("STRING (\"%\")\n", token.text);
         node := alloc_node(script, Node_Literal);
         node.literal_type = .STRING;
         node.text = token.text;
@@ -514,6 +516,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
     
       case .DIRECTIVE;
+        dbg_print("DIRECTIVE\n"); dbg_print_push_indent();
         node := alloc_node(script, Node_Directive);
         node.name = token.text;
         
@@ -543,6 +546,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .IDENTIFIER;
+        dbg_print("IDENTIFIER (%)\n", token.text);
         if is_reserved_word(token.text) {
             log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.src_loc.line, token.src_loc.char);
             return null;
@@ -580,8 +584,8 @@ parse_leaf :: (using script: *Script) -> *Node {
 */
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {
-    dbg_print("parse_expression(min_prec = %)\n", min_prec); 
-    dbg_print_push_indent();
+    // dbg_print("parse_expression(min_prec = %)\n", min_prec); 
+    // dbg_print_push_indent();
     
     // TODO: refactor unary minus to use an actual unary operation
     //       this is a really bad way to handle unary minus... 
@@ -643,8 +647,8 @@ parse_comma_separated_expressions :: (using script: *Script, expected_end_token:
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
-    dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
-    dbg_print_push_indent();
+    // dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
+    // dbg_print_push_indent();
     
     token := peek_token(*lexer);
     // dbg_print("token: %\n", sprint_token(token));
@@ -652,6 +656,13 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
     if token.type == {
+      case .AS;
+        // need to create node for cast
+        // just put LHS and RHS on node, do the rest in typecheck
+        log("Error: not yet implemented.");
+        return null;
+    
+    
       case .OPEN_PAREN;
         get_token(*lexer);
         
@@ -667,7 +678,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         
       case .DOT;
         get_token(*lexer);
-        dbg_print("parsing dot dereference\n");
+        dbg_print("DOT (BINARY)\n");
         
         // next token must either be an identifier or an open brace, no other options
         node := alloc_node(script, Node_Dot);
@@ -694,29 +705,14 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             }
             node.right = struct_literal;
             return node;
-            
-          // case .OPEN_BRACKET;
-          //   node.dot_type = .LITERAL;
-          //   node.left     = left;
-            
-          //   array_literal: *Node_Literal;
-          //   {
-          //       array_literal := alloc_node(script, Node_Literal);
-          //       array_literal.literal_type = .ARRAY;
-          //       ok: bool;
-          //       array_literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACKET);
-          //       if !ok  return null;
-          //   }
-          //   node.right = array_literal;
-          //   return node;
         }
         
-        log("Error: undexpected token '%' after dot at (%:%)", token.type, token.src_loc.line, token.src_loc.char);
+        log("Error: unexpected token '%' after dot at (%:%)", token.type, token.src_loc.line, token.src_loc.char);
         return null;
         
       case .OPEN_BRACKET;
         get_token(*lexer);
-        dbg_print("parsing array subscript\n");
+        dbg_print("ARRAY SUBSCRIPT\n");
         
         indexing_expr := parse_expression(script, 0);
         if indexing_expr == null  return null;
@@ -731,26 +727,17 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     
     if token_is_binary_operator(token) {
         token_prec := get_operator_precedence(token.text);
-        if token_prec <= min_prec {
-            // dbg_print("peeked token %, but it was of lower precedence % than min_prec %. Returning node % to caller.\n",
-            //     sprint_token(token), 
-            //     token_prec,
-            //     min_prec,
-            //     sprint_ast_node(script, left), 
-            // );
-            return left;
-        }
+        if token_prec <= min_prec  return left;
+        dbg_print("BINARY OPERATION (%)\n", token.text);
         
         get_token(*lexer);
         
         right := parse_expression(script, token_prec);
         if right == null  return null;
         
-        dbg_print("return make_binary_operation\n");
         return make_binary_operation(script, token.text, left, right);
     }
     
-    dbg_print("return left\n");
     return left;
 }
 

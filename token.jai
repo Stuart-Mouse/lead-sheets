@@ -20,7 +20,6 @@
     
 */
 
-// TODO: keywords / reserved words should just be their own tokens, probably
 
 Script_Token_Type :: enum {
     EOF           :: 0;
@@ -61,6 +60,11 @@ Script_Token_Type :: enum {
     
     SPREAD;
     DIRECTIVE;
+    
+    IF;
+    WHILE;
+    FOR;
+    AS;
 }
 
 Script_Token :: struct {
@@ -200,7 +204,16 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     // parse an identifier
     {
         ident, was_parsed := try_parse_identifier(lexer);
-        if was_parsed  return ident;
+        if was_parsed {
+            // replace type if identifier is a reserved word
+            if ident.text == {
+              case "if";    ident.type = .IF;
+              case "for";   ident.type = .FOR;
+              case "while"; ident.type = .WHILE;
+              case "as";    ident.type = .AS;
+            }
+            return ident;
+        }
     }
     
     // parse a directive

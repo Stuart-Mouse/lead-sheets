@@ -173,6 +173,6 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
     node := New(T_Node,, ctxt.allocator);
     node.node_type = T_Node;
     node.parent    = ifx parent_node else ctxt.current_parent_node;
-    dbg_print("allocated % at %\n", T_Node, loc);
+    // dbg_print("allocated % at %\n", T_Node, loc);
     return node;
 }
