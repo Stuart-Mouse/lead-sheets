@@ -9,14 +9,14 @@ External_Procedure :: struct {
 register_procedure :: (script: *Script, name: string, procedure: Any) {
     assert(procedure.type.type == .PROCEDURE);
     
-    ti_proc := cast(*Type_Info_Procedure) procedure.type;
+    ti_proc := procedure.type.(*Type_Info_Procedure);
     assert(ti_proc.return_types.count <= 1);
     assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
     
     array_add(*script.procedures, .{
         name = name,
         type = xx procedure.type,
-        ptr  = (cast(**void)procedure.value_pointer).*
+        ptr  = procedure.value_pointer.(**void).*
     });
 }
 
@@ -30,7 +30,7 @@ Directive :: struct {
 register_directive :: (script: *Script, name: string, procedure: Any, data: *void) {
     assert(procedure.type.type == .PROCEDURE);
     
-    ti_proc := cast(*Type_Info_Procedure) procedure.type;
+    ti_proc := procedure.type.(*Type_Info_Procedure);
     assert(ti_proc.return_types.count == 1);
     assert(ti_proc.return_types[0] == type_info(bool));
     
@@ -42,7 +42,7 @@ register_directive :: (script: *Script, name: string, procedure: Any, data: *voi
     array_add(*script.directives, .{
         name = name,
         type = xx procedure.type,
-        ptr  = (cast(**void)procedure.value_pointer).*,
+        ptr  = procedure.value_pointer.(**void).*,
         data = data
     });
 }
@@ -70,7 +70,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
     proc_list := script.procedures;
     for *proc, proc_index: proc_list {
         if proc.name != name  continue proc;
-        ti_proc := cast(*Type_Info_Procedure) proc.type;
+        ti_proc := proc.type.(*Type_Info_Procedure);
         
         // typecheck arguments
         if ti_proc.argument_types.count != argument_types.count {
@@ -127,7 +127,7 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
         print("% failing overload(s):\n\n", failing_overloads.count);
         
         for failing_overloads {
-            ti_proc := cast(*Type_Info_Procedure) it.proc.type;
+            ti_proc := it.proc.type.(*Type_Info_Procedure);
             
             print("%(", name);
             for ti_proc.argument_types {

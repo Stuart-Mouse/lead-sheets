@@ -42,18 +42,17 @@ BUILTIN_OPERATIONS :: (
 ];
 
 resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, right_type: *Type_Info) -> (index: int, swap_args: bool) {
-    // TODO: could be faster if we generate a switch case, but not going to worry about that for now
     for BUILTIN_OPERATIONS {
         if it.operator_ident != operator_ident  continue;
         
-        if cast(*Type_Info) it.left  == left_type 
-        && cast(*Type_Info) it.right == right_type {
+        if it.left .(*Type_Info) == left_type 
+        && it.right.(*Type_Info) == right_type {
             return it_index, false;
         }
         
         if it.is_symmetric 
-        && cast(*Type_Info) it.left  == right_type 
-        && cast(*Type_Info) it.right == left_type {
+        && it.left .(*Type_Info) == right_type 
+        && it.right.(*Type_Info) == left_type {
             return it_index, true;
         }
     }
@@ -67,7 +66,7 @@ execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *vo
         
         FORMAT_STRING :: #string DONE
       case %1;
-        (cast(*%2)ret).* = (cast(*%3)left).* %5 (cast(*%4)right).*;
+        ret.(*%2).* = left.(*%3).* %5 right.(*%4).*;
         return true;
 DONE;
         
@@ -92,7 +91,7 @@ DONE;
 // in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
 execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) {
 
-    dbg_print("stack_ptr: %\n", (cast(**void)stack_ptr).*);
+    dbg_print("stack_ptr: %\n", stack_ptr.(**void).*);
 
     // generate switch case for all builtin operations
     #insert -> string {
@@ -102,9 +101,9 @@ execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) {
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "case %;\n", it_index);
             
-            print_to_builder(*builder, "  right := cast(*%) stack_pop(stack_ptr, %);\n", it.right, is_aggr(it.right));
-            print_to_builder(*builder, "  left  := cast(*%) stack_pop(stack_ptr, %);\n", it.left, is_aggr(it.left));
-            print_to_builder(*builder, "  ret   := cast(*%) stack_get_top(stack_ptr.*, %);\n", it.ret, is_aggr(it.ret));
+            print_to_builder(*builder, "  right := stack_pop(stack_ptr, %).(*%);\n",       is_aggr(it.right), it.right);
+            print_to_builder(*builder, "  left  := stack_pop(stack_ptr, %).(*%);\n",       is_aggr(it.left),  it.left);
+            print_to_builder(*builder, "  ret   := stack_get_top(stack_ptr.*, %).(*%);\n", is_aggr(it.ret),   it.ret);
             
             print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.operator_ident);
             

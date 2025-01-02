@@ -167,8 +167,7 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
 
 alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
 #modify {
-    ti := cast(*Type_Info_Struct) T_Node;
-    return is_subclass_of(ti, "Node");
+    return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
 } {
     node := New(T_Node,, ctxt.allocator);
     node.node_type = T_Node;

@@ -266,7 +266,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
         
         while file[0] != quote_char {
             // TODO: handle escape sequences more properly
-            adv := 1 + cast(int) (file[0] == #char "\\"); 
+            adv := 1 + (file[0] == #char "\\").(int); 
             string_value.count += adv;
             if !advance(lexer, adv)  
                 return make_error_token(src_loc, "Unexpected EOF while parsing string.");

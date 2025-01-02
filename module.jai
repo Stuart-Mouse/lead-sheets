@@ -101,7 +101,7 @@ PTR_SIZE :: size_of(*void);
 stack_pop :: inline (stack_ptr: **void, $$by_ptr := false) -> *void {
     stack_ptr.* -= PTR_SIZE;
     if by_ptr {
-        return (cast(**void)(stack_ptr.*)).*;
+        return stack_ptr.*.(**void).*;
     } else {
         return stack_ptr.*;
     }
@@ -110,7 +110,7 @@ stack_pop :: inline (stack_ptr: **void, $$by_ptr := false) -> *void {
 stack_get_top :: inline (stack_ptr: *void, $$by_ptr := false) -> *void {
     stack_ptr -= PTR_SIZE;
     if by_ptr {
-        return (cast(**void)(stack_ptr)).*;
+        return stack_ptr.(**void).*;
     } else {
         return stack_ptr;
     }
@@ -124,7 +124,7 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
     defer script.stack_ptr += PTR_SIZE;
     
     if is_aggr(any.type) || is_lvalue {
-        (cast(**void)script.stack_ptr).* = any.value_pointer; // store the pointer itself instead of the value
+        script.stack_ptr.(**void).* = any.value_pointer; // store the pointer itself instead of the value
     } else {
         assert(any.type.runtime_size <= PTR_SIZE);
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
@@ -150,7 +150,7 @@ stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) ->
     
     script.stack_ptr -= PTR_SIZE;
     if is_aggr(ti) || is_lvalue {
-        return Any.{ ti, (cast(**void)script.stack_ptr).* }; // additional dereference to get pointer to value
+        return Any.{ ti, script.stack_ptr.(**void).* }; // additional dereference to get pointer to value
     } else {
         assert(ti.runtime_size <= PTR_SIZE);
         return Any.{ ti, script.stack_ptr };
@@ -162,7 +162,7 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
     ptr := script.stack_ptr - PTR_SIZE;
     
     if is_aggr(ti) || is_lvalue {
-        return Any.{ ti, (cast(**void)ptr).* }; // additional dereference to get pointer to value
+        return Any.{ ti, ptr.(**void).* }; // additional dereference to get pointer to value
     } else {
         assert(ti.runtime_size <= PTR_SIZE);
         return Any.{ ti, ptr };
@@ -198,7 +198,7 @@ init_script :: (script: *Script, stack_size := 1024) {
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
     script.stack_ptr  = script.stack_base;
-    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
+    sentinel := (script.stack_base + script.stack_size).(*type_of(STACK_SENTINEL_VALUE));
     sentinel.* = STACK_SENTINEL_VALUE;
     
     // allocate dyncall vm that will be reused
@@ -355,7 +355,7 @@ parse_statement :: (using script: *Script) -> *Node {
         }
         
         declaration := alloc_node(script, Node_Declaration);
-        declaration.name = (cast(*Node_Identifier)left).name;
+        declaration.name = left.(*Node_Identifier).name;
         // declaration.src_loc = left.src_loc;
         
         if peek_token(*lexer).type != .ASSIGN_EQUAL {
@@ -768,7 +768,7 @@ make_binary_operation :: (script: *Script, operator_ident: string, left: *Node, 
 memzero :: (t: *$T) { memset(t, 0, size_of(T)); };
 
 is_numeric_type :: (t: Type) -> bool {
-    ti := cast(*Type_Info)t;
+    ti := t.(*Type_Info);
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
 
@@ -787,7 +787,7 @@ Dynamic_New :: (ti: *Type_Info, initialized := true) -> *void {
     if initialized {
         if ti.type == .STRUCT {
             // Structs can have initializers. If the initializer is null, the struct is to be zeroed.
-            tis := cast(*Type_Info_Struct) ti;
+            tis := ti.(*Type_Info_Struct);
             if tis.initializer  tis.initializer(memory);
             else                memset(memory, 0, size);
         } else {
@@ -807,7 +807,7 @@ Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
 
 
 as_type :: inline (ti: *Type_Info) -> Type {
-    return (cast(*Type)*ti).*;
+    return (*ti).(*Type).*;
 }
 
 
