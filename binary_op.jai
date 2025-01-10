@@ -89,10 +89,10 @@ DONE;
 // but, it does bake the stack pops so that we don't have to lookup the operator types 
 // this is not a big deal for the exec procs, but for the bytecode, it could be a considerable performance loss 
 // in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
-execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) {
-
-    dbg_print("stack_ptr: %\n", stack_ptr.(**void).*);
-
+execute_builtin_operation :: (script: *Script, oper_idx: int) {
+    
+    dbg_print("stack_ptr: %\n", script.stack_ptr);
+    
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;
@@ -101,9 +101,9 @@ execute_builtin_operation :: (oper_idx: int, stack_ptr: **void) {
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "case %;\n", it_index);
             
-            print_to_builder(*builder, "  right := stack_pop(stack_ptr, %).(*%);\n",       is_aggr(it.right), it.right);
-            print_to_builder(*builder, "  left  := stack_pop(stack_ptr, %).(*%);\n",       is_aggr(it.left),  it.left);
-            print_to_builder(*builder, "  ret   := stack_get_top(stack_ptr.*, %).(*%);\n", is_aggr(it.ret),   it.ret);
+            print_to_builder(*builder, "  right := stack_pop (script, %).(*%);\n",  is_aggr(it.right), it.right);
+            print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n",  is_aggr(it.left),  it.left);
+            print_to_builder(*builder, "  ret   := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
             
             print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.operator_ident);
             

@@ -70,46 +70,22 @@ free_script :: (using script: *Script) {
     script.* = .{};
 }
 
-// the by_ptr arguments are primarily to ease code gen for the builtin binary ops
-// but it also allows us to more breifly capture the pattern of checking if the value is a struct 
-// by_ptr should always be true for aggregate (struct/array) types, or really any type larger than a register
-// these have to be macros so that we can modify the stack pointer and get the address of the value pointer itself
-
 PTR_SIZE :: size_of(*void);
 
-// TODO: if we passed *Script instead of just stack pointer, then we could do runtime checks to make sure we don't exhaust stack space allocated
-// TODO: this proceudre also should probably just assert false when value_pointer.* is null
-// stack_push :: (stack_ptr: **void, value_pointer: **void, $$by_ptr := false) -> *void {
-//     ret := value_pointer;
-//     if by_ptr {
-//         memcpy(stack_ptr.*, value_pointer, PTR_SIZE);
-//     } else {
-//         if value_pointer.* != null {
-//             ret = value_pointer.*;
-//             memcpy(stack_ptr.*, value_pointer.*, PTR_SIZE);
-//         } else {
-//             dbg_print("WARNING: value_pointer.* was null!\n");
-//         }
-//     }
-    
-//     stack_ptr.* += PTR_SIZE;
-//     return ret;
-// }
-
-
-// TODO: we should also have some kind of assert that stack pointer is not less that stack base
-stack_pop :: inline (stack_ptr: **void, $$by_ptr := false) -> *void {
-    stack_ptr.* -= PTR_SIZE;
-    if by_ptr {
-        return stack_ptr.*.(**void).*;
+stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
+    script.stack_ptr -= PTR_SIZE;
+    assert(script.stack_ptr >= script.stack_base);
+    if is_lvalue {
+        return script.stack_ptr.(**void).*;
     } else {
-        return stack_ptr.*;
+        return script.stack_ptr;
     }
 }
 
-stack_get_top :: inline (stack_ptr: *void, $$by_ptr := false) -> *void {
-    stack_ptr -= PTR_SIZE;
-    if by_ptr {
+stack_peek :: inline (script: *Script, $$is_lvalue := false) -> *void {
+    stack_ptr := script.stack_ptr - PTR_SIZE;
+    assert(stack_ptr >= script.stack_base);
+    if is_lvalue {
         return stack_ptr.(**void).*;
     } else {
         return stack_ptr;

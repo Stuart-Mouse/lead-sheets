@@ -149,7 +149,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
         // dbg_print("operation: %\n", op);
         
-        execute_builtin_operation(operation.operator_index, *script.stack_ptr);
+        execute_builtin_operation(script, operation.operator_index);
         
         result_any := Any.{ 
             operation.value_type, 
