@@ -10,7 +10,7 @@
 #import "Data_Packer";
 #import "dyncall";
 
-#load "token.jai";
+#load "lexer.jai";
 #load "node.jai";
 #load "typecheck.jai";
 #load "execute.jai";
@@ -334,7 +334,8 @@ parse_statement :: (using script: *Script) -> *Node {
         declaration.name = left.(*Node_Identifier).name;
         // declaration.src_loc = left.src_loc;
         
-        if peek_token(*lexer).type != .ASSIGN_EQUAL {
+        next_token_type := peek_token(*lexer).type;
+        if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
             dbg_print("WITH EXPLICIT TYPE\n");
             declaration.type_expression = xx parse_expression(script, 0);
             if !declaration.type_expression  return null;
@@ -344,10 +345,22 @@ parse_statement :: (using script: *Script) -> *Node {
             }
         }
         
+        do_assignment := false;
+        is_constant_declaration := false;
+        
         if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+            do_assignment = true;
+        }
+        else if expect_token_type(*lexer, .COLON) {
+            do_assignment = true;
+            is_constant_declaration = true;
+        }
+        
+        if do_assignment {
             dbg_print("WITH ASSIGNMENT\n");
             declaration.init_expression = parse_expression(script, 0);
             if declaration.init_expression == null  return null;
+            if is_constant_declaration then declaration.flags |= .IS_CONSTANT;
         }
         
         if !expect_token_type(*lexer, .SEMICOLON)  return null;
@@ -355,7 +368,9 @@ parse_statement :: (using script: *Script) -> *Node {
         return declaration;
     }
     
-    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
+    // TODO: probably better here to just peek the token and then switch on type? why are we using expect_token_type here anymore?
+    
+    if expect_token_type(*lexer, .ASSIGN_EQUAL)  {
         dbg_print("ASSIGNMENT\n"); dbg_print_push_indent();
         right := parse_expression(script, 0);
         if right == null  return null;
@@ -367,6 +382,7 @@ parse_statement :: (using script: *Script) -> *Node {
         assignment.right = right;
         return assignment;
     }
+    
     
     // check if expression can be used as a statement
     if expect_token_type(*lexer, .SEMICOLON) {
@@ -630,11 +646,12 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     // dbg_print("token: %\n", sprint_token(token));
     
     if token.type == .QUESTION_MARK {
+        get_token(*lexer);
         if left.node_type != Node_Literal {
             log("Error: a `?` can only be used directly after a literal.");
             return null;
         }
-        left.(*Node_Literal).literal_flags |= .IS_MALLEABLE;
+        left.(*Node_Literal).flags |= .IS_MALLEABLE;
     }
     
     // should this go here or up in main loop of parse_expression?

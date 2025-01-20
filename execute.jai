@@ -65,7 +65,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .IS_LVALUE then assert(literal.literal_flags & .IS_MALLEABLE == .IS_MALLEABLE);
+        if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE);
         
         if literal.literal_type == {
           case .STRING;

@@ -9,6 +9,8 @@ Node :: struct {
     
     Flags :: enum_flags { 
         IS_LVALUE; 
+        IS_MALLEABLE;
+        IS_CONSTANT;
         UNARY_OP; 
         OVERLOAD_OP; 
         DISCARD_VALUE; 
@@ -73,7 +75,6 @@ Node_Directive :: struct {
 Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
-    literal_flags: Literal_Flags;
     using value_union: union {
         number:  float;
         text:    string;
@@ -87,9 +88,7 @@ Node_Literal :: struct {
         // in theory we could also store small structs here (but that's probably ill-informed...)
         bytes:   [16] u8; 
     }
-    
 }
-Literal_Flags :: enum { IS_MALLEABLE; };
 
 /*
     Not sure where to put this for now, but here's some documentation about a cool feature with literals:

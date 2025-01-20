@@ -38,7 +38,7 @@ typecheck_node :: (
       case Node_Literal;
         literal := node.(*Node_Literal);
         if check_flags & .EXPECT_LVALUE {
-            if !(literal.literal_flags & .IS_MALLEABLE) {
+            if !(literal.flags & .IS_MALLEABLE) {
                 log("Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.");
                 return null;
             }
@@ -115,6 +115,10 @@ typecheck_node :: (
                         identifier.declaration = declaration;
                         identifier.value_type = declaration.value_type;
                         if check_flags & .EXPECT_LVALUE {
+                            if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
+                                log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
+                                return null;                                
+                            }
                             identifier.flags |= .IS_LVALUE;
                         }
                         return identifier.value_type;
@@ -128,6 +132,10 @@ typecheck_node :: (
                         identifier.declaration   = declaration;
                         identifier.value_type    = declaration.value_type;
                         if check_flags & .EXPECT_LVALUE {
+                            if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
+                                log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
+                                return null;                                
+                            }
                             identifier.flags |= .IS_LVALUE;
                         }
                         return identifier.value_type;
@@ -154,6 +162,10 @@ typecheck_node :: (
         // try to resolve identifier as a type here
         {
             for script.type_table {
+                if check_flags & .EXPECT_LVALUE {
+                    log("Error: a type cannot be used as an lvalue.");
+                    return null;
+                }
                 if it.name == identifier.name {
                     identifier.resolved_type = .TYPE;
                     identifier.type_info_pointer = it.type;
@@ -388,6 +400,16 @@ typecheck_node :: (
             }
         }
         
+        // hard-coding this for now, just to get it working, but this is not a good long term thing...
+        // for now, only constant assignment we can have is a single literal
+        // later, we will do some work to pass info back up the syntax tree about whether an expresion can be constant
+        if declaration.flags & .IS_CONSTANT {
+            if declaration.init_expression.node_type != Node_Literal {
+                log("Error: constant declarations can only be made to simple literals at this time.");
+                return null;
+            }
+        }        
+        
         declaration.value_type    = ifx explicit_type else right_type;
         declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
         dbg_print("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
@@ -516,6 +538,21 @@ typecheck_script :: (script: *Script) -> bool {
     return true;
 }
 
+identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {
+    assert(identifier.resolved_type == .DECLARATION);
+    return declaration_is_malleable_literal(identifier.declaration);
+}
+
+declaration_is_malleable_literal :: (declaration: Node_Declaration) -> bool {
+    literal := declaration.init_expression;
+    return literal.node_type == Node_Literal 
+        && (literal.flags & .IS_MALLEABLE);
+}
+
+// TODO: 
+// declaration_can_be_used_as_lvalue :: (declaration: Node_Declaration) {
+    
+// }
 
 is_aggr :: (t: Type) -> bool { return is_aggr(t.(*Type_Info)); }
 
