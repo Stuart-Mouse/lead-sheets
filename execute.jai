@@ -188,7 +188,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         {
             dcReset(script.dyncall_vm);
             jai_call :: true;
-            if !jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
+            if jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
