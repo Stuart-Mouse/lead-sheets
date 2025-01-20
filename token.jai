@@ -34,6 +34,7 @@ Script_Token_Type :: enum {
     OPEN_BRACKET  :: #char "[";
     CLOSE_BRACKET :: #char "]";
     
+    QUESTION_MARK :: #char "?";
     DOT           :: #char ".";
     COMMA         :: #char ",";    
     COLON         :: #char ":";
@@ -48,6 +49,7 @@ Script_Token_Type :: enum {
     MUL           :: #char "*";
     DIV           :: #char "/";
     
+    
     IDENTIFIER    :: 256;
     STRING;
     NUMBER;
@@ -57,6 +59,8 @@ Script_Token_Type :: enum {
     
     LOGICAL_AND;
     LOGICAL_OR;
+    
+    // DOUBLE_QUESTION_MARK;
     
     SPREAD;
     DIRECTIVE;
@@ -197,7 +201,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     }
     
     // single-character tokens
-    if is_any(file[0], "+-*/(),:;=.[]{}<>") {
+    if is_any(file[0], "+-*/(),:;?=.[]{}<>") {
         return make_token(xx file[0], 1);
     }
     

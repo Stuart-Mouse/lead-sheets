@@ -629,6 +629,14 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     token := peek_token(*lexer);
     // dbg_print("token: %\n", sprint_token(token));
     
+    if token.type == .QUESTION_MARK {
+        if left.node_type != Node_Literal {
+            log("Error: a `?` can only be used directly after a literal.");
+            return null;
+        }
+        left.(*Node_Literal).literal_flags |= .IS_MALLEABLE;
+    }
+    
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
     if token.type == {
@@ -637,8 +645,8 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         // just put LHS and RHS on node, do the rest in typecheck
         log("Error: not yet implemented.");
         return null;
-    
-    
+        
+        
       case .OPEN_PAREN;
         get_token(*lexer);
         

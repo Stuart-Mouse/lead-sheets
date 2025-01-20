@@ -36,12 +36,15 @@ typecheck_node :: (
         
         
       case Node_Literal;
+        literal := node.(*Node_Literal);
         if check_flags & .EXPECT_LVALUE {
-            log("Error: a literal cannot be used as an lvalue.");
-            return null;
+            if !(literal.literal_flags & .IS_MALLEABLE) {
+                log("Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.");
+                return null;
+            }
+            literal.flags |= .IS_LVALUE;
         }
         
-        literal := node.(*Node_Literal);
         if literal.literal_type == {
           case .STRING;
             literal.value_type = type_info(string);

@@ -65,19 +65,21 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
+        if literal.flags & .IS_LVALUE then assert(literal.literal_flags & .IS_MALLEABLE == .IS_MALLEABLE);
+        
         if literal.literal_type == {
           case .STRING;
-            if !stack_push_any(script, literal.text, node.flags & .IS_LVALUE != 0)  return false;
+            if !stack_push_any(script, literal.text, literal.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .NUMBER;
             value: u64 = 0; // just empty space.  TODO: get rid of need for this by storing value as resolved type
             remap_data(Any.{ literal.value_type, *value }, literal.number); 
-            if !stack_push_any(script, Any.{ literal.value_type, *value })  return false;
+            if !stack_push_any(script, Any.{ literal.value_type, *value }, literal.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .STRUCT;
-            if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer })  return false;
+            if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .IS_LVALUE != 0)  return false;
             write_ptr := literal.aggr.value_pointer;
             // TODO: if we enhance typechecking to pass value pointer for these values, 
             //       then we don't need to do any pushing or popping from stack here.
@@ -97,7 +99,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
         
       case Node_Identifier;
-        identifier  := node.(*Node_Identifier);
+        identifier := node.(*Node_Identifier);
         if identifier.resolved_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
@@ -115,6 +117,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.procedure_index];
             dbg_print("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
+            assert(identifier.flags & .IS_LVALUE == 0);
             if !stack_push_any(script, procedure.ptr)  return false;
             return true;
         }
