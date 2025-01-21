@@ -90,6 +90,27 @@ Node_Literal :: struct {
     }
 }
 
+get_literal_value_as_any :: (literal: Node_Literal) -> Any {
+    assert(literal.value_type != null);
+    if literal.literal_type == {
+      case .STRING;
+        return Any.{ type_info(string), *literal.text };
+        
+      case .NUMBER;
+        return Any.{ type_info(type_of(literal.number)), *literal.number };
+        
+      case .STRUCT;
+        return Any.{ literal.value_type, literal.aggr.value_pointer };
+        
+      case .ARRAY;
+        log("Error: array literals are not yet implemented in get_value_pointer_and_size().");
+        return Any.{};
+    }
+    
+    assert(false);
+    return Any.{};
+}
+
 /*
     Not sure where to put this for now, but here's some documentation about a cool feature with literals:
     

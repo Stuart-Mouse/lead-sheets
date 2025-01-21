@@ -21,7 +21,7 @@ echo(named_1);
 named_1 = 7;
 vec3 := Vector3.{ 1, 2, 3 } * 7;
 echo(vec3);
-const :: 5?;
+const :: 7?;
 echo(const);
 const = 7;
 echo(const);

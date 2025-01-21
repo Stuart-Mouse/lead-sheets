@@ -285,7 +285,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                 dbg_print("failed to evaluate init expression of declaration statement!\n");
                 return false;
             }
-        
+            
             r_value := stack_pop_any(script, declaration.init_expression.value_type);
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             

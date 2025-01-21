@@ -408,7 +408,7 @@ typecheck_node :: (
                 log("Error: constant declarations can only be made to simple literals at this time.");
                 return null;
             }
-        }        
+        }
         
         declaration.value_type    = ifx explicit_type else right_type;
         declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
@@ -544,9 +544,9 @@ identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {
 }
 
 declaration_is_malleable_literal :: (declaration: Node_Declaration) -> bool {
+    if declaration.init_expression == null  return false;
     literal := declaration.init_expression;
-    return literal.node_type == Node_Literal 
-        && (literal.flags & .IS_MALLEABLE);
+    return literal.node_type == Node_Literal && (literal.flags & .IS_MALLEABLE);
 }
 
 // TODO: 
