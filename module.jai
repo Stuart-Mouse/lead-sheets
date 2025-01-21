@@ -16,6 +16,7 @@
 #load "execute.jai";
 #load "procedure.jai";
 #load "binary_op.jai";
+#load "serialize.jai";
 
 
 #module_parameters (DEBUG := false);
@@ -27,27 +28,27 @@ External_Variable :: struct {
 }
 
 Script :: struct {
-    ast_root:    *Node_Block;
-    flags:       Flags;
+    ast_root:               *Node_Block;
+    flags:                  Flags;
     
-    variables:   [..] External_Variable;
-    procedures:  [..] External_Procedure;
-    directives:  [..] Directive;
-    type_table:  [..] struct { name: string; type: *Type_Info; };
+    variables:              [..] External_Variable;
+    procedures:             [..] External_Procedure;
+    directives:             [..] Directive;
+    type_table:             [..] struct { name: string; type: *Type_Info; };
     
-    pool:        Flat_Pool;
-    allocator:   Allocator;
+    pool:                   Flat_Pool;
+    allocator:              Allocator;
     
-    stack_base:  *void;
-    stack_size:  int;
-    stack_ptr:   *void;
+    stack_base:             *void;
+    stack_size:             int;
+    stack_ptr:              *void;
     
-    dyncall_vm:  *DCCallVM;
+    dyncall_vm:             *DCCallVM;
     
     // stuff I brought over from Script Constructor
     // this is parser state, basically
-    lexer:                Lexer;
-    current_parent_node:  *Node;    // perhaps this should be passed on stack
+    lexer:                  Lexer;
+    current_parent_node:    *Node;    // perhaps this should be passed on stack
     
     
     Flags :: enum_flags {

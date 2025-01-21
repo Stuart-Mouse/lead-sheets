@@ -111,5 +111,13 @@ main :: () {
     } else {
         print("failed!\n");
     }
+    
+    
+    print("\nSERIALIZING SCRIPT\n");
+    builder: String_Builder;
+    print_script(*script, *builder);
+    output := builder_to_string(*builder);
+    write_entire_file("output.ls", output);
+    
 }
 
