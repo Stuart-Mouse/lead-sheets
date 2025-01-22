@@ -171,6 +171,15 @@ print_node :: (
         append(builder, ")");
         return true;
         
+      
+      case Node_Cast;
+        _cast := node.(*Node_Cast);
+        print_node_or_return(script, _cast.left, builder, indent);
+        append(builder, ".(");
+        print_node_or_return(script, _cast.right, builder, indent);
+        append(builder, ")");
+        return true;
+        
         
       case Node_Dot;
         dot := node.(*Node_Dot);

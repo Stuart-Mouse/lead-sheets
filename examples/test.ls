@@ -8,7 +8,7 @@ while echo(r2) > 20 {
     r3 = r3 + r3;
 }
 
-for arr1  if it > 1  it = f32(it_index) * 7;
+for arr1  if it > 1  it = it_index.(float) * 7;
 for arr1  echo(it);
 
 local: float;

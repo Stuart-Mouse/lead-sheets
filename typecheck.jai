@@ -311,6 +311,26 @@ typecheck_node :: (
         return node.value_type;
         
         
+      case Node_Cast;
+        node_cast := node.(*Node_Cast);
+        left_type := typecheck_node(script, node_cast.left);
+        if !left_type  return null;
+        
+        type_identifier := node_cast.right;
+        type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
+        if !type_type || type_type.type != .TYPE || type_identifier.resolved_type != .TYPE {
+            log("Error: Type expression in RHS of cast did not resolve to a Type.");
+            return null;
+        }
+        right_type := type_identifier.type_info_pointer;
+        
+        // TODO: check if we can actually perform the cast here
+        //       for now, we won't precheck this since we will just use remap_data
+        
+        node.value_type = type_identifier.type_info_pointer;
+        return node.value_type;
+        
+        
       case Node_Dot;
         dot := node.(*Node_Dot);
         left_type := typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);

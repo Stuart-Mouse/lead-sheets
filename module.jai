@@ -711,9 +711,38 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         
       case .DOT;
         get_token(*lexer);
+        
+        // check if this is a cast
+        if peek_token(*lexer).type == .OPEN_PAREN {
+            get_token(*lexer);
+            dbg_print("CAST\n");
+            
+            // TODO: in the future maybe we can have more complex type expressions, but that's not really a priority.
+            token_identifier := get_token(*lexer);
+            if token_identifier.type == .IDENTIFIER {
+                // verify that identifier is followed by closing paren
+                token_close_paren := get_token(*lexer);
+                if token_close_paren.type != .CLOSE_PAREN {
+                    log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.src_loc.line, token_close_paren.src_loc.char);
+                    return null;
+                }
+                
+                node_cast := alloc_node(script, Node_Cast);
+                node_cast.left  = left;
+                node_cast.right = make_identifier(script, token_identifier.text);
+                return node_cast;
+            }
+            
+            log("Error: unexpected token '%' in cast type expression at (%:%). Expected a type identifier.", token_identifier.type, token_identifier.src_loc.line, token_identifier.src_loc.char);
+            return null;
+        }
+        
         dbg_print("DOT (BINARY)\n");
         
         // next token must either be an identifier or an open brace, no other options
+        // TODO: we should probably change the open brace case so that it does not create a Dot node, 
+        //       rather just taking left, making sure it's an identifier, and then creating a Node_Literal
+        //       we can move that up into a case similar to the cast above
         node := alloc_node(script, Node_Dot);
         
         token := get_token(*lexer);

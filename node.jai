@@ -21,6 +21,9 @@ Node_Block :: struct {
     statements:             *Node; 
 }
 
+// TODO: before continuing with whitespace/comments issue, refactor node creation so that we are passing in source token wherever possible.
+//       then we can copy certain attributes from the token automatically, which will make it easier to try different methods of resolving whitespace issue, will improve debug abilities as well
+
 // TOOD: storing comments on AST will be tricky, since they may be be in the middle of statements, not just between statements
 //       also need to consider this with whitespace, where there may be newlines in between AST subexpressions
 //       in the short term I may just make a rule that all comments will get hoisted up a line or to end of line when they're in the middle of an expression/statement
@@ -30,6 +33,12 @@ Node_Block :: struct {
 //     comment:                string; 
 //     comment_type:           enum { LINE; BLOCK; }
 // }
+
+Node_Cast :: struct {
+    using #as base:         Node;
+    left:                   *Node;
+    right:                  *Node_Identifier;
+}
 
 /*
     A note about identifiers and declarations:
@@ -216,7 +225,7 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
 }
 
 
-alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #caller_location) -> *T_Node #expand
+alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, source_token := Token.{}, loc := #caller_location) -> *T_Node #expand
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
 } {
@@ -224,5 +233,7 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, loc := #
     node.node_type = T_Node;
     node.parent    = ifx parent_node else ctxt.current_parent_node;
     // dbg_print("allocated % at %\n", T_Node, loc);
+    
+    // TODO: copy stuff from given token
     return node;
 }

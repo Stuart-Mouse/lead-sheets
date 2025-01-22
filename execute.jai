@@ -219,6 +219,21 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         return true;
         
         
+      case Node_Cast;
+        node_cast := node.(*Node_Cast);
+        
+        // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
+        dst := Any.{ node.value_type, script.stack_ptr };
+        if !stack_push_zeroes(script, 8)  return false;
+        
+        if !execute_node(script, node_cast.left)  return false;
+        src := stack_pop_any(script, node_cast.left.value_type);
+        
+        if !remap_data(dst, src)  return false;
+        
+        return true;
+        
+        
       case Node_Dot;
         dot := node.(*Node_Dot);
         if dot.dot_type == {
