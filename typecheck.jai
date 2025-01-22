@@ -30,6 +30,12 @@ typecheck_node :: (
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
     if node.value_type  return node.value_type;
     
+    // Extra checks to run on exit, make sure we are doing things right
+    defer if node.value_type {
+        // if an lvalue is expected, then ensure the node's typechecking acknowledged this fact
+        if check_flags & .EXPECT_LVALUE then assert(node.flags & .IS_LVALUE == .IS_LVALUE);
+    }
+    
     if node.node_type == {
       case Node_Directive;
         return type_info(void);
@@ -51,13 +57,25 @@ typecheck_node :: (
             
           case .NUMBER;
             if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
-                dbg_print("returning hinted type: %\n", as_type(hint_type));
-                literal.value_type = hint_type;
-                // TODO: we could store any numeric literal type in the same space 
-                // so that we don't have to call remap_data every time we execute node
+                // dbg_print("returning hinted type: %\n", as_type(hint_type));
+                
+                // NOTE: we now remap to value_type just once here, so that we don't have to do it each time in execute
+                // TODO: think about rules around automatic casting here...
+                //       maybe we don't want to automatically go float -> int, 
+                //       since we will now only get float here when the literal had a decimal part
+                new_number := Small_Any.{ hint_type, 0 };
+                remap_data(to_any(new_number), to_any(literal.number));
+                literal.number = new_number;
             } else {
-                literal.value_type = type_info(type_of(literal.number)); 
+                // NOTE: also doing a little remap here in default case, 
+                //       since we actually want the default float type to be float32
+                // if literal.number.type == type_info(float64) {
+                    new_number := Small_Any.{ type_info(float32), 0 };
+                    remap_data(to_any(new_number), to_any(literal.number));
+                    literal.number = new_number;
+                // }
             }
+            literal.value_type = literal.number.type; 
             
           case .STRUCT;
             // right now, we need to have a hint type or else we cannot infer what the struct literal is for
@@ -240,7 +258,7 @@ typecheck_node :: (
                 argument_types[it_index] = argument_type;
             }
             
-            procedure_index := resolve_procedure_index(script, identifier.name, argument_types, node.flags & .OVERLOAD_OP != 0);
+            procedure_index := resolve_procedure_index(script, identifier.name, argument_types, node.flags & .OVERLOAD == .OVERLOAD);
             if procedure_index == -1  return null; // error logged by above
             
             // TODO: remove need to allocate additional node here

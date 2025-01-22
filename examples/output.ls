@@ -10,7 +10,7 @@ for arr1  echo(it);
 local: float;
 local = 5 + 5 * 2;
 echo(local / 2);
-for -1 * 5..9  echo(it);
+for -5..9  echo(it);
 print(str);
 print("this is also a string");
 local_str := "this is yet another string";

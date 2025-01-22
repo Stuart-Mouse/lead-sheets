@@ -421,12 +421,12 @@ get_operator_precedence :: (op: string) -> int {
 }
 
 // TODO: probably remove this, I don't think there's any good reason to do the whole bit set thing here just to check if a node is n operator
-// token_is_binary_operator :: (token: Script_Token) -> bool {
-//     binary_operators :: #run make_bit_set(Script_Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
+// token_is_binary_operator :: (token: Token) -> bool {
+//     binary_operators :: #run make_bit_set(Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
 //     return check_bit(binary_operators, token.type);
 // }
 
-token_is_binary_operator :: (token: Script_Token) -> bool {
+token_is_binary_operator :: (token: Token) -> bool {
     return token.type == .ADD
         || token.type == .SUB
         || token.type == .MUL
@@ -454,6 +454,30 @@ operator_precedence_table :: struct { op: string; prec: int; } .[
     .{ "*", 6 },
     .{ "/", 6 },
 ];
+
+// This procedure is kinda incomplete and doesn;t do everything yet, but here's the plan...
+// will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
+// we can then recast from this preferred type to 
+// obviously any number with a fractional component will use float64
+// any base 10 number that can fit in an s64 will use an s64
+// if the number is larger than s64 max, then we'll try to use u64 instead
+// any number encoded as hexadecimal, octal, binary, etc. will use u64
+// and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
+parse_number :: (s: string) -> Small_Any, bool {
+    // TODO: if number begins with 0b, 0h, 0x, etc..
+    //       this will require changes in the lexer as well
+
+    // if we've got a decimal point in there, we will prefer float64
+    if contains(s, #char ".") {
+        val, ok := string_to_float64(s);
+        if !ok  log("Failed to parse float from '%'.", s);
+        return make_small_any(val), ok;
+    }
+    
+    val, ok := string_to_int(s, 10, s64);
+    if !ok  log("Failed to parse integer from '%'.", s);
+    return make_small_any(val), ok;
+}
 
 parse_leaf :: (using script: *Script) -> *Node {
     // dbg_print("parse_leaf()\n");
@@ -493,10 +517,13 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .NUMBER;
-        dbg_print("NUMBER (%)\n", token.number);
+        dbg_print("NUMBER (%)\n", token.text);
+        value, ok := parse_number(token.text);
+        if !ok  return null;
+        
         node := alloc_node(script, Node_Literal);
         node.literal_type = .NUMBER;
-        node.number = token.number;
+        node.number = value;
         return node;
         
         
@@ -589,10 +616,14 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     
     // makes a binary op of -1 * node
     if do_unary_minus {
-        neg := alloc_node(script, Node_Literal);
-        neg.literal_type = .NUMBER;
-        neg.number = -1;
-        left = make_binary_operation(script, "*", neg, left);
+        if left.node_type == Node_Literal && left.(*Node_Literal).literal_type == .NUMBER {
+            negate_number(*(left.(*Node_Literal).number));
+        } else {
+            neg := alloc_node(script, Node_Literal);
+            neg.literal_type = .NUMBER;
+            neg.number = make_small_any(-1);
+            left = make_binary_operation(script, "*", neg, left);
+        }
     }
     
     // dbg_print("parsed a leaf: %\n", sprint_ast_node(script, left));
@@ -610,7 +641,7 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 }
 
 // needs to also return bool since node can be null validly if there were no arguments
-parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Script_Token_Type) -> (*Node, int, bool) {
+parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type) -> (*Node, int, bool) {
     first: *Node;
     count: int;
     
@@ -777,6 +808,55 @@ is_numeric_type :: (t: Type) -> bool {
 is_numeric_type :: (ti: *Type_Info) -> bool {
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
+
+// Small_Any: useful for when you need to store a small value with a type tag
+//            used in this module for number literals
+// NOTE: value is not actually stored as a u64, this is just the backig space for the value
+//       you can get the correct value out by casting pointer to 'value' to the signified type
+Small_Any :: struct {
+    type:   *Type_Info;
+    value:  u64; 
+}
+
+to_any :: inline (any: Small_Any) -> Any { 
+    return Any.{ any.type, *any.value }; 
+};
+
+get_as_type :: inline (any: Small_Any, $T: Type) -> T, bool #modify {
+    return T.(*Type_Info).runtime_size <= 8;
+} { 
+    return (*any.value).(*T).*, any.type == type_info(T);
+}
+
+make_small_any :: inline (value: $T) -> Small_Any #modify {
+    return T.(*Type_Info).runtime_size <= 8;
+} { 
+    // init with zerp and then copy value just so we don't get some weird random bytes copied over somehow
+    ret := Small_Any.{ type_info(T), 0 }; 
+    (*ret.value).(*T).* = value;
+    return ret;
+}
+
+// NOTE: this would not work with dynamic type infos, 
+//       as that would require a more complex switch case
+//       on type of type, runtime size, and signedness
+negate_number :: inline (any: *Small_Any) {
+    if as_type(any.type) == {
+      // case u\8;     val := (*any.value).(*u\8);     val.* = -val.*;
+      // case u16;     val := (*any.value).(*u16);     val.* = -val.*;
+      // case u32;     val := (*any.value).(*u32);     val.* = -val.*;
+      // case u64;     val := (*any.value).(*u64);     val.* = -val.*;
+      case s\8;     val := (*any.value).(*s\8);     val.* = -val.*;
+      case s16;     val := (*any.value).(*s16);     val.* = -val.*;
+      case s32;     val := (*any.value).(*s32);     val.* = -val.*;
+      case s64;     val := (*any.value).(*s64);     val.* = -val.*;
+      case float32; val := (*any.value).(*float32); val.* = -val.*;
+      case float64; val := (*any.value).(*float64); val.* = -val.*;
+      
+      case; assert(false, "Small_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
+    }
+}
+
 
 
 // copied from how_to/170_modify.jai

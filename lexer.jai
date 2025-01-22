@@ -21,7 +21,7 @@
 */
 
 
-Script_Token_Type :: enum {
+Token_Type :: enum {
     EOF           :: 0;
     ERROR         :: 1;
     
@@ -71,13 +71,12 @@ Script_Token_Type :: enum {
     AS;
 }
 
-Script_Token :: struct {
-    type: Script_Token_Type;
-    union {
-        text:   string;
-        number: float32;
-    };
+
+Token :: struct {
+    type:   Token_Type;
+    text:   string;
     
+    // TODO: store whitespace/comments skipped before token
     src_loc: Source_Location;
 }
 
@@ -85,57 +84,28 @@ Source_Location :: struct {
     line, char: int;
 }
 
-// we should just always store token text probably? would simplify printing token, and negligible memory usage extra
-print_token :: (token: Script_Token) {
-    print("%: ", token.type);
-    
-    if token.type == {
-      case;
-        print("%\n", token.text);
-      case .NUMBER;
-        print("%\n", token.number);
-    }
-}
-
-sprint_token :: (token: Script_Token) -> string {
-    sb: String_Builder;
-    init_string_builder(*sb,, allocator = temp);
-
-    print_to_builder(*sb, "%: ", token.type);
-
-    if token.type == {
-      case;
-        print_to_builder(*sb, "%", token.text);
-      case .NUMBER;
-        print_to_builder(*sb, "%", token.number);
-    }
-    
-    return builder_to_string(*sb);
-}
-
-// NOTE: need to call consume_token once to init lexer for proper usage
-//       otherwise, first token will appear to be .EOF
-
 Lexer :: struct {
-    file            : string;
-    next_token      : Script_Token;
-    cursor_location : Source_Location;
+    file:               string;
+    next_token:         Token;
+    cursor_location:    Source_Location;
 }
 
 init_lexer :: (using t: *Lexer) {
-    cursor_location = .{ line = 1, char = 1 };
+    // NOTE: need to call consume_token once to init lexer for proper usage
+    //       otherwise, first token will appear to be .EOF
     get_token(t);
+    cursor_location = .{ line = 1, char = 1 };
 }
 
 // convenience macro 
-get_token_or_return :: (using t: *Lexer, code: Code) -> Script_Token #expand {
+get_token_or_return :: (using t: *Lexer, code: Code) -> Token #expand {
     token := get_token(t);
     if token.type == .ERROR  `return #insert code;
     return token;
 }
 
 // consumes a token
-get_token :: inline (using t: *Lexer) -> Script_Token {
+get_token :: inline (using t: *Lexer) -> Token {
     if next_token.type == .ERROR {
         dbg_print("LEXER ERROR: % (line %, char %)\n", next_token.text, next_token.src_loc.line, next_token.src_loc.char);
         return next_token;
@@ -147,12 +117,12 @@ get_token :: inline (using t: *Lexer) -> Script_Token {
 }
 
 // peeks next_token, but does not consume it
-peek_token :: inline (using t: *Lexer) -> Script_Token {
+peek_token :: inline (using t: *Lexer) -> Token {
     return next_token;
 }
 
 // consumes token if it was expected type, else it was just peeked
-expect_token_type :: (using t: *Lexer, type: Script_Token_Type) -> bool {
+expect_token_type :: (using t: *Lexer, type: Token_Type) -> bool {
     token := peek_token(t);
     if token.type == type {
         get_token(t);
@@ -164,7 +134,7 @@ expect_token_type :: (using t: *Lexer, type: Script_Token_Type) -> bool {
 /*
     The logic for 1- and 2-char tokens could probably be more efficient, but at least it's relatively clear.
 */
-lex_next_token :: (using lexer: *Lexer) -> Script_Token {
+lex_next_token :: (using lexer: *Lexer) -> Token {
     if !skip_whitespace_and_comments(lexer) {
         return .{ type = .EOF };
     }
@@ -173,7 +143,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     src_loc := cursor_location;
     
     // convenience macro for short tokens
-    make_token :: (type: Script_Token_Type, len: int) -> Script_Token #expand {
+    make_token :: (type: Token_Type, len: int) -> Token #expand {
         defer advance(lexer, len);
         return .{
             type    = type,
@@ -234,7 +204,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     }
     
     // parse a number
-    if is_digit(file[0]) || file[0] == #char "-" {
+    if is_digit(file[0]) {//|| file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
         if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing number.");
         
@@ -254,7 +224,7 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
         val, ok, rem := string_to_float(str);
         return .{
             type    = .NUMBER,
-            number  = val,
+            text    = str,
             src_loc = src_loc
         };
     }
@@ -287,12 +257,12 @@ lex_next_token :: (using lexer: *Lexer) -> Script_Token {
     return make_error_token(src_loc, "Unexpected character encountered.");
 }
 
-make_error_token :: (src_loc: Source_Location, error_string: string = "") -> Script_Token { 
+make_error_token :: (src_loc: Source_Location, error_string: string = "") -> Token { 
     return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
 }
 
 // returns true if we even start to parse an identifier, not only on success
-try_parse_identifier :: (using lexer: *Lexer) -> (Script_Token, bool) {
+try_parse_identifier :: (using lexer: *Lexer) -> (Token, bool) {
     src_loc := cursor_location;
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
@@ -318,10 +288,10 @@ try_parse_identifier :: (using lexer: *Lexer) -> (Script_Token, bool) {
     If tokenization later becomes more complicated due to needing more lookahead or something, 
         I may consider going back to pre-tokenizing the file before constructing the AST.
 */
-tokenize :: (text: string) -> ([..] Script_Token, bool) {
+tokenize :: (text: string) -> ([..] Token, bool) {
     lexer := Lexer.{ file = text };
     success := false;
-    tokens: [..] Script_Token;
+    tokens: [..] Token;
     
     defer if !success {
         array_free(tokens);
@@ -330,7 +300,7 @@ tokenize :: (text: string) -> ([..] Script_Token, bool) {
     
     while lexer.file {
         token, ok := lex_next_token(*lexer);
-        print_token(token);
+        print(token.text);
         if !ok  return tokens, false;
         if token.type != .EOF {
             array_add(*tokens, token);
@@ -351,8 +321,13 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
         while is_whitespace(file[0]) {
             if !advance(lexer)  return false;
         }
-        if file.count >= 2 && file[0] == #char "/" && file[1] == #char "/" {
+        if begins_with(file, "//") {
             while file[0] != #char "\n" {
+                if !advance(lexer)  return false;
+            }
+        }
+        if begins_with(file, "/*") {
+            while !begins_with(file, "*/") {
                 if !advance(lexer)  return false;
             }
         }

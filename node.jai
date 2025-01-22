@@ -1,18 +1,17 @@
 
-// TODO: reimplement something like sprint_node 
-
 Node :: struct {
     node_type:              Type;
     parent, next:           *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
+    whitespace_before:      string;             // can include comments, gets pasted back when serializing
     
     Flags :: enum_flags { 
         IS_LVALUE; 
         IS_MALLEABLE;
         IS_CONSTANT;
-        UNARY_OP; 
-        OVERLOAD_OP; 
+        UNARY; 
+        OVERLOAD; 
         DISCARD_VALUE; 
     };
 }
@@ -21,6 +20,16 @@ Node_Block :: struct {
     using #as node_base:    Node;
     statements:             *Node; 
 }
+
+// TOOD: storing comments on AST will be tricky, since they may be be in the middle of statements, not just between statements
+//       also need to consider this with whitespace, where there may be newlines in between AST subexpressions
+//       in the short term I may just make a rule that all comments will get hoisted up a line or to end of line when they're in the middle of an expression/statement
+// maybe we could just hack it so that comments are considered as part of the whitespace before a node, and we just hold a string the the whitespace before each node and paste it back on serialize
+// Node_Comment :: struct {
+//     using #as node_base:    Node;
+//     comment:                string; 
+//     comment_type:           enum { LINE; BLOCK; }
+// }
 
 /*
     A note about identifiers and declarations:
@@ -76,7 +85,7 @@ Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
     using value_union: union {
-        number:  float;
+        number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
         aggr: struct {
             expressions:    *Node; // expressions to init struct members or array values by. later maybe also accepting statements
@@ -97,7 +106,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
         return Any.{ type_info(string), *literal.text };
         
       case .NUMBER;
-        return Any.{ type_info(type_of(literal.number)), *literal.number };
+        return to_any(literal.number);
         
       case .STRUCT;
         return Any.{ literal.value_type, literal.aggr.value_pointer };
@@ -134,7 +143,7 @@ Node_Operation :: struct {
     using #as node_base:    Node;
     name:                   string;
     operator_index:         int;
-    left, right:            *Node;
+    left, right:            *Node;      // only left is used if .UNARY
     return_ptr:             *Node;      // only if return type is aggregate
     overload_procedure:     *Node_Procedure_Call;
 }
@@ -156,7 +165,7 @@ Node_Subscript :: struct {
 }
 
 Node_Assignment :: struct {
-    using #as node_base: Node;
+    using #as node_base:    Node;
     left, right:            *Node; 
 }
 

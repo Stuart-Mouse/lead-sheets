@@ -73,9 +73,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             return true;
             
           case .NUMBER;
-            value: u64 = 0; // just empty space.  TODO: get rid of need for this by storing value as resolved type
-            remap_data(Any.{ literal.value_type, *value }, literal.number); 
-            if !stack_push_any(script, Any.{ literal.value_type, *value }, literal.flags & .IS_LVALUE != 0)  return false;
+            if !stack_push_any(script, to_any(literal.number), literal.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .STRUCT;

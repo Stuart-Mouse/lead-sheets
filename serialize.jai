@@ -91,7 +91,7 @@ print_node :: (
             print_to_builder(builder, "\"%\"", literal.text);
             
           case .NUMBER;
-            print_to_builder(builder, "%", literal.number);
+            print_to_builder(builder, "%", to_any(literal.number));
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
