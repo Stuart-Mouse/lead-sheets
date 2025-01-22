@@ -129,6 +129,8 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             return execute_node(script, operation.overload_procedure);
         }
         
+        is_unary := (operation.flags & .UNARY).(bool);
+        
         if is_aggr(operation.value_type) {
             if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
         } else {
@@ -137,7 +139,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         }
         
         if !execute_node(script, operation.left )  return false;
-        if !execute_node(script, operation.right)  return false;
+        if !is_unary && !execute_node(script, operation.right)  return false;
         
         // TODO: maybe use the simpler version of execute_builtin_operation, but with this more dynamic stack popping
         //       this is probably a little bit slower, but it may be worth it to reduce code bloat

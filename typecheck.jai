@@ -31,6 +31,7 @@ typecheck_node :: (
     if node.value_type  return node.value_type;
     
     // Extra checks to run on exit, make sure we are doing things right
+    // TODO: istead of having to use a defer here, we should probably just check that break works in jai's switch and then just do this kind of thing normally at the bottom
     defer if node.value_type {
         // if an lvalue is expected, then ensure the node's typechecking acknowledged this fact
         if check_flags & .EXPECT_LVALUE then assert(node.flags & .IS_LVALUE == .IS_LVALUE);
@@ -202,11 +203,16 @@ typecheck_node :: (
         if check_flags & .EXPECT_LVALUE  return null;
         operation := node.(*Node_Operation);
         
+        is_unary := (operation.flags & .UNARY).(bool);
+        
         left_type := typecheck_node(script, operation.left, check_flags, hint_type);
         if !left_type   return null;
         
-        right_type := typecheck_node(script, operation.right, check_flags, hint_type);
-        if !right_type  return null;
+        right_type: *Type_Info;
+        if !is_unary {
+            right_type = typecheck_node(script, operation.right, check_flags, hint_type);
+            if !right_type  return null;
+        }
         
         operator_index, swap_args := resolve_builtin_operation(operation.name, left_type, right_type);
         if operator_index >= 0 {
@@ -224,17 +230,19 @@ typecheck_node :: (
             }
             
             return operation.value_type;
-        } 
+        }
         
         // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
         procedure_call := alloc_node(script, Node_Procedure_Call);
         procedure_call.procedure_expression = make_identifier(script, operation.name);
-        procedure_call.arguments = operation.left;
-        operation.left.next = operation.right;      // link these as we do for procedure arguments
-        procedure_call.arguments_count = 2;
-        operation.overload_procedure = procedure_call;
         
-        operation.value_type = typecheck_node(script, procedure_call);
+        procedure_call.arguments_count  = ifx is_unary then 1 else 2;
+        procedure_call.arguments        = operation.left;
+        operation.left.next             = operation.right;      // link these as we do for procedure arguments
+        operation.overload_procedure    = procedure_call;
+        operation.value_type            = typecheck_node(script, procedure_call);
+        operation.flags                |= .OVERLOAD;
+        
         return operation.value_type;
         
         

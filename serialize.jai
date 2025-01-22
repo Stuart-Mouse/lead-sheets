@@ -137,6 +137,13 @@ print_node :: (
       case Node_Operation;
         operation := node.(*Node_Operation);
         
+        is_unary := (operation.flags & .UNARY).(bool);
+        if is_unary {
+            append(builder, operation.name);
+            print_node(script, operation.left, builder, indent);
+            return true;
+        }
+        
         node_prec := get_operator_precedence(operation.name);
         do_parenthesize_left, do_parenthesize_right := false;
         if operation.left.node_type == Node_Operation {

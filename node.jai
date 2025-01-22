@@ -151,7 +151,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 Node_Operation :: struct {
     using #as node_base:    Node;
     name:                   string;
-    operator_index:         int;
+    operator_index:         int;        // TODO: maybe put into union with overload_procedure, then use .OVERLOAD flag to disambiguate
     left, right:            *Node;      // only left is used if .UNARY
     return_ptr:             *Node;      // only if return type is aggregate
     overload_procedure:     *Node_Procedure_Call;

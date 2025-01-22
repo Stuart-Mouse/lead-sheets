@@ -426,6 +426,8 @@ get_operator_precedence :: (op: string) -> int {
 //     return check_bit(binary_operators, token.type);
 // }
 
+// TODO: could instead just search the operator precedence table? Then that table should use a token_type to identify the operator instead of a string...
+
 token_is_binary_operator :: (token: Token) -> bool {
     return token.type == .ADD
         || token.type == .SUB
@@ -440,19 +442,28 @@ token_is_binary_operator :: (token: Token) -> bool {
         || token.type == .COMPARE_EQUAL;
 }
 
-operator_precedence_table :: struct { op: string; prec: int; } .[
-    .{ "&&", 1 },
-    .{ "||", 1 },
-    .{ "==", 2 },
-    .{ ">=", 2 },
-    .{ "<=", 2 },
-    .{ ">",  2 },
-    .{ "<",  2 },
+// TODO: may need to differentiate prefix and postfix later on...
+//       this will mean adding another flag to the below operator table
+token_is_unary_operator :: (token: Token) -> bool {
+    return token.type == .SUB;
+}
+
+operator_precedence_table :: struct { op: string; unary := false; prec: int; } .[
+    .{ op = "&&", prec = 1 },
+    .{ op = "||", prec = 1 },
     
-    .{ "+", 5 },
-    .{ "-", 5 },
-    .{ "*", 6 },
-    .{ "/", 6 },
+    .{ op = "==", prec = 2 },
+    .{ op = ">=", prec = 2 },
+    .{ op = "<=", prec = 2 },
+    .{ op = ">",  prec = 2 },
+    .{ op = "<",  prec = 2 },
+    
+    .{ op = "+",  prec = 5 },
+    .{ op = "-",  prec = 5 },
+    .{ op = "*",  prec = 6 },
+    .{ op = "/",  prec = 6 },
+    
+    .{ op = "-",  prec = 7, unary = true },
 ];
 
 // This procedure is kinda incomplete and doesn;t do everything yet, but here's the plan...
@@ -483,29 +494,38 @@ parse_leaf :: (using script: *Script) -> *Node {
     // dbg_print("parse_leaf()\n");
     // dbg_print_push_indent();
     
+    node:     *Node;
+    unary_op: *Node_Operation;
+    
     token := get_token_or_return(*lexer, null);
+    if token_is_unary_operator(token) {
+        unary_op = alloc_node(script, Node_Operation);
+        unary_op.name = token.text;
+        unary_op.flags |= .UNARY;
+        // unary_op.left gets set at the bottom, when 'node' actually points to something.
+        token = get_token_or_return(*lexer, null);
+    }
+    
+    
     if token.type == {
       case .DOT;
         dbg_print("DOT (UNARY)\n");
         if expect_token_type(*lexer, .OPEN_BRACE) {
-            node := alloc_node(script, Node_Literal);
-            node.literal_type = .STRUCT;
-            
+            literal := alloc_node(script, Node_Literal);
+            literal.literal_type = .STRUCT;
             ok: bool;
-            node.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
+            literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
             if !ok  return null;
-            
-            return node;
+            node = literal;
         }
-        
+        else log("Error: unexpected DOT token at (%:%)", token.src_loc.line, token.src_loc.char);
         // TODO: identifer -> unary dot enum thing
-        log("Error: unexpected DOT token at (%:%)", token.src_loc.line, token.src_loc.char);
-        return null;
+        
         
       case .OPEN_PAREN;
         open_paren_location := token.src_loc;
         
-        node := parse_expression(script, 0);
+        node = parse_expression(script, 0);
         if node == null  return null;
         
         token = get_token_or_return(*lexer, null);
@@ -513,7 +533,6 @@ parse_leaf :: (using script: *Script) -> *Node {
             log("Error: expected a closing paren for open paren at (%:%)", open_paren_location.line, open_paren_location.char);
             return null;
         }
-        return node;
         
         
       case .NUMBER;
@@ -521,32 +540,32 @@ parse_leaf :: (using script: *Script) -> *Node {
         value, ok := parse_number(token.text);
         if !ok  return null;
         
-        node := alloc_node(script, Node_Literal);
-        node.literal_type = .NUMBER;
-        node.number = value;
-        return node;
+        literal := alloc_node(script, Node_Literal);
+        literal.literal_type = .NUMBER;
+        literal.number = value;
+        node = literal;
         
         
       case .STRING;
         dbg_print("STRING (\"%\")\n", token.text);
-        node := alloc_node(script, Node_Literal);
-        node.literal_type = .STRING;
-        node.text = token.text;
-        return node;
+        literal := alloc_node(script, Node_Literal);
+        literal.literal_type = .STRING;
+        literal.text = token.text;
+        node = literal;
         
     
       case .DIRECTIVE;
         dbg_print("DIRECTIVE\n"); dbg_print_push_indent();
-        node := alloc_node(script, Node_Directive);
-        node.name = token.text;
+        directive := alloc_node(script, Node_Directive);
+        directive.name = token.text;
         
-        node.directive_index = -1;
+        directive.directive_index = -1;
         for script.directives {
-            if it.name == node.name {
-                node.directive_index = it_index;
+            if it.name == directive.name {
+                directive.directive_index = it_index;
             }
         }
-        if node.directive_index == -1  return null;
+        if directive.directive_index == -1  return null;
         
         if !expect_token_type(*lexer, .OPEN_PAREN) {
             dbg_print("Error, expected an open paren after directive name!\n");
@@ -554,15 +573,14 @@ parse_leaf :: (using script: *Script) -> *Node {
         }
         
         ok: bool;
-        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
+        directive.arguments, directive.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
         if !ok  return null;
         
-        if !execute_directive(script, node) {
+        if !execute_directive(script, directive) {
             log("Error: failed while trying to execute a directive.");
             return null;
         }
-        
-        return node;
+        node = directive;
         
         
       case .IDENTIFIER;
@@ -571,15 +589,19 @@ parse_leaf :: (using script: *Script) -> *Node {
             log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.src_loc.line, token.src_loc.char);
             return null;
         }
-        return make_identifier(script, token.text);
+        node = make_identifier(script, token.text);
         
         
       case;
         log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
-        return null;
     }
     
-    return null;
+    if unary_op != null {
+        unary_op.left = node;
+        node = xx unary_op;
+    }
+    
+    return node;
 }
 
 
@@ -607,24 +629,8 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     // dbg_print("parse_expression(min_prec = %)\n", min_prec); 
     // dbg_print_push_indent();
     
-    // TODO: refactor unary minus to use an actual unary operation
-    //       this is a really bad way to handle unary minus... 
-    do_unary_minus := expect_token_type(*lexer, .SUB);
-    
     left := parse_leaf(script);
     if left == null  return null;
-    
-    // makes a binary op of -1 * node
-    if do_unary_minus {
-        if left.node_type == Node_Literal && left.(*Node_Literal).literal_type == .NUMBER {
-            negate_number(*(left.(*Node_Literal).number));
-        } else {
-            neg := alloc_node(script, Node_Literal);
-            neg.literal_type = .NUMBER;
-            neg.number = make_small_any(-1);
-            left = make_binary_operation(script, "*", neg, left);
-        }
-    }
     
     // dbg_print("parsed a leaf: %\n", sprint_ast_node(script, left));
     
