@@ -575,7 +575,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case;
-        assert(false, "Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
+        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
         return null;
     }
     
@@ -811,12 +811,6 @@ make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
 }
 
 make_binary_operation :: (script: *Script, operator_ident: string, left: *Node, right: *Node) -> *Node {
-    // dbg_print(
-    //     "creating binary operation % % %\n", 
-    //     sprint_ast_node(script, left), 
-    //     operator_ident, 
-    //     sprint_ast_node(script, right)
-    // );
     node := alloc_node(script, Node_Operation);
     node.name  = operator_ident;
     node.left  = left;
