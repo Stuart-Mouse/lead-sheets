@@ -142,9 +142,10 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         //       this is probably a little bit slower, but it may be worth it to reduce code bloat
         //       the other benefit(?) of going this way is that we could do the swap args swizzle here, rather than swap them at the ast level
         // op    := BUILTIN_OPERATIONS[operation.operator_index];
-        // right := stack_pop    (*script.stack_ptr, is_aggr(op.right));
-        // left  := stack_pop    (*script.stack_ptr, is_aggr(op.left ));
-        // ret   := stack_get_top( script.stack_ptr, is_aggr(op.ret  ));
+        // right := null;
+        // if !is_unary  right = stack_pop (script, is_aggr(op.right));
+        // left  := stack_pop (script, is_aggr(op.left ));
+        // ret   := stack_peek(script, is_aggr(op.ret  ));
         // if !execute_builtin_operation(operation.operator_index, left, right, ret)  return false;
         
         // dbg_print("operation: %\n", op);

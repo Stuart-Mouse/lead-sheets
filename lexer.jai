@@ -18,39 +18,47 @@
     There is also expect_token_type(), which is useful when one doesn't care about anything other than the token type,
         for example when expecting a closing `)` or `]` token.
     
+    
+    TODO: 
+        in order to implement += and -= operators, we need to turn the standard = operator into an actual operator
+        but right now, I'm not sure that = being an operator will work quite so nicely
+        but I suppose it's an operator like any other, it's just that the left side needs to be typechecked as an lvalue
+        but then it's also a problem for us when it comes time to execute, because our assignment operator really is sort of a ternary operator
+        can just use a node flag to denote an assignment operator, and execute differently
+            but for now just gonna hit a few more TODOs and clean up before taking that on
 */
 
 
 Token_Type :: enum {
-    EOF           :: 0;
-    ERROR         :: 1;
+    EOF             :: 0;
+    ERROR           :: 1;
     
-    OPEN_PAREN    :: #char "(";
-    CLOSE_PAREN   :: #char ")";
+    OPEN_PAREN      :: #char "(";
+    CLOSE_PAREN     :: #char ")";
     
-    OPEN_BRACE    :: #char "{";
-    CLOSE_BRACE   :: #char "}";
+    OPEN_BRACE      :: #char "{";
+    CLOSE_BRACE     :: #char "}";
     
-    OPEN_BRACKET  :: #char "[";
-    CLOSE_BRACKET :: #char "]";
+    OPEN_BRACKET    :: #char "[";
+    CLOSE_BRACKET   :: #char "]";
     
-    QUESTION_MARK :: #char "?";
-    DOT           :: #char ".";
-    COMMA         :: #char ",";    
-    COLON         :: #char ":";
-    SEMICOLON     :: #char ";";
-    ASSIGN_EQUAL  :: #char "=";
+    QUESTION_MARK   :: #char "?";
+    DOT             :: #char ".";
+    COMMA           :: #char ",";    
+    COLON           :: #char ":";
+    SEMICOLON       :: #char ";";
+    ASSIGN_EQUAL    :: #char "=";
     
-    LESS_THAN     :: #char "<";
-    GREATER_THAN  :: #char ">";
+    LESS_THAN       :: #char "<";
+    GREATER_THAN    :: #char ">";
     
-    ADD           :: #char "+";
-    SUB           :: #char "-";
-    MUL           :: #char "*";
-    DIV           :: #char "/";
+    ADD             :: #char "+";
+    SUB             :: #char "-";
+    MUL             :: #char "*";
+    DIV             :: #char "/";
     
     
-    IDENTIFIER    :: 256;
+    IDENTIFIER      :: 256;
     STRING;
     NUMBER;
     COMPARE_EQUAL;
@@ -59,6 +67,9 @@ Token_Type :: enum {
     
     LOGICAL_AND;
     LOGICAL_OR;
+    
+    PLUS_EQUALS;
+    MINUS_EQUALS;
     
     // DOUBLE_QUESTION_MARK;
     
@@ -130,9 +141,7 @@ expect_token_type :: (using t: *Lexer, type: Token_Type) -> bool {
     return false;
 }
 
-/*
-    The logic for 1- and 2-char tokens could probably be more efficient, but at least it's relatively clear.
-*/
+
 lex_next_token :: (using lexer: *Lexer) -> Token {
     if !skip_whitespace_and_comments(lexer) {
         return .{ type = .EOF };
@@ -151,8 +160,20 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         };
     }
     
-    // 2-char logical operators
     if file.count >= 2 {
+        // 2-char comparison operators
+        if file[1] == #char "=" {
+            if file[0] == {
+              case #char "="; return make_token(.COMPARE_EQUAL, 2);
+              case #char "<"; return make_token(.LESS_THAN_OR_EQUAL_TO, 2);
+              case #char ">"; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
+              
+              case #char "+"; return make_token(.PLUS_EQUALS, 2);
+              case #char "-"; return make_token(.MINUS_EQUALS, 2);
+            }
+        }
+        
+        // 2-char logical operators
         if slice(file, 0, 2) == {
           case "&&"; return make_token(.LOGICAL_AND, 2);
           case "||"; return make_token(.LOGICAL_OR, 2);
@@ -160,14 +181,6 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         }
     }
     
-    // 2-char comparison operators
-    if file.count >= 2 && file[1] == #char "=" {
-        if file[0] == {
-          case #char "="; return make_token(.COMPARE_EQUAL, 2);
-          case #char "<"; return make_token(.LESS_THAN_OR_EQUAL_TO, 2);
-          case #char ">"; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
-        }
-    }
     
     // single-character tokens
     if is_any(file[0], "+-*/(),:;?=.[]{}<>") {

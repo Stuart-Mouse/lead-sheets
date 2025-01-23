@@ -58,8 +58,6 @@ Script :: struct {
     }
 }
 
-STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
-
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
@@ -70,6 +68,51 @@ free_script :: (using script: *Script) {
     
     script.* = .{};
 }
+
+init_script :: (script: *Script, stack_size := 1024) {
+    script.allocator.proc = flat_pool_allocator_proc;
+    script.allocator.data = *script.pool;
+    
+    script.stack_size = stack_size;
+    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
+    script.stack_ptr  = script.stack_base;
+    sentinel := (script.stack_base + script.stack_size).(*type_of(STACK_SENTINEL_VALUE));
+    sentinel.* = STACK_SENTINEL_VALUE;
+    
+    // allocate dyncall vm that will be reused
+    script.dyncall_vm = dcNewCallVM(2048);
+    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
+    dcReset(script.dyncall_vm);
+    
+    script.flags |= .INITIALIZED;
+}
+
+// ensures no name conflicts
+set_variable :: (script: *Script, name: string, any: Any) {
+    for *script.variables {
+        if it.name == name {
+            it.binding = any;
+            return;
+        }
+    }
+    array_add(*script.variables, .{ name, any });
+}
+
+// ensures no name conflicts
+register_type :: (script: *Script, name: string, type: *Type_Info) {
+    for *script.type_table {
+        if it.name == name {
+            log("Warning: attempt register a type with same name as previously registered type.");
+            return;
+        }
+    }
+    array_add(*script.type_table, .{ name, type });
+}
+
+
+// STACK STUFF
+
+STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 
 PTR_SIZE :: size_of(*void);
 
@@ -146,45 +189,8 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
     }
 }
 
-// ensures no name conflicts
-set_variable :: (script: *Script, name: string, any: Any) {
-    for *script.variables {
-        if it.name == name {
-            it.binding = any;
-            return;
-        }
-    }
-    array_add(*script.variables, .{ name, any });
-}
 
-// ensures no name conflicts
-register_type :: (script: *Script, name: string, type: *Type_Info) {
-    for *script.type_table {
-        if it.name == name {
-            log("Warning: attempt register a type with same name as previously registered type.");
-            return;
-        }
-    }
-    array_add(*script.type_table, .{ name, type });
-}
-
-init_script :: (script: *Script, stack_size := 1024) {
-    script.allocator.proc = flat_pool_allocator_proc;
-    script.allocator.data = *script.pool;
-    
-    script.stack_size = stack_size;
-    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
-    script.stack_ptr  = script.stack_base;
-    sentinel := (script.stack_base + script.stack_size).(*type_of(STACK_SENTINEL_VALUE));
-    sentinel.* = STACK_SENTINEL_VALUE;
-    
-    // allocate dyncall vm that will be reused
-    script.dyncall_vm = dcNewCallVM(2048);
-    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
-    dcReset(script.dyncall_vm);
-    
-    script.flags |= .INITIALIZED;
-}
+// PARSING STUFF
 
 parse_source_file :: (script: *Script, source: string) -> bool {
     if !(script.flags & .INITIALIZED)  return false;
@@ -371,7 +377,7 @@ parse_statement :: (using script: *Script) -> *Node {
     
     // TODO: probably better here to just peek the token and then switch on type? why are we using expect_token_type here anymore?
     
-    if expect_token_type(*lexer, .ASSIGN_EQUAL)  {
+    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
         dbg_print("ASSIGNMENT\n"); dbg_print_push_indent();
         right := parse_expression(script, 0);
         if right == null  return null;
@@ -411,60 +417,6 @@ is_reserved_word :: (str: string) -> bool {
     return false;
 }
 
-get_operator_precedence :: (op: string) -> int {
-    for operator_precedence_table  {
-        if it.op == op {
-            return it.prec;
-        }
-    }
-    return -1;
-}
-
-// TODO: probably remove this, I don't think there's any good reason to do the whole bit set thing here just to check if a node is n operator
-// token_is_binary_operator :: (token: Token) -> bool {
-//     binary_operators :: #run make_bit_set(Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
-//     return check_bit(binary_operators, token.type);
-// }
-
-// TODO: could instead just search the operator precedence table? Then that table should use a token_type to identify the operator instead of a string...
-
-token_is_binary_operator :: (token: Token) -> bool {
-    return token.type == .ADD
-        || token.type == .SUB
-        || token.type == .MUL
-        || token.type == .DIV
-        || token.type == .LOGICAL_AND
-        || token.type == .LOGICAL_OR
-        || token.type == .LESS_THAN
-        || token.type == .GREATER_THAN
-        || token.type == .LESS_THAN_OR_EQUAL_TO
-        || token.type == .GREATER_THAN_OR_EQUAL_TO
-        || token.type == .COMPARE_EQUAL;
-}
-
-// TODO: may need to differentiate prefix and postfix later on...
-//       this will mean adding another flag to the below operator table
-token_is_unary_operator :: (token: Token) -> bool {
-    return token.type == .SUB;
-}
-
-operator_precedence_table :: struct { op: string; unary := false; prec: int; } .[
-    .{ op = "&&", prec = 1 },
-    .{ op = "||", prec = 1 },
-    
-    .{ op = "==", prec = 2 },
-    .{ op = ">=", prec = 2 },
-    .{ op = "<=", prec = 2 },
-    .{ op = ">",  prec = 2 },
-    .{ op = "<",  prec = 2 },
-    
-    .{ op = "+",  prec = 5 },
-    .{ op = "-",  prec = 5 },
-    .{ op = "*",  prec = 6 },
-    .{ op = "/",  prec = 6 },
-    
-    .{ op = "-",  prec = 7, unary = true },
-];
 
 // This procedure is kinda incomplete and doesn;t do everything yet, but here's the plan...
 // will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
