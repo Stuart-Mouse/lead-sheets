@@ -26,15 +26,19 @@ typecheck_node :: (
     dbg_print("expecting type: %\n", as_type(hint_type));
     dbg_print_push_indent();
     
-    // if already typechecked, just return resolved type.
+    // if already typechecked, just return resolved type
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
-    if node.value_type  return node.value_type;
+    if node.flags & .TYPECHECKED {
+        assert(node.value_type != null);
+        return node.value_type;
+    }
     
     // Extra checks to run on exit, make sure we are doing things right
-    // TODO: istead of having to use a defer here, we should probably just check that break works in jai's switch and then just do this kind of thing normally at the bottom
+    // TODO: can't break from a case, but maybe we should refactor this procedure so that we don't need to defer here...
     defer if node.value_type {
         // if an lvalue is expected, then ensure the node's typechecking acknowledged this fact
         if check_flags & .EXPECT_LVALUE then assert(node.flags & .IS_LVALUE == .IS_LVALUE);
+        node.flags |= .TYPECHECKED;
     }
     
     if node.node_type == {
@@ -79,11 +83,23 @@ typecheck_node :: (
             literal.value_type = literal.number.type; 
             
           case .STRUCT;
-            // right now, we need to have a hint type or else we cannot infer what the struct literal is for
-            // later we will allow parsing explicit type
-            ti_struct := hint_type.(*Type_Info_Struct);
+            // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
+            // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
+            ti_struct: *Type_Info_Struct;
+            if literal.aggr.type_identifier != null {
+                type_identifier_type := typecheck_node(script, literal.aggr.type_identifier);
+                if type_identifier_type == null || type_identifier_type.type != .TYPE || literal.aggr.type_identifier.identifier_type != .TYPE {
+                    log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+                    return null;
+                }
+                ti_struct = xx literal.aggr.type_identifier.type_info_pointer;
+            } else {
+                ti_struct = xx hint_type;
+            }
+            
+            if ti_struct == null  return null;
             if ti_struct.type != .STRUCT {
-                log("Error: type hint provided to struct literal is not a struct type.");
+                log("Error: type hint provided to struct literal is not a struct type. (was '%')", as_type(ti_struct));
                 return null;
             }
             
@@ -130,7 +146,7 @@ typecheck_node :: (
                             log("Error: identifier % used before its declaration.", identifier.name);
                             return null;
                         }
-                        identifier.resolved_type = .DECLARATION;
+                        identifier.identifier_type = .DECLARATION;
                         identifier.declaration = declaration;
                         identifier.value_type = declaration.value_type;
                         if check_flags & .EXPECT_LVALUE {
@@ -147,7 +163,7 @@ typecheck_node :: (
                     dbg_print("checking for iterator with identifier '%'\n", identifier.name);
                     declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
                     if declaration {
-                        identifier.resolved_type = .DECLARATION;
+                        identifier.identifier_type = .DECLARATION;
                         identifier.declaration   = declaration;
                         identifier.value_type    = declaration.value_type;
                         if check_flags & .EXPECT_LVALUE {
@@ -171,7 +187,7 @@ typecheck_node :: (
                 if check_flags & .EXPECT_LVALUE {
                     identifier.flags |= .IS_LVALUE;
                 }
-                identifier.resolved_type  = .EXTERNAL_VARIABLE;
+                identifier.identifier_type  = .EXTERNAL_VARIABLE;
                 identifier.variable_index = variable_index;
                 identifier.value_type     = variables[variable_index].binding.type;
                 return identifier.value_type;
@@ -181,12 +197,13 @@ typecheck_node :: (
         // try to resolve identifier as a type here
         {
             for script.type_table {
-                if check_flags & .EXPECT_LVALUE {
-                    log("Error: a type cannot be used as an lvalue.");
-                    return null;
-                }
                 if it.name == identifier.name {
-                    identifier.resolved_type = .TYPE;
+                    if check_flags & .EXPECT_LVALUE {
+                        log("Error: a type cannot be used as an lvalue.");
+                        return null;
+                    }
+                    
+                    identifier.identifier_type = .TYPE;
                     identifier.type_info_pointer = it.type;
                     identifier.value_type = type_info(Type);
                     return identifier.value_type;
@@ -257,7 +274,7 @@ typecheck_node :: (
         
         if procedure_call.procedure_expression.node_type == Node_Identifier && ti_proc == null {
             identifier := procedure_call.procedure_expression.(*Node_Identifier);
-            assert(identifier.resolved_type == .UNRESOLVED);
+            assert(identifier.identifier_type == .UNRESOLVED);
             
             argument_types := NewArray(procedure_call.arguments_count, *Type_Info,, temp); // TODO
             for procedure_call.arguments {
@@ -270,7 +287,7 @@ typecheck_node :: (
             if procedure_index == -1  return null; // error logged by above
             
             // TODO: remove need to allocate additional node here
-            identifier.resolved_type   = .EXTERNAL_PROCEDURE;
+            identifier.identifier_type   = .EXTERNAL_PROCEDURE;
             identifier.procedure_index = procedure_index;
             
             ti_proc, identifier.value_type = procedures[procedure_index].type;
@@ -322,11 +339,11 @@ typecheck_node :: (
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         left_type := typecheck_node(script, node_cast.left);
-        if !left_type  return null;
+        if left_type == null  return null;
         
         type_identifier := node_cast.right;
         type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
-        if !type_type || type_type.type != .TYPE || type_identifier.resolved_type != .TYPE {
+        if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
             log("Error: Type expression in RHS of cast did not resolve to a Type.");
             return null;
         }
@@ -341,54 +358,31 @@ typecheck_node :: (
         
       case Node_Dot;
         dot := node.(*Node_Dot);
+
         left_type := typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
-        if !left_type  return null;
-        
-        if left_type.type == {
-          case .STRUCT;
-            dot.dot_type = .STRUCT_MEMBER;
-            if dot.right.node_type != Node_Identifier {
-                log("Error: right side of struct member access expression must be an identifier.");
-                return null;
-            }
-            
-            member_identifier := dot.right.(*Node_Identifier);
-            member_ti, member_offset := get_field(xx left_type, member_identifier.name);
-            if member_ti == null  return null;
-            
-            member_identifier.resolved_type = .STRUCT_MEMBER;
-            member_identifier.value_type    = member_ti.type;
-            
-            dot.value_type    = member_ti.type;
-            dot.member_offset = member_offset;
-            
-            if check_flags & .EXPECT_LVALUE {
-                dot.flags |= .IS_LVALUE;
-            }
-            
-          case .TYPE;
-            if check_flags & .EXPECT_LVALUE  return null;
-            
-            assert(dot.left.node_type == Node_Identifier);
-            type_identifier := dot.left.(*Node_Identifier);
-            assert(type_identifier.resolved_type == .TYPE);
-            literal_type := type_identifier.type_info_pointer;
-            
-            dot.dot_type = .LITERAL;
-            literal := dot.right.(*Node_Literal);
-            if !literal  log("Error: literal was null!");
-            if literal.node_type != Node_Literal {
-                log("Error: RHS of dot literal is not a literal.");
-                return null;
-            }
-            
-            if typecheck_node(script, literal, hint_type = literal_type) != literal_type {
-                log("Error: type of RHS of dot literal did not match type of LHS.");
-                return null;
-            }
-            
-            dot.value_type = literal_type;
+        if left_type == null  return null;
+        if left_type.type != .STRUCT {
+            log("Error: left side of member access expression must be a struct.");
+            return null;
         }
+        
+        if dot.right.node_type != Node_Identifier {
+            log("Error: right side of struct member access expression must be an identifier.");
+            return null;
+        }
+        
+        // TODO: now that this node is only for struct member dereference, we should rename it and try to change the right side to just be a string for the member name
+        member_identifier := dot.right.(*Node_Identifier);
+        member_ti, member_offset := get_field(xx left_type, member_identifier.name);
+        if member_ti == null  return null;
+        
+        member_identifier.identifier_type = .STRUCT_MEMBER;
+        member_identifier.value_type    = member_ti.type;
+        
+        dot.value_type    = member_ti.type;
+        dot.member_offset = member_offset;
+        
+        if check_flags & .EXPECT_LVALUE then dot.flags |= .IS_LVALUE;
         return dot.value_type;
         
         
@@ -407,9 +401,7 @@ typecheck_node :: (
         }
         
         subscript.value_type = base_type.element_type;
-        if check_flags & .EXPECT_LVALUE {
-            subscript.flags |= .IS_LVALUE;
-        }
+        if check_flags & .EXPECT_LVALUE then subscript.flags |= .IS_LVALUE;
         return subscript.value_type;
         
         
@@ -417,7 +409,7 @@ typecheck_node :: (
         // declaration node cannot be an lvalue itself, but may be ok to use as a left value
         // instead of marking this node with .IS_LVALUE, which would affect all instances where this declaration is used,
         //      we will instead mark the individual identifier nodes which refer to a declaration
-        //      in execute proc, thse identifiers will just reach into resolved declaration directly to get value pointer
+        //      in execute proc, these identifiers will just reach into resolved declaration directly to get value pointer (if that is legal)
         if check_flags & .EXPECT_LVALUE  return null;
         
         // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
@@ -430,7 +422,7 @@ typecheck_node :: (
             assert(declaration.type_expression.node_type == Node_Identifier);
             type_identifier := declaration.type_expression;
             type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
-            if !type_type || type_type.type != .TYPE || type_identifier.resolved_type != .TYPE {
+            if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
                 log("Error: Type expression in declaration did not resolve to a Type.");
                 return null;
             }
@@ -585,7 +577,7 @@ typecheck_script :: (script: *Script) -> bool {
 }
 
 identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {
-    assert(identifier.resolved_type == .DECLARATION);
+    assert(identifier.identifier_type == .DECLARATION);
     return declaration_is_malleable_literal(identifier.declaration);
 }
 

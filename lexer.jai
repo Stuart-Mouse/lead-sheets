@@ -68,7 +68,6 @@ Token_Type :: enum {
     IF;
     WHILE;
     FOR;
-    AS;
 }
 
 
@@ -184,7 +183,6 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
               case "if";    ident.type = .IF;
               case "for";   ident.type = .FOR;
               case "while"; ident.type = .WHILE;
-              case "as";    ident.type = .AS;
             }
             return ident;
         }

@@ -681,7 +681,6 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     // dbg_print_push_indent();
     
     token := peek_token(*lexer);
-    // dbg_print("token: %\n", sprint_token(token));
     
     if token.type == .QUESTION_MARK {
         get_token(*lexer);
@@ -695,13 +694,6 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     // should this go here or up in main loop of parse_expression?
     // will require some refactoring to hoist up there
     if token.type == {
-      case .AS;
-        // need to create node for cast
-        // just put LHS and RHS on node, do the rest in typecheck
-        log("Error: not yet implemented.");
-        return null;
-        
-        
       case .OPEN_PAREN;
         get_token(*lexer);
         
@@ -718,9 +710,9 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
       case .DOT;
         get_token(*lexer);
         
-        // check if this is a cast
-        if peek_token(*lexer).type == .OPEN_PAREN {
-            get_token(*lexer);
+        token_after_dot := get_token(*lexer);
+        if token_after_dot.type == {
+          case .OPEN_PAREN;
             dbg_print("CAST\n");
             
             // TODO: in the future maybe we can have more complex type expressions, but that's not really a priority.
@@ -741,41 +733,29 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             
             log("Error: unexpected token '%' in cast type expression at (%:%). Expected a type identifier.", token_identifier.type, token_identifier.src_loc.line, token_identifier.src_loc.char);
             return null;
-        }
-        
-        dbg_print("DOT (BINARY)\n");
-        
-        // next token must either be an identifier or an open brace, no other options
-        // TODO: we should probably change the open brace case so that it does not create a Dot node, 
-        //       rather just taking left, making sure it's an identifier, and then creating a Node_Literal
-        //       we can move that up into a case similar to the cast above
-        node := alloc_node(script, Node_Dot);
-        
-        token := get_token(*lexer);
-        if token.type == {
+            
+            
           case .IDENTIFIER;
-            node.dot_type = .STRUCT_MEMBER;
-            node.left     = left;
-            node.right    = make_identifier(script, token.text);
+            node := alloc_node(script, Node_Dot);
+            node.left   = left;
+            node.right  = make_identifier(script, token.text);
             return node;
+            
             
           case .OPEN_BRACE;
-            node.dot_type = .LITERAL;
-            node.left     = left;
-            
-            struct_literal: *Node_Literal;
-            {
-                struct_literal = alloc_node(script, Node_Literal);
-                struct_literal.literal_type = .STRUCT;
-                ok: bool;
-                struct_literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
-                if !ok  return null;
+            if left.node_type != Node_Identifier {
+                log("Error: unexpected % node in type slot of struct literal at (%:%)", left.node_type, token.src_loc.line, token.src_loc.char);
             }
-            node.right = struct_literal;
+            node := alloc_node(script, Node_Literal);
+            node.literal_type = .STRUCT;
+            node.aggr.type_identifier = xx left;
+            init_expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_BRACE);
+            if !ok  return null;
+            node.aggr.expressions = init_expressions;
             return node;
         }
         
-        log("Error: unexpected token '%' after dot at (%:%)", token.type, token.src_loc.line, token.src_loc.char);
+        log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.src_loc.line, token.src_loc.char);
         return null;
         
       case .OPEN_BRACKET;

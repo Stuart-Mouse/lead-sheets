@@ -7,12 +7,13 @@ Node :: struct {
     whitespace_before:      string;             // can include comments, gets pasted back when serializing
     
     Flags :: enum_flags { 
-        IS_LVALUE; 
+        IS_LVALUE;
         IS_MALLEABLE;
         IS_CONSTANT;
-        UNARY; 
-        OVERLOAD; 
-        DISCARD_VALUE; 
+        UNARY;
+        OVERLOAD;
+        DISCARD_VALUE;
+        TYPECHECKED;
     };
 }
 
@@ -51,7 +52,7 @@ Node_Cast :: struct {
 Node_Identifier :: struct {
     using #as node_base:    Node;
     name:                   string;
-    resolved_type:          enum { UNRESOLVED; TYPE; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    identifier_type:        enum { UNRESOLVED; TYPE; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
     union {
         variable_index:     int; // external variable
         procedure_index:    int; // external procedure
@@ -93,12 +94,13 @@ Node_Directive :: struct {
 Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
-    using value_union: union {
+    using value_union: union { // determined by literal_type
         number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
         aggr: struct {
-            expressions:    *Node; // expressions to init struct members or array values by. later maybe also accepting statements
-            value_pointer:  *void; // once type is resolved, we store pointer to allocated value here
+            type_identifier:    *Node_Identifier;   // can we refactor identifier resolution so that this can just be a string?
+            value_pointer:      *void;              // once type is resolved, we store pointer to allocated value here
+            expressions:        *Node; // expressions to init struct members or array values by. later maybe also accepting statements
         }
     }
 }
@@ -154,10 +156,9 @@ Node_Operation :: struct {
     return_ptr:             *Node;      // only if return type is aggregate
 }
 
-// can be either a struct member access or a struct / array literal with explicit type
+// TODO: maybe rename
 Node_Dot :: struct {
     using #as node_base:    Node;
-    dot_type:               enum { UNRESOLVED; STRUCT_MEMBER; LITERAL; };
     left, right:            *Node;
     union {
         member_offset:      int;

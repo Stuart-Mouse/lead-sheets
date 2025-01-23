@@ -98,7 +98,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
-        if identifier.resolved_type == {
+        if identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
@@ -235,23 +235,16 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Dot;
         dot := node.(*Node_Dot);
-        if dot.dot_type == {
-          case .STRUCT_MEMBER;
-            if !execute_node(script, dot.left)  return false;  
-            struct_any := stack_pop_any(script, dot.left.value_type, true);
-            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
-            
-            dbg_print("struct value ptr: %\n", struct_any.value_pointer);
-            dbg_print("member value ptr: %\n", member_any.value_pointer);
-            
-            if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
-            return true;
-            
-          case .LITERAL;
-            return execute_node(script, dot.right);
-          
-        }
-        return false;
+        
+        if !execute_node(script, dot.left)  return false;  
+        struct_any := stack_pop_any(script, dot.left.value_type, true);
+        member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+        
+        dbg_print("struct value ptr: %\n", struct_any.value_pointer);
+        dbg_print("member value ptr: %\n", member_any.value_pointer);
+        
+        if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+        return true;
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);

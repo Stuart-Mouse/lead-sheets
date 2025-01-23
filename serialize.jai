@@ -95,14 +95,12 @@ print_node :: (
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
-            // print_to_builder(builder, "%.{ ", as_type(ti_struct));
-            append(builder, ".");
-            print_to_builder(builder, "{ ");
-            // what the fuck is going on here? who is printing hte struct name and dot?
-            // ohhhh, so I figured it out. we get identifier.struct_literal if the identifier was actually there in code
-            // otherwise we would just get the struct literal without the typename or dot
-            // maybe this is ok though, and we can jsut hack if for now to add the dot if parent is not a Node_Dot
-            
+            if literal.aggr.type_identifier {
+                assert(literal.aggr.type_identifier.identifier_type == .TYPE);
+                print_to_builder(builder, "%.{ ", as_type(literal.aggr.type_identifier.type_info_pointer));
+            } else {
+                append(builder, ".{ ");
+            }
             // ignoring #place members. Wish there were a better way to do this.
             last_member_offset := -1;
             for ti_struct.members {
