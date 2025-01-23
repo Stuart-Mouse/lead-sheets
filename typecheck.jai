@@ -64,14 +64,14 @@ typecheck_node :: (
                 // TODO: think about rules around automatic casting here...
                 //       maybe we don't want to automatically go float -> int, 
                 //       since we will now only get float here when the literal had a decimal part
-                new_number := Small_Any.{ hint_type, 0 };
+                new_number := Stack_Any.{ hint_type, null };
                 remap_data(to_any(new_number), to_any(literal.number));
                 literal.number = new_number;
             } else {
                 // NOTE: also doing a little remap here in default case, 
                 //       since we actually want the default float type to be float32
                 // if literal.number.type == type_info(float64) {
-                    new_number := Small_Any.{ type_info(float32), 0 };
+                    new_number := Stack_Any.{ type_info(float32), null };
                     remap_data(to_any(new_number), to_any(literal.number));
                     literal.number = new_number;
                 // }
@@ -238,7 +238,7 @@ typecheck_node :: (
         
         procedure_call.arguments_count  = ifx is_unary then 1 else 2;
         procedure_call.arguments        = operation.left;
-        operation.left.next             = operation.right;      // link these as we do for procedure arguments
+        operation.left.next             = operation.right; // link these as we do for procedure arguments
         operation.overload_procedure    = procedure_call;
         operation.value_type            = typecheck_node(script, procedure_call);
         operation.flags                |= .OVERLOAD;

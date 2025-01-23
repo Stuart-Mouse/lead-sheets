@@ -94,7 +94,7 @@ Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
     using value_union: union {
-        number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
+        number:  Stack_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
         aggr: struct {
             expressions:    *Node; // expressions to init struct members or array values by. later maybe also accepting statements
@@ -151,10 +151,12 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 Node_Operation :: struct {
     using #as node_base:    Node;
     name:                   string;
-    operator_index:         int;        // TODO: maybe put into union with overload_procedure, then use .OVERLOAD flag to disambiguate
+    union { // check node.flag & .OVERLOAD
+        operator_index:     int;
+        overload_procedure: *Node_Procedure_Call;
+    }
     left, right:            *Node;      // only left is used if .UNARY
     return_ptr:             *Node;      // only if return type is aggregate
-    overload_procedure:     *Node_Procedure_Call;
 }
 
 // can be either a struct member access or a struct / array literal with explicit type

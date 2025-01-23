@@ -123,19 +123,16 @@ execute_node :: (script: *Script, node: *Node) -> bool {
 
         
       case Node_Operation;
-        operation := node.(*Node_Operation);
+        operation   := node.(*Node_Operation);
+        is_overload := (operation.flags & .OVERLOAD).(bool);
+        is_unary    := (operation.flags & .UNARY   ).(bool);
         
-        if operation.overload_procedure {
-            return execute_node(script, operation.overload_procedure);
-        }
-        
-        is_unary := (operation.flags & .UNARY).(bool);
+        if is_overload  return execute_node(script, operation.overload_procedure);
         
         if is_aggr(operation.value_type) {
             if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
         } else {
-            zero: s64 = 0;
-            if !stack_push_any(script, Any.{ operation.value_type, *zero })  return false;  // TODO: this is silly. we need a stack_push_zeroes procedure or something
+            if !stack_push_zeroes(script, 8)  return false;
         }
         
         if !execute_node(script, operation.left )  return false;
