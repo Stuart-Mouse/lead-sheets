@@ -94,17 +94,12 @@ Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
     using value_union: union {
-        number:  Stack_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
+        number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
         aggr: struct {
             expressions:    *Node; // expressions to init struct members or array values by. later maybe also accepting statements
             value_pointer:  *void; // once type is resolved, we store pointer to allocated value here
         }
-        
-        // used to store backing value for numeric values 
-        // once a concrete type has been determined
-        // in theory we could also store small structs here (but that's probably ill-informed...)
-        bytes:   [16] u8; 
     }
 }
 

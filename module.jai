@@ -474,7 +474,7 @@ operator_precedence_table :: struct { op: string; unary := false; prec: int; } .
 // if the number is larger than s64 max, then we'll try to use u64 instead
 // any number encoded as hexadecimal, octal, binary, etc. will use u64
 // and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
-parse_number :: (s: string) -> Stack_Any, bool {
+parse_number :: (s: string) -> Small_Any, bool {
     // TODO: if number begins with 0b, 0h, 0x, etc..
     //       this will require changes in the lexer as well
 
@@ -482,12 +482,12 @@ parse_number :: (s: string) -> Stack_Any, bool {
     if contains(s, #char ".") {
         val, ok := string_to_float64(s);
         if !ok  log("Failed to parse float from '%'.", s);
-        return make_stack_any(val), ok;
+        return make_small_any(val), ok;
     }
     
     val, ok := string_to_int(s, 10, s64);
     if !ok  log("Failed to parse integer from '%'.", s);
-    return make_stack_any(val), ok;
+    return make_small_any(val), ok;
 }
 
 parse_leaf :: (using script: *Script) -> *Node {
@@ -838,30 +838,29 @@ is_numeric_type :: (ti: *Type_Info) -> bool {
     return ti.type == .INTEGER || ti.type == .FLOAT;
 }
 
-// Stack_Any: useful for when you need to store a small value with a type tag
-//            used in this module for number literals
-// NOTE: value is not actually stored as a u64, this is just the backig space for the value
-//       you can get the correct value out by casting pointer to 'value' to the signified type
-// TODO: maybe replace this with a 'Stack_Any' that will just be a distinct Any
-//       because it woud be useful to use the Stack_Any as a normal Any in cases where the type is an aggregate (or simply > 8 bytes)
-//       e.g., could reduce size of Node_Literal and simplify usage this way
-Stack_Any :: #type,distinct Any; 
 
-to_any :: inline (any: Stack_Any) -> Any { 
+/* 
+    Small_Any is an Any, but we only use it for small values (<= 8 bytes), 
+        which get packed into the space of the value_pointer.
+    Maybe in the future I will also use this to double as a standard any, when we need to point to larger values.
+*/
+Small_Any :: #type,distinct Any; 
+
+to_any :: inline (any: Small_Any) -> Any { 
     return Any.{ any.type, *any.value_pointer }; 
 };
 
-get_as_type :: inline (any: Stack_Any, $T: Type) -> T, bool #modify {
+get_as_type :: inline (any: Small_Any, $T: Type) -> T, bool #modify {
     return T.(*Type_Info).runtime_size <= 8;
 } { 
     return (*any.value_pointer).(*T).*, any.type == type_info(T);
 }
 
-make_stack_any :: inline (value: $T) -> Stack_Any #modify {
+make_small_any :: inline (value: $T) -> Small_Any #modify {
     return T.(*Type_Info).runtime_size <= 8;
 } { 
     // init with zerp and then copy value just so we don't get some weird random bytes copied over somehow
-    ret := Stack_Any.{ type_info(T), null }; 
+    ret := Small_Any.{ type_info(T), null }; 
     (*ret.value_pointer).(*T).* = value;
     return ret;
 }
@@ -869,7 +868,7 @@ make_stack_any :: inline (value: $T) -> Stack_Any #modify {
 // NOTE: this would not work with dynamic type infos, 
 //       as that would require a more complex switch case
 //       on type of type, runtime size, and signedness
-negate_number :: inline (any: *Stack_Any) {
+negate_number :: inline (any: *Small_Any) {
     if as_type(any.type) == {
       // case u\8;     val := (*any.value).(*u\8);     val.* = -val.*;
       // case u16;     val := (*any.value).(*u16);     val.* = -val.*;
@@ -882,7 +881,7 @@ negate_number :: inline (any: *Stack_Any) {
       case float32; val := (*any.value).(*float32); val.* = -val.*;
       case float64; val := (*any.value).(*float64); val.* = -val.*;
       
-      case; assert(false, "Stack_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
+      case; assert(false, "Small_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
     }
 }
 
