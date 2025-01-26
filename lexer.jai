@@ -337,7 +337,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
                 if !advance(lexer)  return false;
             }
         }
-        if begins_with(file, "/*") {
+        else if begins_with(file, "/*") {
             while !begins_with(file, "*/") {
                 if !advance(lexer)  return false;
             }

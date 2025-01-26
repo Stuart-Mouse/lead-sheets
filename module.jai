@@ -690,7 +690,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
           case .IDENTIFIER;
             node := alloc_node(script, Node_Dot);
             node.left   = left;
-            node.right  = make_identifier(script, token.text);
+            node.right  = make_identifier(script, token_after_dot.text);
             return node;
             
             
