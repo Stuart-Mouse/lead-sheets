@@ -34,23 +34,19 @@ get_operator_precedence :: (identifier: string) -> int {
 //     return check_bit(binary_operators, token.type);
 // }
 
-
-token_is_operator :: (token: Token) -> bool, Operator_Type, int {
+// TODO: expect_unary is a stupid hack
+//       
+token_is_operator :: (token: Token, expect_unary := false) -> bool, Operator_Type, int {
     if token.text == "="  return true, .ASSIGNMENT, 1;
     
     // TODO: we should probably still check the token type and not just the text
     for operator_table  {
+        if expect_unary && it.operator_type != .UNARY  continue;
         if it.identifier == token.text {
             return true, it.operator_type, it.precedence;
         }
     }
     return false, xx 0, 0;
-}
-
-// TODO: may need to differentiate prefix and postfix later on...
-//       this will mean adding another flag to the below operator table
-token_is_unary_operator :: (token: Token) -> bool {
-    return token.type == .SUB;
 }
 
 operator_table :: struct { identifier: string; operator_type: Operator_Type; precedence: int; } .[

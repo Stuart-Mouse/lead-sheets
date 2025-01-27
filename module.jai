@@ -442,7 +442,8 @@ parse_leaf :: (using script: *Script) -> *Node {
     unary_op: *Node_Operation;
     
     token := get_token_or_return(*lexer, null);
-    if token_is_unary_operator(token) {
+    is_operator, operator_type := token_is_operator(token, expect_unary = true);
+    if is_operator && operator_type == .UNARY {
         dbg_print("UNARY OPERATOR (%)\n", token.text);
         unary_op = alloc_node(script, Node_Operation);
         unary_op.name = token.text;
@@ -450,7 +451,6 @@ parse_leaf :: (using script: *Script) -> *Node {
         // unary_op.left gets set at the bottom, when 'node' actually points to something.
         token = get_token_or_return(*lexer, null);
     }
-    
     
     if token.type == {
       case .DOT;
