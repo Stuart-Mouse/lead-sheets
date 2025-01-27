@@ -118,7 +118,7 @@ PTR_SIZE :: size_of(*void);
 
 stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
     script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base);
+    assert(script.stack_ptr >= script.stack_base, "stack_ptr offset: %", script.stack_ptr - script.stack_base);
     if is_lvalue {
         return script.stack_ptr.(**void).*;
     } else {
@@ -375,28 +375,20 @@ parse_statement :: (using script: *Script) -> *Node {
         return declaration;
     }
     
-    // TODO: probably better here to just peek the token and then switch on type? why are we using expect_token_type here anymore?
-    
-    if expect_token_type(*lexer, .ASSIGN_EQUAL) {
-        dbg_print("ASSIGNMENT\n"); dbg_print_push_indent();
-        right := parse_expression(script, 0);
-        if right == null  return null;
-        
-        if !expect_token_type(*lexer, .SEMICOLON)  return null;
-
-        assignment := alloc_node(script, Node_Assignment);
-        assignment.left  = left;
-        assignment.right = right;
-        return assignment;
-    }
-    
-    
     // check if expression can be used as a statement
     if expect_token_type(*lexer, .SEMICOLON) {
         if left.node_type == {
           case Node_Procedure_Call;
             left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
             return left;
+            
+          case Node_Operation;
+            operation := left.(*Node_Operation);
+            if operation.operator_type == .ASSIGNMENT {
+                return left;
+            }
+            log("Error: operator of type % cannot be used as a statement.", operation.operator_type);
+            return null;
             
           case Node_Directive;
             return left;
@@ -451,9 +443,10 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     token := get_token_or_return(*lexer, null);
     if token_is_unary_operator(token) {
+        dbg_print("UNARY OPERATOR (%)\n", token.text);
         unary_op = alloc_node(script, Node_Operation);
         unary_op.name = token.text;
-        unary_op.flags |= .UNARY;
+        unary_op.operator_type = .UNARY;
         // unary_op.left gets set at the bottom, when 'node' actually points to something.
         token = get_token_or_return(*lexer, null);
     }
@@ -725,17 +718,21 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         return node;
     }
     
-    if token_is_binary_operator(token) {
-        token_prec := get_operator_precedence(token.text);
-        if token_prec <= min_prec  return left;
-        dbg_print("BINARY OPERATION (%)\n", token.text);
-        
+    is_operator, operator_type, precedence := token_is_operator(token);
+    if is_operator && operator_type != .UNARY {
+        if precedence <= min_prec  return left;
+        dbg_print("% OPERATION (%)\n", operator_type, token.text);
         get_token(*lexer);
         
-        right := parse_expression(script, token_prec);
+        right := parse_expression(script, precedence);
         if right == null  return null;
         
-        return make_binary_operation(script, token.text, left, right);
+        node := alloc_node(script, Node_Operation);
+        node.name          = token.text;
+        node.operator_type = operator_type;
+        node.left          = left;
+        node.right         = right;
+        return node;
     }
     
     return left;
@@ -745,14 +742,6 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
 make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
     node := alloc_node(script, Node_Identifier);
     node.name = name;
-    return node;
-}
-
-make_binary_operation :: (script: *Script, operator_ident: string, left: *Node, right: *Node) -> *Node {
-    node := alloc_node(script, Node_Operation);
-    node.name  = operator_ident;
-    node.left  = left;
-    node.right = right;
     return node;
 }
 

@@ -219,19 +219,36 @@ typecheck_node :: (
       case Node_Operation;
         if check_flags & .EXPECT_LVALUE  return null;
         operation := node.(*Node_Operation);
+        dbg_print("Operation is % '%'\n", operation.operator_type, operation.name);
         
-        is_unary := (operation.flags & .UNARY).(bool);
-        
-        left_type := typecheck_node(script, operation.left, check_flags, hint_type);
+        left_check_flags := check_flags;
+        if operation.operator_type == .ASSIGNMENT {
+            left_check_flags |= .EXPECT_LVALUE;
+            hint_type = null; // just in case?
+        }
+        left_type := typecheck_node(script, operation.left, left_check_flags, hint_type);
         if !left_type   return null;
+        if operation.operator_type == .ASSIGNMENT {
+            hint_type = left_type; // so that we can hint right side based on left
+        }
         
         right_type: *Type_Info;
-        if !is_unary {
+        if operation.operator_type != .UNARY {
             right_type = typecheck_node(script, operation.right, check_flags, hint_type);
             if !right_type  return null;
         }
         
-        operator_index, swap_args := resolve_builtin_operation(operation.name, left_type, right_type);
+        // special case: operator = is always a simple memcpy
+        if operation.name == "=" {
+            if left_type != right_type {
+                log("Error: left and right types must match in a simple assignment statement!");
+                return null;
+            }
+            operation.value_type = left_type;
+            return operation.value_type;
+        }
+        
+        operator_index, _, swap_args := resolve_builtin_operation(operation.name, operation.operator_type, left_type, right_type);
         if operator_index >= 0 {
             operation.operator_index = operator_index;
             
@@ -253,7 +270,7 @@ typecheck_node :: (
         procedure_call := alloc_node(script, Node_Procedure_Call);
         procedure_call.procedure_expression = make_identifier(script, operation.name);
         
-        procedure_call.arguments_count  = ifx is_unary then 1 else 2;
+        procedure_call.arguments_count  = ifx operation.operator_type == .UNARY then 1 else 2;
         procedure_call.arguments        = operation.left;
         operation.left.next             = operation.right; // link these as we do for procedure arguments
         operation.overload_procedure    = procedure_call;
@@ -452,28 +469,6 @@ typecheck_node :: (
         declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
         dbg_print("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
         return declaration.value_type;
-        
-        
-      case Node_Assignment;
-        if check_flags & .EXPECT_LVALUE  return null;
-        assignment := node.(*Node_Assignment);
-        
-        // get type of left side
-        // we expect left side to be an lvalue
-        left_type := typecheck_node(script, assignment.left, check_flags = .EXPECT_LVALUE);
-        if !left_type  return null;
-        
-        // pass left type as 'hint_type' argument so that we can infer type of struct literals
-        right_type := typecheck_node(script, assignment.right, hint_type = left_type);
-        if !right_type  return null;
-        
-        if left_type != right_type {
-            log("Error: left and right types in assignment statement do not match! % != %\n", as_type(left_type), as_type(right_type));
-            return null;
-        }
-        
-        assignment.value_type = type_info(void);
-        return assignment.value_type;
         
         
       case Node_Block;

@@ -70,10 +70,12 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         if literal.literal_type == {
           case .STRING;
             if !stack_push_any(script, literal.text, literal.flags & .IS_LVALUE != 0)  return false;
+            dbg_print("returning literal with value %\n", literal.text);
             return true;
             
           case .NUMBER;
             if !stack_push_any(script, to_any(literal.number), literal.flags & .IS_LVALUE != 0)  return false;
+            dbg_print("returning literal with value %\n", to_any(literal.number));
             return true;
             
           case .STRUCT;
@@ -124,19 +126,33 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Operation;
         operation   := node.(*Node_Operation);
-        is_overload := (operation.flags & .OVERLOAD).(bool);
-        is_unary    := (operation.flags & .UNARY   ).(bool);
         
-        if is_overload  return execute_node(script, operation.overload_procedure);
-        
-        if is_aggr(operation.value_type) {
-            if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
-        } else {
-            if !stack_push_zeroes(script, 8)  return false;
+        if operation.flags & .OVERLOAD {
+            return execute_node(script, operation.overload_procedure);
         }
         
-        if !execute_node(script, operation.left )  return false;
-        if !is_unary && !execute_node(script, operation.right)  return false;
+        if operation.operator_type != .ASSIGNMENT {
+            if is_aggr(operation.value_type) {
+                if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
+            } else {
+                if !stack_push_zeroes(script, 8)  return false;
+            }
+        }
+        
+        if !execute_node(script, operation.left)  return false;
+        
+        if operation.operator_type != .UNARY {
+            if !execute_node(script, operation.right)  return false;
+        }
+        
+        // special case: operator = is always a simple memcpy
+        if operation.name == "=" {
+            assert(operation.left.flags & .IS_LVALUE != 0);
+            r_value := stack_pop_any(script, operation.right.value_type);
+            l_value := stack_pop_any(script, operation.left.value_type, true);
+            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
+            return true;
+        }
         
         // TODO: maybe use the simpler version of execute_builtin_operation, but with this more dynamic stack popping
         //       this is probably a little bit slower, but it may be worth it to reduce code bloat
@@ -247,6 +263,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
         return true;
         
+        
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         
@@ -306,31 +323,6 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
-        return true;
-        
-        
-      case Node_Assignment;
-        assignment := node.(*Node_Assignment);
-        
-        if !execute_node(script, assignment.left) {
-            dbg_print("failed to evaluate left side of assignment statement!\n");
-            return false;
-        }
-        if !execute_node(script, assignment.right) {
-            dbg_print("failed to evaluate right side of assignment statement!\n");
-            return false;
-        }
-        
-        r_value := stack_pop_any(script, assignment.right.value_type);
-        l_value := stack_pop_any(script, assignment.left.value_type, true);
-        
-        dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
-        dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
-        
-        dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
-        dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
-        
-        memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         return true;
         
         

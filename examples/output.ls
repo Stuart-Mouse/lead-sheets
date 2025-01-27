@@ -1,4 +1,5 @@
 r1 = Vector2.{ 3, 4 } * 5;
+r1 -= .{ 3, 2 };
 r2 = (1 + 2) * pow(2, sin(3.14159 / 2) + 2);
 r3 = a + b;
 while echo(r2) > 20  {
@@ -10,6 +11,9 @@ for arr1  echo(it);
 local: float;
 local = 5 + 5 * 2;
 echo(local / 2);
+local = 2;
+local += 5;
+echo(local);
 for -5..9  echo(it);
 print(str);
 print("this is also a string");

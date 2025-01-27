@@ -19,10 +19,10 @@
     
 */
 
-get_operator_precedence :: (op: string) -> int {
-    for operator_precedence_table  {
-        if it.op == op {
-            return it.prec;
+get_operator_precedence :: (identifier: string) -> int {
+    for operator_table  {
+        if it.identifier == identifier {
+            return it.precedence;
         }
     }
     return -1;
@@ -34,20 +34,17 @@ get_operator_precedence :: (op: string) -> int {
 //     return check_bit(binary_operators, token.type);
 // }
 
-// TODO: could instead just search the operator precedence table? Then that table should use a token_type to identify the operator instead of a string...
 
-token_is_binary_operator :: (token: Token) -> bool {
-    return token.type == .ADD
-        || token.type == .SUB
-        || token.type == .MUL
-        || token.type == .DIV
-        || token.type == .LOGICAL_AND
-        || token.type == .LOGICAL_OR
-        || token.type == .LESS_THAN
-        || token.type == .GREATER_THAN
-        || token.type == .LESS_THAN_OR_EQUAL_TO
-        || token.type == .GREATER_THAN_OR_EQUAL_TO
-        || token.type == .COMPARE_EQUAL;
+token_is_operator :: (token: Token) -> bool, Operator_Type, int {
+    if token.text == "="  return true, .ASSIGNMENT, 1;
+    
+    // TODO: we should probably still check the token type and not just the text
+    for operator_table  {
+        if it.identifier == token.text {
+            return true, it.operator_type, it.precedence;
+        }
+    }
+    return false, xx 0, 0;
 }
 
 // TODO: may need to differentiate prefix and postfix later on...
@@ -56,22 +53,26 @@ token_is_unary_operator :: (token: Token) -> bool {
     return token.type == .SUB;
 }
 
-operator_precedence_table :: struct { op: string; unary := false; prec: int; } .[
-    .{ op = "&&", prec = 1 },
-    .{ op = "||", prec = 1 },
+operator_table :: struct { identifier: string; operator_type: Operator_Type; precedence: int; } .[
+    .{ "=",  .ASSIGNMENT, 1 },
+    .{ "+=", .ASSIGNMENT, 1 },
+    .{ "-=", .ASSIGNMENT, 1 },
     
-    .{ op = "==", prec = 2 },
-    .{ op = ">=", prec = 2 },
-    .{ op = "<=", prec = 2 },
-    .{ op = ">",  prec = 2 },
-    .{ op = "<",  prec = 2 },
+    .{ "&&", .BINARY, 2 },
+    .{ "||", .BINARY, 2 },
+     
+    .{ "==", .BINARY, 3 },
+    .{ ">=", .BINARY, 3 },
+    .{ "<=", .BINARY, 3 },
+    .{ ">",  .BINARY, 3 },
+    .{ "<",  .BINARY, 3 },
     
-    .{ op = "+",  prec = 5 },
-    .{ op = "-",  prec = 5 },
-    .{ op = "*",  prec = 6 },
-    .{ op = "/",  prec = 6 },
+    .{ "+",  .BINARY, 5 },
+    .{ "-",  .BINARY, 5 },
+    .{ "*",  .BINARY, 6 },
+    .{ "/",  .BINARY, 6 },
     
-    .{ op = "-",  prec = 7, unary = true },
+    .{ "-",  .UNARY,  7 },
 ];
 
 
@@ -79,94 +80,128 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
 
 
 BUILTIN_OPERATIONS :: (
-    struct { operator_ident: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
+    struct { type: Operator_Type; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
 ).[
     // BINARY
-    .{ "+", int, int, int, false },
-    .{ "-", int, int, int, false },
-    .{ "*", int, int, int, false },
-    .{ "/", int, int, int, false },
+    .{ .BINARY, "+", int, int, int, false },
+    .{ .BINARY, "-", int, int, int, false },
+    .{ .BINARY, "*", int, int, int, false },
+    .{ .BINARY, "/", int, int, int, false },
     
-    .{ ">",  int, int, bool, false },
-    .{ "<",  int, int, bool, false },
-    .{ "==", int, int, bool, false },
-    .{ ">=", int, int, bool, false },
-    .{ "<=", int, int, bool, false },
+    .{ .BINARY, ">",  int, int, bool, false },
+    .{ .BINARY, "<",  int, int, bool, false },
+    .{ .BINARY, "==", int, int, bool, false },
+    .{ .BINARY, ">=", int, int, bool, false },
+    .{ .BINARY, "<=", int, int, bool, false },
     
-    .{ "+", float, float, float, false },
-    .{ "-", float, float, float, false },
-    .{ "*", float, float, float, false },
-    .{ "/", float, float, float, false },
+    .{ .BINARY, "+", float, float, float, false },
+    .{ .BINARY, "-", float, float, float, false },
+    .{ .BINARY, "*", float, float, float, false },
+    .{ .BINARY, "/", float, float, float, false },
     
-    .{ ">",  float, float, bool, false },
-    .{ "<",  float, float, bool, false },
-    .{ "==", float, float, bool, false },
-    .{ ">=", float, float, bool, false },
-    .{ "<=", float, float, bool, false },
+    .{ .BINARY, ">",  float, float, bool, false },
+    .{ .BINARY, "<",  float, float, bool, false },
+    .{ .BINARY, "==", float, float, bool, false },
+    .{ .BINARY, ">=", float, float, bool, false },
+    .{ .BINARY, "<=", float, float, bool, false },
     
-    .{ "&&", bool, bool, bool, false },
-    .{ "||", bool, bool, bool, false },
+    .{ .BINARY, "&&", bool, bool, bool, false },
+    .{ .BINARY, "||", bool, bool, bool, false },
     
-    .{ "+", Vector2, Vector2, Vector2, false },
-    .{ "-", Vector2, Vector2, Vector2, false },
-    .{ "*", Vector2, Vector2, Vector2, false },
-    .{ "/", Vector2, Vector2, Vector2, false },
-    .{ "*", Vector2, float,   Vector2, true  },
-    .{ "/", Vector2, float,   Vector2, false },
+    .{ .BINARY, "+", Vector2, Vector2, Vector2, false },
+    .{ .BINARY, "-", Vector2, Vector2, Vector2, false },
+    .{ .BINARY, "*", Vector2, Vector2, Vector2, false },
+    .{ .BINARY, "/", Vector2, Vector2, Vector2, false },
+    .{ .BINARY, "*", Vector2, float,   Vector2, true  },
+    .{ .BINARY, "/", Vector2, float,   Vector2, false },
     
-    .{ "==", Vector2, Vector2, bool, false },
+    .{ .BINARY, "==", Vector2, Vector2, bool, false },
     
     
     // UNARY    (right type will be ignored)
-    .{ operator_ident = "-", left = int,   ret = int   },
-    .{ operator_ident = "-", left = float, ret = float },
+    .{ type = .UNARY, identifier = "-", left = int,   ret = int   },
+    .{ type = .UNARY, identifier = "-", left = float, ret = float },
     
     
     // ASSIGNMENT
+    // TODO: should we just assert that left and ret are the same type?
+    .{ .ASSIGNMENT, "+=", int, int, int, false },
+    .{ .ASSIGNMENT, "-=", int, int, int, false },
     
+    .{ .ASSIGNMENT, "+=", float, float, float, false },
+    .{ .ASSIGNMENT, "-=", float, float, float, false },
+    
+    .{ .ASSIGNMENT, "+=", Vector2, Vector2, Vector2, false },
+    .{ .ASSIGNMENT, "-=", Vector2, Vector2, Vector2, false },
+    .{ .ASSIGNMENT, "*=", Vector2, Vector2, Vector2, false },
+    .{ .ASSIGNMENT, "/=", Vector2, Vector2, Vector2, false },
+    .{ .ASSIGNMENT, "*=", Vector2, float,   Vector2, false },
+    .{ .ASSIGNMENT, "/=", Vector2, float,   Vector2, false },
 ];
 
-resolve_builtin_operation :: (operator_ident: string, left_type: *Type_Info, right_type: *Type_Info) -> (index: int, swap_args: bool) {
+resolve_builtin_operation :: (
+    identifier:     string, 
+    type:           Operator_Type, 
+    left_type:      *Type_Info, 
+    right_type:     *Type_Info
+) -> (
+    index:          int, 
+    type:           Operator_Type, 
+    swap_args:      bool
+) {
     for BUILTIN_OPERATIONS {
-        if it.operator_ident != operator_ident  continue;
+        if it.identifier != identifier || it.type != type  continue;
         
-        if it.left .(*Type_Info) == left_type 
-        && it.right.(*Type_Info) == right_type {
-            return it_index, false;
-        }
+        if it.type == {
+          case .BINARY;
+            if it.left .(*Type_Info) == left_type 
+            && it.right.(*Type_Info) == right_type {
+                return it_index, .BINARY, false;
+            }
         
-        if it.is_symmetric 
-        && it.left .(*Type_Info) == right_type 
-        && it.right.(*Type_Info) == left_type {
-            return it_index, true;
+            if it.is_symmetric 
+            && it.left .(*Type_Info) == right_type 
+            && it.right.(*Type_Info) == left_type {
+                return it_index, .BINARY, true;
+            }
+          
+          case .UNARY;
+            if it.left.(*Type_Info) == left_type  return it_index, .UNARY, false;
+            
+          case .ASSIGNMENT;
+            if it.left .(*Type_Info) == left_type 
+            && it.right.(*Type_Info) == right_type  return it_index, .ASSIGNMENT, false;
         }
     }
-    return -1, false;
+    return -1, .BINARY, false;
 }
 
-execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *void) -> bool {
-    // generate switch case for all builtin operations
-    #insert -> string {
-        builder: String_Builder;
+// execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *void) -> bool {
+//     // generate switch case for all builtin operations
+//     #insert -> string {
+//         builder: String_Builder;
         
-        append(*builder, "if oper_idx == {\n");
-        for BUILTIN_OPERATIONS {
-            print_to_builder(*builder, "  case %;\n", it_index);
-            if it.right.(*void) == null {
-                print_to_builder(*builder, "    ret.(*%).* = %left.(*%).*;\n", it.ret, it.operator_ident, it.left);
-            } else {
-                print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.operator_ident, it.right);
-            }
-            append(*builder, "    return true;\n");
-        }
-        append(*builder, "}\n");
+//         append(*builder, "if oper_idx == {\n");
+//         for BUILTIN_OPERATIONS {
+//             print_to_builder(*builder, "  case %;\n", it_index);
+//             if it.operator_type == {
+//               case .UNARY;
+//                 print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.operator_ident);
+//               case .BINARY;
+//                 print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.operator_ident, it.right);
+//               case .ASSIGNMENT;
+//                 print_to_builder(*builder, "    ret.(*%1).* = left.(*%1).* %2 right.(*%3).*;\n", it.left, it.operator_ident, it.right);
+//             }
+//             append(*builder, "    return true;\n");
+//         }
+//         append(*builder, "}\n");
         
-        return builder_to_string(*builder);
-    }
+//         return builder_to_string(*builder);
+//     }
     
-    assert(false, "Called execute_builtin_operation with an invalid operation index.");
-    return false;
-}
+//     assert(false, "Called execute_builtin_operation with an invalid operation index.");
+//     return false;
+// }
 
 // this version may not be worth it
 // because we will still probably need the other version for eval procs
@@ -186,20 +221,23 @@ execute_builtin_operation :: (script: *Script, oper_idx: int) {
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "case %;\n", it_index);
             
-            // unary operations
-            // TODO: may have to disambiguate later on prefix/postfix
-            if it.right.(*void) == null {
-                print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
-                print_to_builder(*builder, "  ret   := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
-                print_to_builder(*builder, "  ret.* = %left.*;\n", it.operator_ident);
-            }
-            // binary operations
-            else {
+            if it.type == {
+              case .UNARY;
+                print_to_builder(*builder, "  left := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
+                print_to_builder(*builder, "  ret  := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
+                print_to_builder(*builder, "  ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
+                
+              case .BINARY;
                 print_to_builder(*builder, "  right := stack_pop (script, %).(*%);\n", is_aggr(it.right), it.right);
                 print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
                 print_to_builder(*builder, "  ret   := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
                 
-                print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.operator_ident);
+                print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.identifier);
+                
+              case .ASSIGNMENT;
+                print_to_builder(*builder, "  right := stack_pop (script, %).(*%);\n", is_aggr(it.right), it.right);
+                print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n", true, it.left);
+                print_to_builder(*builder, "  left.(*%).* % right.(*%).*;\n", it.left, it.identifier, it.right);
             }
             
             append(*builder, "  return;\n");

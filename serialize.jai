@@ -70,7 +70,7 @@ print_node :: (
         // TODO: proabbly print call stack here...
         return true;
     }
-     
+    
     if node.node_type == {
       case Node_Directive;
         directive := node.(*Node_Directive);
@@ -135,8 +135,7 @@ print_node :: (
       case Node_Operation;
         operation := node.(*Node_Operation);
         
-        is_unary := (operation.flags & .UNARY).(bool);
-        if is_unary {
+        if operation.operator_type == .UNARY {
             append(builder, operation.name);
             print_node(script, operation.left, builder, indent);
             return true;
@@ -244,14 +243,6 @@ print_node :: (
             }
             print_node_or_return(script, declaration.init_expression, builder, indent);
         }
-        return true;
-        
-        
-      case Node_Assignment;
-        assignment := node.(*Node_Assignment);
-        print_node_or_return(script, assignment.left, builder, indent);
-        append(builder, " = ");
-        print_node_or_return(script, assignment.right, builder, indent);
         return true;
         
         

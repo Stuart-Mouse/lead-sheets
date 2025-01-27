@@ -10,7 +10,6 @@ Node :: struct {
         IS_LVALUE;
         IS_MALLEABLE;
         IS_CONSTANT;
-        UNARY;
         OVERLOAD;
         DISCARD_VALUE;
         TYPECHECKED;
@@ -148,6 +147,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 Node_Operation :: struct {
     using #as node_base:    Node;
     name:                   string;
+    operator_type:          Operator_Type;
     union { // check node.flag & .OVERLOAD
         operator_index:     int;
         overload_procedure: *Node_Procedure_Call;
@@ -169,11 +169,6 @@ Node_Subscript :: struct {
     using #as node_base:    Node;
     base_expression:        *Node;
     indexing_expression:    *Node;
-}
-
-Node_Assignment :: struct {
-    using #as node_base:    Node;
-    left, right:            *Node; 
 }
 
 Node_If_Statement :: struct {

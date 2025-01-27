@@ -1,5 +1,7 @@
 
 r1 = Vector2.{ 3, 4 } * 5;
+r1 -= .{ 3, 2 };
+
 r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
 r3 = a + b;
 
@@ -14,6 +16,10 @@ for arr1  echo(it);
 local: float;
 local = 5 + 5 * 2;
 echo(local/2);
+
+local = 2;
+local += 5;
+echo(local);
 
 for -5..9  echo(it);
 
@@ -33,11 +39,10 @@ vec3 := Vector3.{ 1, 2, 3 } * 7;
 echo(vec3);
 
 
+
 const :: 5?;
 echo(const);
 
 const = 7;
 echo(const);
-
-
 
