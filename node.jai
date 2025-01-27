@@ -5,6 +5,7 @@ Node :: struct {
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
     whitespace_before:      string;             // can include comments, gets pasted back when serializing
+    source_location:        Source_Location;
     
     Flags :: enum_flags { 
         IS_LVALUE;
@@ -12,6 +13,7 @@ Node :: struct {
         IS_CONSTANT;
         OVERLOAD;
         DISCARD_VALUE;
+        MUST_BE_STATEMENT_ROOT;
         TYPECHECKED;
     };
 }

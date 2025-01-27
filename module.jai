@@ -387,7 +387,7 @@ parse_statement :: (using script: *Script) -> *Node {
             if operation.operator_type == .ASSIGNMENT {
                 return left;
             }
-            log("Error: operator of type % cannot be used as a statement.", operation.operator_type);
+            log("Error: operator of type % cannot be used as a statement. Only assignment operators can be used in this way.", operation.operator_type);
             return null;
             
           case Node_Directive;
@@ -410,7 +410,7 @@ is_reserved_word :: (str: string) -> bool {
 }
 
 
-// This procedure is kinda incomplete and doesn;t do everything yet, but here's the plan...
+// This procedure is kinda incomplete and doesn't do everything yet, but here's the plan...
 // will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
 // we can then recast from this preferred type to 
 // obviously any number with a fractional component will use float64
@@ -732,6 +732,9 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         node.operator_type = operator_type;
         node.left          = left;
         node.right         = right;
+        if operator_type == .ASSIGNMENT {
+            node.flags |= .MUST_BE_STATEMENT_ROOT;
+        }
         return node;
     }
     

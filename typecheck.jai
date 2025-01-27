@@ -8,9 +8,9 @@
 */
 
 Typechecking_Flags :: enum_flags {
-    NONE                    :: 0;
-    EXPECT_LVALUE           :: 1 << 0;
-    IS_ROOT_OF_STATEMENT    :: 1 << 1;
+    NONE                :: 0;
+    EXPECT_LVALUE       :: 1 << 0;
+    IS_STATEMENT_ROOT   :: 1 << 1;
 }
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
@@ -43,14 +43,14 @@ typecheck_node :: (
     }
     
     // weird special case for assignment operators. needs to be done up top so we can remove the flag right away.
-    if node.node_type == Node_Operation 
-    && node.(*Node_Operation).operator_type == .ASSIGNMENT {
-        if !(check_flags & .IS_ROOT_OF_STATEMENT) {
-            log("Error: an assignment operator can only be used as the root of a statement, not just as an arbitrary expression.");
+    // TODO: print source code location on error as well. really, we need to support this in many places for better error reporting.
+    if node.flags & .MUST_BE_STATEMENT_ROOT {
+        if !(check_flags & .IS_STATEMENT_ROOT) {
+            log("Error: This expression '%' can only be used as the root of a statement, not just as an arbitrary expression.", sprint_node(script, node,, temp));
             return null;
         }
     }
-    check_flags &= ~.IS_ROOT_OF_STATEMENT;
+    check_flags &= ~.IS_STATEMENT_ROOT;
     
     
     if node.node_type == {
@@ -488,7 +488,7 @@ typecheck_node :: (
         block := node.(*Node_Block);
         
         for block.statements {
-            if !typecheck_node(script, it, .IS_ROOT_OF_STATEMENT)  return null;
+            if !typecheck_node(script, it, .IS_STATEMENT_ROOT)  return null;
         }
         
         block.value_type = type_info(void);
@@ -500,7 +500,7 @@ typecheck_node :: (
         if_statement := node.(*Node_If_Statement);
         
         if !typecheck_node(script, if_statement.condition)  return null; // TODO: must be bool or coercible to bool
-        if !typecheck_node(script, if_statement.statement, .IS_ROOT_OF_STATEMENT)  return null;
+        if !typecheck_node(script, if_statement.statement, .IS_STATEMENT_ROOT)  return null;
         
         if_statement.value_type = type_info(void);
         return if_statement.value_type;
@@ -511,7 +511,7 @@ typecheck_node :: (
         while_loop := node.(*Node_While_Loop);
         
         if !typecheck_node(script, while_loop.condition)  return null; // TODO: must be bool or coercible to bool
-        if !typecheck_node(script, while_loop.statement, .IS_ROOT_OF_STATEMENT)  return null;
+        if !typecheck_node(script, while_loop.statement, .IS_STATEMENT_ROOT)  return null;
         
         while_loop.value_type = type_info(void);
         return while_loop.value_type;
@@ -561,7 +561,7 @@ typecheck_node :: (
         }
         
         
-        if !typecheck_node(script, for_loop.statement, .IS_ROOT_OF_STATEMENT)  return null;
+        if !typecheck_node(script, for_loop.statement, .IS_STATEMENT_ROOT)  return null;
         
         for_loop.value_type = type_info(void);
         return for_loop.value_type;
@@ -576,7 +576,7 @@ typecheck_script :: (script: *Script) -> bool {
     
     for *script.ast_root.statements {
         // TODO: probably check specifically that type returned here is void, since statements should not have a value_type.
-        if !typecheck_node(script, it, .IS_ROOT_OF_STATEMENT)  return false;
+        if !typecheck_node(script, it, .IS_STATEMENT_ROOT)  return false;
     }
     
     script.flags |= .TYPECHECKED;

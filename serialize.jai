@@ -50,6 +50,12 @@ print_script :: (
     return true;
 }
 
+sprint_node :: (script: *Script, node: *Node) -> string {
+    builder: String_Builder;
+    print_node(script, node, *builder, 0);
+    return builder_to_string(*builder);
+}
+
 print_node_or_return :: (
     using script:   *Script, 
     node:           *Node, 
@@ -59,6 +65,7 @@ print_node_or_return :: (
     if !print_node(script, node, builder, indent)  `return false;
 }
 
+// TODO: make sure this works when node has not passed typechecking, so that we can at least still print parts of AST in error messages
 print_node :: (
     using script:   *Script, 
     node:           *Node, 
@@ -101,16 +108,24 @@ print_node :: (
             } else {
                 append(builder, ".{ ");
             }
-            // ignoring #place members. Wish there were a better way to do this.
-            last_member_offset := -1;
-            for ti_struct.members {
-                if it.flags & .CONSTANT  continue;
-                if it.offset_in_bytes < last_member_offset  break;
-                
-                if last_member_offset != -1  append(builder, ", ");
-                last_member_offset = it.offset_in_bytes;
-                
-                print_to_builder(builder, "%", Any.{ it.type, literal.aggr.value_pointer + it.offset_in_bytes });
+            
+            if node.flags & .TYPECHECKED {
+                // ignoring #place members. Wish there were a better way to do this.
+                last_member_offset := -1;
+                for ti_struct.members {
+                    if it.flags & .CONSTANT  continue;
+                    if it.offset_in_bytes < last_member_offset  break;
+                    
+                    if last_member_offset != -1  append(builder, ", ");
+                    last_member_offset = it.offset_in_bytes;
+                    
+                    print_to_builder(builder, "%", Any.{ it.type, literal.aggr.value_pointer + it.offset_in_bytes });
+                }
+            } else {
+                for literal.aggr.expressions {
+                    print_node(script, it, builder, indent);
+                    if it.next != null  append(builder, ", ");
+                }
             }
             
             append(builder, " }");   

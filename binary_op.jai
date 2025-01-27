@@ -1,21 +1,17 @@
 
 /*
-    We need to specify the return type here so that we can look it up at runtime for the purpose of type-checking scripts.
-    It would probably be possible to remove the need for this, but it would complicate certain sections of code.
+    So there are currently some things I don't like about how operators are implemented.
     
+    There's a weird sort of inconsistency to what exactly each operator type implies and how i tbehaves
+    which I suppose make sense, but for example
     
-    How to implement assignment operators
-    the issue is that we really just want one generic assignment method, memcpy
-    for the operators liek += and -=, resolution will have to work a bit differnetly
-        we still want to be able to overload these, but then failing that, we want to search for the standard + and - operators respectively
-        this also complicates execution
-        like we have the operator_type to tell us 
-        
+    because assignment operators basically are lexically identical to binary operators, they are sort of parsed in the same way
+    but this also means that we can always tell them apart, since no binary operator could be the same token as an assignment operator
     
-    also, during parsing there will definitely be some new concerns
-    like, what happens if someone tries to write
-    `a := b = c;`
-    we have to catch that the expression `b = c` is only valid as the root node of a statement
+    unary operators are parsed differently, but that also means they can be the same exact token as a binary operator ('-' for example)
+    so if we want to check if a token is a unary operator, we need to look explicityl pass that we expect a unary operator in the lookup proc (token_is_operator)
+    
+    is it weird that we know the operator type before typechecking?
     
 */
 
@@ -34,8 +30,7 @@ get_operator_precedence :: (identifier: string) -> int {
 //     return check_bit(binary_operators, token.type);
 // }
 
-// TODO: expect_unary is a stupid hack
-//       
+// TODO: expect_unary is a stupid hack, but I can't of a better way
 token_is_operator :: (token: Token, expect_unary := false) -> bool, Operator_Type, int {
     if token.text == "="  return true, .ASSIGNMENT, 1;
     
@@ -49,6 +44,8 @@ token_is_operator :: (token: Token, expect_unary := false) -> bool, Operator_Typ
     return false, xx 0, 0;
 }
 
+// TODO: use token_type instead of identifier
+// then we can also a separate lookup table to get the text for an operator from the token_type
 operator_table :: struct { identifier: string; operator_type: Operator_Type; precedence: int; } .[
     .{ "=",  .ASSIGNMENT, 1 },
     .{ "+=", .ASSIGNMENT, 1 },

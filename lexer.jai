@@ -18,14 +18,6 @@
     There is also expect_token_type(), which is useful when one doesn't care about anything other than the token type,
         for example when expecting a closing `)` or `]` token.
     
-    
-    TODO: 
-        in order to implement += and -= operators, we need to turn the standard = operator into an actual operator
-        but right now, I'm not sure that = being an operator will work quite so nicely
-        but I suppose it's an operator like any other, it's just that the left side needs to be typechecked as an lvalue
-        but then it's also a problem for us when it comes time to execute, because our assignment operator really is sort of a ternary operator
-        can just use a node flag to denote an assignment operator, and execute differently
-            but for now just gonna hit a few more TODOs and clean up before taking that on
 */
 
 
