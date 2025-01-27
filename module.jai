@@ -331,7 +331,7 @@ parse_statement :: (using script: *Script) -> *Node {
         dbg_print("DECLARATION\n"); dbg_print_push_indent();
     
         // maybe a bit of a hack, but for now I will just throw away the 
-        // identifier node here and transfer the name/src_loc to a declaration node 
+        // identifier node here and transfer the name/source_location to a declaration node 
         if left.node_type != Node_Identifier {
             log("Error: left hand side of a declaration must be an identifier.");
             return null;
@@ -339,7 +339,7 @@ parse_statement :: (using script: *Script) -> *Node {
         
         declaration := alloc_node(script, Node_Declaration);
         declaration.name = left.(*Node_Identifier).name;
-        // declaration.src_loc = left.src_loc;
+        // declaration.source_location = left.source_location;
         
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
@@ -463,12 +463,12 @@ parse_leaf :: (using script: *Script) -> *Node {
             if !ok  return null;
             node = literal;
         }
-        else log("Error: unexpected DOT token at (%:%)", token.src_loc.line, token.src_loc.char);
+        else log("Error: unexpected DOT token at (%:%)", token.source_location.line, token.source_location.char);
         // TODO: identifer -> unary dot enum thing
         
         
       case .OPEN_PAREN;
-        open_paren_location := token.src_loc;
+        open_paren_location := token.source_location;
         
         node = parse_expression(script, 0);
         if node == null  return null;
@@ -531,14 +531,14 @@ parse_leaf :: (using script: *Script) -> *Node {
       case .IDENTIFIER;
         dbg_print("IDENTIFIER (%)\n", token.text);
         if is_reserved_word(token.text) {
-            log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.src_loc.line, token.src_loc.char);
+            log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.source_location.line, token.source_location.char);
             return null;
         }
         node = make_identifier(script, token.text);
         
         
       case;
-        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.src_loc.line, token.src_loc.char);
+        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.source_location.line, token.source_location.char);
     }
     
     if unary_op != null {
@@ -666,7 +666,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
                 // verify that identifier is followed by closing paren
                 token_close_paren := get_token(*lexer);
                 if token_close_paren.type != .CLOSE_PAREN {
-                    log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.src_loc.line, token_close_paren.src_loc.char);
+                    log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.source_location.line, token_close_paren.source_location.char);
                     return null;
                 }
                 
@@ -676,7 +676,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
                 return node_cast;
             }
             
-            log("Error: unexpected token '%' in cast type expression at (%:%). Expected a type identifier.", token_identifier.type, token_identifier.src_loc.line, token_identifier.src_loc.char);
+            log("Error: unexpected token '%' in cast type expression at (%:%). Expected a type identifier.", token_identifier.type, token_identifier.source_location.line, token_identifier.source_location.char);
             return null;
             
             
@@ -689,7 +689,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             
           case .OPEN_BRACE;
             if left.node_type != Node_Identifier {
-                log("Error: unexpected % node in type slot of struct literal at (%:%)", left.node_type, token.src_loc.line, token.src_loc.char);
+                log("Error: unexpected % node in type slot of struct literal at (%:%)", left.node_type, token.source_location.line, token.source_location.char);
             }
             node := alloc_node(script, Node_Literal);
             node.literal_type = .STRUCT;
@@ -700,7 +700,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             return node;
         }
         
-        log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.src_loc.line, token.src_loc.char);
+        log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.source_location.line, token.source_location.char);
         return null;
         
       case .OPEN_BRACKET;

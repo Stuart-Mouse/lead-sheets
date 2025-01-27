@@ -75,11 +75,12 @@ Token_Type :: enum {
 
 
 Token :: struct {
-    type:   Token_Type;
-    text:   string;
+    type:               Token_Type;
+    text:               string;
+    source_location:    Source_Location;
+    whitespace_before:  string;
     
-    // TODO: store whitespace/comments skipped before token
-    src_loc: Source_Location;
+    // using source_location;
 }
 
 Source_Location :: struct {
@@ -109,7 +110,7 @@ get_token_or_return :: (using t: *Lexer, code: Code) -> Token #expand {
 // consumes a token
 get_token :: inline (using t: *Lexer) -> Token {
     if next_token.type == .ERROR {
-        dbg_print("LEXER ERROR: % (line %, char %)\n", next_token.text, next_token.src_loc.line, next_token.src_loc.char);
+        dbg_print("LEXER ERROR: % (line %, char %)\n", next_token.text, next_token.source_location.line, next_token.source_location.char);
         return next_token;
     }
     
@@ -135,20 +136,26 @@ expect_token_type :: (using t: *Lexer, type: Token_Type) -> bool {
 
 
 lex_next_token :: (using lexer: *Lexer) -> Token {
-    if !skip_whitespace_and_comments(lexer) {
+    whitespace, is_eof, ok := skip_whitespace_and_comments(lexer);
+    if !ok {
+        log("Error: unexpected EOF in the middle of a comment!");
+        return .{ type = .ERROR };
+    }
+    if is_eof {
         return .{ type = .EOF };
     }
     
     // we grab cursor location at top so that it points to start of token
-    src_loc := cursor_location;
+    source_location := cursor_location;
     
     // convenience macro for short tokens
     make_token :: (type: Token_Type, len: int) -> Token #expand {
         defer advance(lexer, len);
         return .{
-            type    = type,
-            text    = slice(file, 0, len),
-            src_loc = src_loc
+            type              = type,
+            text              = slice(file, 0, len),
+            source_location   = source_location,
+            whitespace_before = whitespace
         };
     }
     
@@ -189,6 +196,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
               case "for";   ident.type = .FOR;
               case "while"; ident.type = .WHILE;
             }
+            ident.whitespace_before = whitespace;
             return ident;
         }
     }
@@ -200,16 +208,17 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             ident, was_parsed := try_parse_identifier(lexer);
             if was_parsed {
                 ident.type = .DIRECTIVE;
+                ident.whitespace_before = whitespace;
                 return ident;
             }
-            return make_error_token(src_loc, "Unexpected character encountered while attempting to parse a directive name.");
+            return make_error_token(source_location, "Unexpected character encountered while attempting to parse a directive name.");
         }
     }
     
     // parse a number
     if is_digit(file[0]) {//|| file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing number.");
+        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
         
         after_dot := false;
         while file {
@@ -221,14 +230,15 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             }
             
             str.count += 1;
-            if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing number.");
+            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
         }
         
         val, ok, rem := string_to_float(str);
         return .{
-            type    = .NUMBER,
-            text    = str,
-            src_loc = src_loc
+            type              = .NUMBER,
+            text              = str,
+            source_location   = source_location,
+            whitespace_before = whitespace
         };
     }
     
@@ -236,7 +246,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     if file[0] == #char "\"" { 
         quote_char := file[0];
         
-        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing string.");
+        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing string.");
         string_value: string = ---;
         string_value.data  = file.data;
         string_value.count = 0;
@@ -246,40 +256,41 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             adv := 1 + (file[0] == #char "\\").(int); 
             string_value.count += adv;
             if !advance(lexer, adv)  
-                return make_error_token(src_loc, "Unexpected EOF while parsing string.");
+                return make_error_token(source_location, "Unexpected EOF while parsing string.");
         }
         advance(lexer);
         
         return .{ 
-            type = .STRING, 
-            text = string_value, 
-            src_loc = src_loc 
+            type              = .STRING, 
+            text              = string_value, 
+            source_location   = source_location,
+            whitespace_before = whitespace
         };
     }
     
-    return make_error_token(src_loc, "Unexpected character encountered.");
+    return make_error_token(source_location, "Unexpected character encountered.");
 }
 
-make_error_token :: (src_loc: Source_Location, error_string: string = "") -> Token { 
-    return .{ type = .ERROR, src_loc = src_loc, text = error_string }; 
+make_error_token :: (source_location: Source_Location, error_string: string = "") -> Token { 
+    return .{ type = .ERROR, source_location = source_location, text = error_string }; 
 }
 
 // returns true if we even start to parse an identifier, not only on success
 try_parse_identifier :: (using lexer: *Lexer) -> (Token, bool) {
-    src_loc := cursor_location;
+    source_location := cursor_location;
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing identifier."), true;
+        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing identifier."), true;
         
         while file && is_alnum(file[0]) {
             str.count += 1;
-            if !advance(lexer)  return make_error_token(src_loc, "Unexpected EOF while parsing identifier."), true;
+            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing identifier."), true;
         }
         
         return .{
             type    = .IDENTIFIER,
             text    = str,
-            src_loc = src_loc
+            source_location = source_location
         }, true;
     }
     return .{}, false;
@@ -318,25 +329,33 @@ tokenize :: (text: string) -> ([..] Token, bool) {
 
 
 // cycles between skipping whitespace and comments until next character is neither
-skip_whitespace_and_comments :: (using lexer: *Lexer) -> bool {
-    if file.count == 0  return false;
+skip_whitespace_and_comments :: (using lexer: *Lexer) -> (whitespace: string, is_eof: bool, ok: bool) {
+    if file.count == 0  return "", true, true;
+    
+    whitespace := string.{ data = file.data };
+    is_eof := false;
     while true {
         while is_whitespace(file[0]) {
-            if !advance(lexer)  return false;
+            if !advance(lexer) {
+                is_eof = true;
+                break;
+            }
         }
         if begins_with(file, "//") {
             while file[0] != #char "\n" {
-                if !advance(lexer)  return false;
+                if !advance(lexer)  return "", true, false;
             }
         }
         else if begins_with(file, "/*") {
             while !begins_with(file, "*/") {
-                if !advance(lexer)  return false;
+                if !advance(lexer)  return "", true, false;
             }
         }
-        else return true;
+        else break;
     }
-    return true;
+    
+    whitespace.count = file.data - whitespace.data;
+    return whitespace, is_eof, true;
 }
 
 is_whitespace :: inline (char: u8) -> bool {
@@ -355,10 +374,9 @@ advance :: inline (using t: *Lexer, amount := 1) -> bool {
     for 0.._amount-1 {
         if file[it] == #char "\n" {
             cursor_location.line += 1;
-            cursor_location.char  = 1;
-        } else {
-            cursor_location.char += 1;
+            cursor_location.char  = 0;
         }
+        cursor_location.char += 1;
     }
     
     file.data  += _amount;
