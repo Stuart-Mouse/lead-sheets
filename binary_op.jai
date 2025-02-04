@@ -204,7 +204,7 @@ resolve_builtin_operation :: (
 // in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
 execute_builtin_operation :: (script: *Script, oper_idx: int) {
     
-    dbg_print("stack_ptr: %\n", script.stack_ptr);
+    dprint("stack_ptr: %\n", script.stack_ptr);
     
     // generate switch case for all builtin operations
     #insert -> string {

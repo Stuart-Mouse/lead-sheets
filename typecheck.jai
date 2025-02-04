@@ -23,9 +23,9 @@ typecheck_node :: (
 ) -> (
     value_type:     *Type_Info
 ) {
-    dbg_print("typechecking node % %\n", node, node.node_type);
-    dbg_print("expecting type: %\n", as_type(hint_type));
-    dbg_print_push_indent();
+    dprint("typechecking node % %\n", node, node.node_type);
+    dprint("expecting type: %\n", as_type(hint_type));
+    dprint_push_indent();
     
     // if already typechecked, just return resolved type
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
@@ -61,7 +61,7 @@ typecheck_node :: (
       case Node_Literal;
         literal := node.(*Node_Literal);
         if check_flags & .EXPECT_LVALUE {
-            if !(literal.flags & .IS_MALLEABLE) {
+            if !(literal.flags & .IS_MALLEABLE) && literal.literal_type != .ANY {
                 log("Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.");
                 return null;
             }
@@ -69,12 +69,15 @@ typecheck_node :: (
         }
         
         if literal.literal_type == {
+          case .ANY;
+            literal.value_type = literal.any.type;
+            
           case .STRING;
             literal.value_type = type_info(string);
             
           case .NUMBER;
             if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
-                // dbg_print("returning hinted type: %\n", as_type(hint_type));
+                // dprint("returning hinted type: %\n", as_type(hint_type));
                 
                 // NOTE: we now remap to value_type just once here, so that we don't have to do it each time in execute
                 // TODO: think about rules around automatic casting here...
@@ -134,7 +137,7 @@ typecheck_node :: (
             //       for its backing value instead of allocating its own space for value
             literal.value_type = ti_struct;
             literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
-            dbg_print("allocated space for literal of type %, node %\n", literal.value_type, literal);
+            dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
             
           case .ARRAY;
             log("Error: array literals not yet implemented.");
@@ -172,7 +175,7 @@ typecheck_node :: (
                     }
                     
                   case Node_For_Loop;
-                    dbg_print("checking for iterator with identifier '%'\n", identifier.name);
+                    dprint("checking for iterator with identifier '%'\n", identifier.name);
                     declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
                     if declaration {
                         identifier.identifier_type = .DECLARATION;
@@ -224,14 +227,14 @@ typecheck_node :: (
         }
         
         // if the identifier is referring to a procedure, that will have to be handled in PROCEDURE_CALL case
-        dbg_print("Warning: Unable to resolve identifier '%'.\n", identifier.name);
+        dprint("Warning: Unable to resolve identifier '%'.\n", identifier.name);
         return null;
         
         
       case Node_Operation;
         if check_flags & .EXPECT_LVALUE  return null;
         operation := node.(*Node_Operation);
-        dbg_print("Operation is % '%'\n", operation.operator_type, operation.name);
+        dprint("Operation is % '%'\n", operation.operator_type, operation.name);
         
         left_check_flags := check_flags;
         if operation.operator_type == .ASSIGNMENT {
@@ -272,7 +275,7 @@ typecheck_node :: (
             
             if is_aggr(operation.value_type) {
                 operation.return_ptr = Dynamic_New(operation.value_type,, script.allocator);
-                dbg_print("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
+                dprint("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
             }
             
             return operation.value_type;
@@ -296,8 +299,8 @@ typecheck_node :: (
         if check_flags & .EXPECT_LVALUE  return null;
         procedure_call := node.(*Node_Procedure_Call);
         
-        dbg_print("typechecking arguments...\n");
-        dbg_print("arg_count: %\n", procedure_call.arguments_count);
+        dprint("typechecking arguments...\n");
+        dprint("arg_count: %\n", procedure_call.arguments_count);
         
         ti_proc := typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
         
@@ -360,7 +363,7 @@ typecheck_node :: (
         
         if is_aggr(node.value_type) {
             procedure_call.return_ptr = Dynamic_New(node.value_type,, script.allocator);
-            dbg_print("allocating variable of type % at % for node %\n", as_type(node.value_type), procedure_call.return_ptr, procedure_call);
+            dprint("allocating variable of type % at % for node %\n", as_type(node.value_type), procedure_call.return_ptr, procedure_call);
         }
         return node.value_type;
         
@@ -479,7 +482,7 @@ typecheck_node :: (
         
         declaration.value_type    = ifx explicit_type else right_type;
         declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
-        dbg_print("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
+        dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
         return declaration.value_type;
         
         
@@ -529,12 +532,12 @@ typecheck_node :: (
         
         if #complete for_loop.control_type == {
           case .RANGE;
-            dbg_print("typechecking range lower\n");
+            dprint("typechecking range lower\n");
             assert(for_loop.range.lower != null);
             lower_type := typecheck_node(script, for_loop.range.lower, hint_type = type_info(int));
             if lower_type == null  return null;
             
-            dbg_print("typechecking range upper\n");
+            dprint("typechecking range upper\n");
             assert(for_loop.range.upper != null);
             upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
             if lower_type != upper_type { 

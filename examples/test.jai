@@ -119,5 +119,15 @@ main :: () {
     output := builder_to_string(*builder);
     write_entire_file("output.ls", output);
     
+    
+    
+    print("\nWALK NODES TEST\n");
+    walk_nodes(*script, script.ast_root, #code {
+        if node.node_type == Node_Identifier {
+            print("%\n", node.(*Node_Identifier).name);
+        }
+    });
+    
+    
 }
 

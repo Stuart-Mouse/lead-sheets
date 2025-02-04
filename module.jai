@@ -150,7 +150,7 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
         assert(any.type.runtime_size <= PTR_SIZE);
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
-    // dbg_print("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
+    // dprint("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
     return true;
 }
 
@@ -160,7 +160,7 @@ stack_push_zeroes :: (script: *Script, size: int) -> bool {
         return false;
     }
     
-    dbg_print("stack ptr: %\n", script.stack_ptr);
+    dprint("stack ptr: %\n", script.stack_ptr);
     memset(script.stack_ptr, 0, size);
     script.stack_ptr += size;
     return true;
@@ -199,8 +199,7 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     success: bool;
     defer if !success  free_script(script);
     
-    script.lexer.file = source;
-    init_lexer(*script.lexer);
+    init_lexer(*script.lexer, source);
     
     script.ast_root = alloc_node(script, Node_Block);
     script.current_parent_node = script.ast_root;
@@ -235,16 +234,16 @@ parse_statement :: (using script: *Script) -> *Node {
     
     if token.type == {
       case .IF; 
-        dbg_print("IF STATEMENT\n"); dbg_print_push_indent();
+        dprint("IF STATEMENT\n"); dprint_push_indent();
         get_token(*lexer);
         if_statement := alloc_node(script, Node_If_Statement);
         current_parent_node = if_statement; 
         
-        dbg_print("CONDITION\n"); dbg_print_push_indent();
+        dprint("CONDITION\n"); dprint_push_indent();
         if_statement.condition = parse_expression(script, 0);
         if if_statement.condition == null  return null;
         
-        dbg_print("STATEMENT\n"); dbg_print_push_indent();
+        dprint("STATEMENT\n"); dprint_push_indent();
         if_statement.statement = parse_statement(script);
         if if_statement.statement == null  return null;
         
@@ -252,16 +251,16 @@ parse_statement :: (using script: *Script) -> *Node {
         return if_statement;
         
       case .WHILE;
-        dbg_print("WHILE LOOP\n"); dbg_print_push_indent();
+        dprint("WHILE LOOP\n"); dprint_push_indent();
         get_token(*lexer);
         while_loop := alloc_node(script, Node_While_Loop);
         current_parent_node = while_loop; 
         
-        dbg_print("CONDITION\n");
+        dprint("CONDITION\n");
         while_loop.condition = parse_expression(script, 0);
         if while_loop.condition == null  return null;
         
-        dbg_print("STATEMENT\n");
+        dprint("STATEMENT\n");
         while_loop.statement = parse_statement(script);
         if while_loop.statement == null  return null;
         
@@ -269,31 +268,31 @@ parse_statement :: (using script: *Script) -> *Node {
         return while_loop;
         
       case .FOR;
-        dbg_print("FOR LOOP\n"); dbg_print_push_indent();
+        dprint("FOR LOOP\n"); dprint_push_indent();
         get_token(*lexer);
         for_loop := alloc_node(script, Node_For_Loop);
         current_parent_node = for_loop; 
         
-        dbg_print("CONTROL EXPRESSION\n");
+        dprint("CONTROL EXPRESSION\n");
         expr := parse_expression(script, 0);
         if !expr  return null;
         
         // TODO: maybe allow comma separated list of elements to iterate over instead of array literals? 
         //       may jive better with lack of pointers, since lvalue-ness can be implicit
         if expect_token_type(*lexer, .SPREAD) {
-            dbg_print("CONTROL TYPE IS RANGE\n");
+            dprint("CONTROL TYPE IS RANGE\n");
             for_loop.control_type = .RANGE;
             for_loop.range.lower  = expr;
             for_loop.range.upper  = parse_expression(script, 0);
             if !for_loop.range.upper  return null;
         } else {
-            dbg_print("CONTROL TYPE IS ARRAY\n");
+            dprint("CONTROL TYPE IS ARRAY\n");
             for_loop.control_type = .ARRAY;
             for_loop.array_expression = expr;
             if for_loop.array_expression == null  return null;
         }
         
-        dbg_print("STATEMENT\n");
+        dprint("STATEMENT\n");
         for_loop.statement = parse_statement(script);
         if for_loop.statement == null  return null;
         
@@ -301,7 +300,7 @@ parse_statement :: (using script: *Script) -> *Node {
         return for_loop;
         
       case .OPEN_BRACE;
-        dbg_print("BLOCK\n"); dbg_print_push_indent();
+        dprint("BLOCK\n"); dprint_push_indent();
         get_token(*lexer);
         block := alloc_node(script, Node_Block);
         current_parent_node = block; 
@@ -323,13 +322,13 @@ parse_statement :: (using script: *Script) -> *Node {
         return block;
     }
     
-    dbg_print("EXPRESSION...\n");
+    dprint("EXPRESSION...\n");
     
     left := parse_expression(script, 0);
     if left == null  return null;
     
     if expect_token_type(*lexer, .COLON) {
-        dbg_print("DECLARATION\n"); dbg_print_push_indent();
+        dprint("DECLARATION\n"); dprint_push_indent();
     
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/source_location to a declaration node 
@@ -344,7 +343,7 @@ parse_statement :: (using script: *Script) -> *Node {
         
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
-            dbg_print("WITH EXPLICIT TYPE\n");
+            dprint("WITH EXPLICIT TYPE\n");
             declaration.type_expression = xx parse_expression(script, 0);
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
@@ -365,7 +364,7 @@ parse_statement :: (using script: *Script) -> *Node {
         }
         
         if do_assignment {
-            dbg_print("WITH ASSIGNMENT\n");
+            dprint("WITH ASSIGNMENT\n");
             declaration.init_expression = parse_expression(script, 0);
             if declaration.init_expression == null  return null;
             if is_constant_declaration then declaration.flags |= .IS_CONSTANT;
@@ -436,8 +435,8 @@ parse_number :: (s: string) -> Small_Any, bool {
 }
 
 parse_leaf :: (using script: *Script) -> *Node {
-    // dbg_print("parse_leaf()\n");
-    // dbg_print_push_indent();
+    // dprint("parse_leaf()\n");
+    // dprint_push_indent();
     
     node:     *Node;
     unary_op: *Node_Operation;
@@ -445,7 +444,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     token := get_token_or_return(*lexer, null);
     is_operator, operator_type := token_is_operator(token, expect_unary = true);
     if is_operator && operator_type == .UNARY {
-        dbg_print("UNARY OPERATOR (%)\n", token.text);
+        dprint("UNARY OPERATOR (%)\n", token.text);
         unary_op = alloc_node(script, Node_Operation);
         unary_op.name = token.text;
         unary_op.operator_type = .UNARY;
@@ -455,7 +454,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     if token.type == {
       case .DOT;
-        dbg_print("DOT (UNARY)\n");
+        dprint("DOT (UNARY)\n");
         if expect_token_type(*lexer, .OPEN_BRACE) {
             literal := alloc_node(script, Node_Literal);
             literal.literal_type = .STRUCT;
@@ -482,7 +481,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .NUMBER;
-        dbg_print("NUMBER (%)\n", token.text);
+        dprint("NUMBER (%)\n", token.text);
         value, ok := parse_number(token.text);
         if !ok  return null;
         
@@ -493,7 +492,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .STRING;
-        dbg_print("STRING (\"%\")\n", token.text);
+        dprint("STRING (\"%\")\n", token.text);
         literal := alloc_node(script, Node_Literal);
         literal.literal_type = .STRING;
         literal.text = token.text;
@@ -501,7 +500,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
     
       case .DIRECTIVE;
-        dbg_print("DIRECTIVE\n"); dbg_print_push_indent();
+        dprint("DIRECTIVE\n"); dprint_push_indent();
         directive := alloc_node(script, Node_Directive);
         directive.name = token.text;
         
@@ -514,7 +513,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         if directive.directive_index == -1  return null;
         
         if !expect_token_type(*lexer, .OPEN_PAREN) {
-            dbg_print("Error, expected an open paren after directive name!\n");
+            dprint("Error, expected an open paren after directive name!\n");
             return null;
         }
         
@@ -530,7 +529,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case .IDENTIFIER;
-        dbg_print("IDENTIFIER (%)\n", token.text);
+        dprint("IDENTIFIER (%)\n", token.text);
         if is_reserved_word(token.text) {
             log("Error: Invalid use of reserved word '%' at line %, char %.", token.text, token.source_location.line, token.source_location.char);
             return null;
@@ -572,13 +571,13 @@ parse_leaf :: (using script: *Script) -> *Node {
 */
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {
-    // dbg_print("parse_expression(min_prec = %)\n", min_prec); 
-    // dbg_print_push_indent();
+    // dprint("parse_expression(min_prec = %)\n", min_prec); 
+    // dprint_push_indent();
     
     left := parse_leaf(script);
     if left == null  return null;
     
-    // dbg_print("parsed a leaf: %\n", sprint_ast_node(script, left));
+    // dprint("parsed a leaf: %\n", sprint_ast_node(script, left));
     
     // going iteratively, precedence can only decrease
     while true {
@@ -623,8 +622,8 @@ parse_comma_separated_expressions :: (using script: *Script, expected_end_token:
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
-    // dbg_print("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
-    // dbg_print_push_indent();
+    // dprint("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
+    // dprint_push_indent();
     
     token := peek_token(*lexer);
     
@@ -659,7 +658,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         token_after_dot := get_token(*lexer);
         if token_after_dot.type == {
           case .OPEN_PAREN;
-            dbg_print("CAST\n");
+            dprint("CAST\n");
             
             // TODO: in the future maybe we can have more complex type expressions, but that's not really a priority.
             token_identifier := get_token(*lexer);
@@ -706,7 +705,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         
       case .OPEN_BRACKET;
         get_token(*lexer);
-        dbg_print("ARRAY SUBSCRIPT\n");
+        dprint("ARRAY SUBSCRIPT\n");
         
         indexing_expr := parse_expression(script, 0);
         if indexing_expr == null  return null;
@@ -722,7 +721,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     is_operator, operator_type, precedence := token_is_operator(token);
     if is_operator && operator_type != .UNARY {
         if precedence <= min_prec  return left;
-        dbg_print("% OPERATION (%)\n", operator_type, token.text);
+        dprint("% OPERATION (%)\n", operator_type, token.text);
         get_token(*lexer);
         
         right := parse_expression(script, precedence);
@@ -748,6 +747,94 @@ make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
     node.name = name;
     return node;
 }
+
+
+
+
+
+
+walk_nodes :: (script: *Script, node: *Node, body: Code) -> bool #expand {
+    recurse :: (script: *Script, node: *Node) -> bool {
+        if node == null {
+            dprint("Warning: node was null in walk_nodes.\n");
+            return true; // TODO: make false later probably...
+        }
+        
+        #insert,scope() body;
+        
+        // recurse for certain node types
+        if node.node_type == {
+          case Node_Operation;
+            operation := node.(*Node_Operation);
+            return recurse(script, operation.left) 
+                && recurse(script, operation.right);
+            
+          case Node_Procedure_Call;
+            procedure_call := node.(*Node_Procedure_Call);
+            for procedure_call.arguments {
+                if !recurse(script, it)  return false;
+            }
+            return true;
+            
+          case Node_Dot;
+            dot := node.(*Node_Dot);
+            return recurse(script, dot.left) 
+                && recurse(script, dot.right);
+            
+          case Node_Subscript;
+            subscript := node.(*Node_Subscript);
+            return recurse(script, subscript.base_expression)
+                && recurse(script, subscript.indexing_expression);
+            
+          case Node_Declaration;
+            declaration := node.(*Node_Declaration);
+            return recurse(script, declaration.type_expression)
+                && recurse(script, declaration.init_expression);
+            
+          case Node_Block;
+            block := node.(*Node_Block);
+            for block.statements {
+                if !recurse(script, it)  return false;
+            }
+            return true;
+            
+          case Node_If_Statement;
+            if_statement := node.(*Node_If_Statement);
+            return recurse(script, if_statement.condition)
+                && recurse(script, if_statement.statement);
+            
+          case Node_While_Loop;
+            while_loop := node.(*Node_While_Loop);
+            return recurse(script, while_loop.condition)
+                && recurse(script, while_loop.statement);
+            
+          case Node_For_Loop;
+            for_loop := node.(*Node_For_Loop);
+            if for_loop.control_type == {
+              case .RANGE;
+                if !recurse(script, for_loop.range.lower)  return false;
+                if !recurse(script, for_loop.range.upper)  return false;
+                
+              case .ARRAY;
+                if !recurse(script, for_loop.array_expression)  return false;
+            }
+            if !recurse(script, for_loop.statement)  return false;
+            return true;
+        }
+        
+        return true;
+    }
+    
+    return recurse(script, node);
+}
+
+
+
+
+
+
+
+
 
 
 #scope_module
@@ -849,17 +936,17 @@ as_type :: inline (ti: *Type_Info) -> Type {
 
 
 
-#if DEBUG {#add_context dbg_print_indent: int;}
+#if DEBUG {#add_context dprint_indent: int;}
 
-dbg_print :: (format_string: string, args: .. Any) {
+dprint :: (format_string: string, args: .. Any) {
     #if DEBUG {
-        for 0..context.dbg_print_indent  print("  ");
+        for 0..context.dprint_indent  print("  ");
         print(format_string, ..args);
     }
 }
-dbg_print_push_indent :: () #expand {
+dprint_push_indent :: () #expand {
     #if DEBUG {
-        context.dbg_print_indent += 1;
-        `defer context.dbg_print_indent -= 1;
+        context.dprint_indent += 1;
+        `defer context.dprint_indent -= 1;
     }
 }

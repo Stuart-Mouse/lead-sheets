@@ -26,7 +26,7 @@ execute_script :: (script: *Script) -> bool {
     script.stack_ptr = script.stack_base;
     
     for script.ast_root.statements {
-        dbg_print("executing statement #%\n", it_index);
+        dprint("executing statement #%\n", it_index);
         if !execute_node(script, it)  return false;
     }
     
@@ -48,14 +48,14 @@ execute_script :: (script: *Script) -> bool {
         which are probably slightly faster and don't require passing type info.
 */
 execute_node :: (script: *Script, node: *Node) -> bool {
-    dbg_print("evaluating node %: %\n", node, node.node_type);
-    dbg_print_push_indent();
+    dprint("evaluating node %: %\n", node, node.node_type);
+    dprint_push_indent();
     
-    dbg_print("stack_pointer offset: %  (%)\n", script.stack_ptr - script.stack_base, script.stack_ptr);
-    if node.flags & .IS_LVALUE  dbg_print("expecting lvalue\n");
+    dprint("stack_pointer offset: %  (%)\n", script.stack_ptr - script.stack_base, script.stack_ptr);
+    if node.flags & .IS_LVALUE  dprint("expecting lvalue\n");
     
     if !node.value_type {
-        dbg_print("Warning: node has no set value type!\n");
+        dprint("Warning: node has no set value type!\n");
     }
     
     if node.node_type == {
@@ -65,17 +65,22 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE);
+        if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         
         if literal.literal_type == {
+          case .ANY;
+            if !stack_push_any(script, literal.any, literal.flags & .IS_LVALUE != 0)  return false;
+            dprint("returning literal with value %\n", literal.any);
+            return true;
+            
           case .STRING;
             if !stack_push_any(script, literal.text, literal.flags & .IS_LVALUE != 0)  return false;
-            dbg_print("returning literal with value %\n", literal.text);
+            dprint("returning literal with value %\n", literal.text);
             return true;
             
           case .NUMBER;
             if !stack_push_any(script, to_any(literal.number), literal.flags & .IS_LVALUE != 0)  return false;
-            dbg_print("returning literal with value %\n", to_any(literal.number));
+            dprint("returning literal with value %\n", to_any(literal.number));
             return true;
             
           case .STRUCT;
@@ -104,19 +109,19 @@ execute_node :: (script: *Script, node: *Node) -> bool {
           case .DECLARATION;
             declaration := identifier.declaration;
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
-            dbg_print("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
+            dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
             if !stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.variable_index];
-            dbg_print("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
+            dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
             if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.procedure_index];
-            dbg_print("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
+            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
             if !stack_push_any(script, procedure.ptr)  return false;
             return true;
@@ -164,7 +169,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         // ret   := stack_peek(script, is_aggr(op.ret  ));
         // if !execute_builtin_operation(operation.operator_index, left, right, ret)  return false;
         
-        // dbg_print("operation: %\n", op);
+        // dprint("operation: %\n", op);
         
         execute_builtin_operation(script, operation.operator_index);
         
@@ -172,7 +177,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             operation.value_type, 
             ifx is_aggr(operation.value_type) then operation.return_ptr else script.stack_ptr
         };
-        dbg_print("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
+        dprint("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
         return true;
         
         
@@ -183,7 +188,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         if !execute_node(script, procedure_call.procedure_expression)  return false;
         proc_type  := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
         assert(proc_type.type == .PROCEDURE);
-        dbg_print("proc_type: %\n", as_type(proc_type));
+        dprint("proc_type: %\n", as_type(proc_type));
         
         procedure  := stack_pop_any(script, proc_type); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
@@ -227,7 +232,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
         script.stack_ptr = arg_ptr_start;
         
-        dbg_print("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
+        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
         
         if procedure_call.flags & .DISCARD_VALUE {
             stack_pop_any(script, procedure_call.value_type);
@@ -257,8 +262,8 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         struct_any := stack_pop_any(script, dot.left.value_type, true);
         member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
         
-        dbg_print("struct value ptr: %\n", struct_any.value_pointer);
-        dbg_print("member value ptr: %\n", member_any.value_pointer);
+        dprint("struct value ptr: %\n", struct_any.value_pointer);
+        dprint("member value ptr: %\n", member_any.value_pointer);
         
         if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
         return true;
@@ -291,7 +296,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
         if !stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE)  return false;
-        dbg_print("returning result of indexing operation: %\n", element);
+        dprint("returning result of indexing operation: %\n", element);
         return true;
         
     
@@ -305,18 +310,18 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         // TODO: we need to check that the identifier does not refer to a previously declared variable
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression) {
-                dbg_print("failed to evaluate init expression of declaration statement!\n");
+                dprint("failed to evaluate init expression of declaration statement!\n");
                 return false;
             }
             
             r_value := stack_pop_any(script, declaration.init_expression.value_type);
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             
-            dbg_print("l_value.value_pointer: %\n", l_value.value_pointer);
-            dbg_print("r_value.value_pointer: %\n", r_value.value_pointer);
+            dprint("l_value.value_pointer: %\n", l_value.value_pointer);
+            dprint("r_value.value_pointer: %\n", r_value.value_pointer);
             
-            dbg_print("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
-            dbg_print("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
+            dprint("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
+            dprint("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
             
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
@@ -329,7 +334,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
       case Node_Block;
         block := node.(*Node_Block);
         for block.statements {
-            dbg_print("executing statement #%\n", it_index);
+            dprint("executing statement #%\n", it_index);
             if !execute_node(script, it)  return false;
         }
         return true;
@@ -338,18 +343,18 @@ execute_node :: (script: *Script, node: *Node) -> bool {
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
         if !execute_node(script, if_statement.condition) {
-            dbg_print("failed to evaluate left side of assignment statement!\n");
+            dprint("failed to evaluate left side of assignment statement!\n");
             return false;
         }
         
         condition := stack_pop_any(script, if_statement.condition.value_type);
-        dbg_print("condition: % %\n", as_type(condition.type), condition);
+        dprint("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
             if !execute_node(script, if_statement.statement) {
-                dbg_print("failed to evaluate left side of assignment statement!\n");
+                dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
         }
@@ -360,19 +365,19 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         while_loop := node.(*Node_While_Loop);
         while loop := true {
             if !execute_node(script, while_loop.condition) {
-                dbg_print("failed to evaluate left side of assignment statement!\n");
+                dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
             
             condition := stack_pop_any(script, while_loop.condition.value_type);
-            dbg_print("condition: % %\n", as_type(condition.type), condition);
+            dprint("condition: % %\n", as_type(condition.type), condition);
             
             condition_as_bool: bool;
             any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
             if !execute_node(script, while_loop.statement) {
-                dbg_print("failed to evaluate left side of assignment statement!\n");
+                dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
         }
@@ -384,7 +389,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         if for_loop.control_type == {
           case .ARRAY;
             if !execute_node(script, for_loop.array_expression) {
-                dbg_print("failed to evaluate for loop control node!\n");
+                dprint("failed to evaluate for loop control node!\n");
                 return false;
             }
             
@@ -405,7 +410,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                 }
                 
                 if !execute_node(script, for_loop.statement) {
-                    dbg_print("failed to evaluate left side of assignment statement!\n");
+                    dprint("failed to evaluate left side of assignment statement!\n");
                     return false;
                 }
             }
@@ -413,11 +418,11 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             
           case .RANGE;
             if !execute_node(script, for_loop.range.lower) {
-                dbg_print("failed to evaluate for_loop.range.lower!\n");
+                dprint("failed to evaluate for_loop.range.lower!\n");
                 return false;
             }
             if !execute_node(script, for_loop.range.upper) {
-                dbg_print("failed to evaluate for_loop.range.upper!\n");
+                dprint("failed to evaluate for_loop.range.upper!\n");
                 return false;
             }
             
@@ -438,7 +443,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
                 if !execute_node(script, for_loop.statement) {
-                    dbg_print("failed to evaluate left side of assignment statement!\n");
+                    dprint("failed to evaluate left side of assignment statement!\n");
                     return false;
                 }
             }

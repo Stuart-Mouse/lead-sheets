@@ -93,29 +93,34 @@ Lexer :: struct {
     cursor_location:    Source_Location;
 }
 
-init_lexer :: (using t: *Lexer) {
+init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
     // NOTE: need to call consume_token once to init lexer for proper usage
     //       otherwise, first token will appear to be .EOF
-    get_token(t);
-    cursor_location = .{ line = 1, char = 1 };
+    lexer.file = file;
+    lexer.cursor_location = location;
+    get_token(lexer);
 }
 
 // convenience macro 
-get_token_or_return :: (using t: *Lexer, code: Code) -> Token #expand {
-    token := get_token(t);
+get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
+    token := get_token(lexer);
     if token.type == .ERROR  `return #insert code;
     return token;
 }
 
 // consumes a token
-get_token :: inline (using t: *Lexer) -> Token {
+get_token :: inline (using lexer: *Lexer) -> Token {
     if next_token.type == .ERROR {
-        dbg_print("LEXER ERROR: % (line %, char %)\n", next_token.text, next_token.source_location.line, next_token.source_location.char);
+        dprint("LEXER ERROR: % (line %, char %)\n", 
+            next_token.text, 
+            next_token.source_location.line, 
+            next_token.source_location.char
+        );
         return next_token;
     }
     
     current_token := next_token;
-    next_token = lex_next_token(t);
+    next_token = lex_next_token(lexer);
     return current_token;
 }
 
@@ -125,16 +130,17 @@ peek_token :: inline (using t: *Lexer) -> Token {
 }
 
 // consumes token if it was expected type, else it was just peeked
-expect_token_type :: (using t: *Lexer, type: Token_Type) -> bool {
-    token := peek_token(t);
+expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
+    token := peek_token(lexer);
     if token.type == type {
-        get_token(t);
+        get_token(lexer);
         return true;
     }
     return false;
 }
 
-
+// TODO: consider removing some of the 'unexpected EOF' cases, only leaving those that are strictly necessary
+//       main candidates are in number and identifier cases
 lex_next_token :: (using lexer: *Lexer) -> Token {
     whitespace, is_eof, ok := skip_whitespace_and_comments(lexer);
     if !ok {
@@ -378,7 +384,7 @@ is_whitespace :: inline (char: u8) -> bool {
 
 #scope_module
 
-advance :: inline (using t: *Lexer, amount := 1) -> bool {
+advance :: inline (using lexer: *Lexer, amount := 1) -> bool {
     _amount := min(amount, file.count);
     
     for 0.._amount-1 {

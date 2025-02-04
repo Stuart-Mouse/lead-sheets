@@ -94,7 +94,7 @@ Node_Directive :: struct {
 //       also we could do some kind of modified Any which also captures the semantics we need around additional indirections to value_pointers
 Node_Literal :: struct {
     using #as node_base: Node;
-    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; };
+    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; ANY; };
     using value_union: union { // determined by literal_type
         number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
@@ -103,6 +103,7 @@ Node_Literal :: struct {
             value_pointer:      *void;              // once type is resolved, we store pointer to allocated value here
             expressions:        *Node; // expressions to init struct members or array values by. later maybe also accepting statements
         }
+        any: Any;
     }
 }
 
@@ -227,7 +228,7 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, source_t
     node := New(T_Node,, ctxt.allocator);
     node.node_type = T_Node;
     node.parent    = ifx parent_node else ctxt.current_parent_node;
-    // dbg_print("allocated % at %\n", T_Node, loc);
+    // dprint("allocated % at %\n", T_Node, loc);
     
     // TODO: copy stuff from given token
     return node;
