@@ -5,25 +5,13 @@
     Should be structure almost the exact same as the typecheck_node or execute_node procs, except that we will be appending shit to a string builder
     
     TODO: 
-        make it work right
-        add a proper concept of unary operators
-            otherwise, we will get extra `* -1` for every single time script gets run and reserialized
-        
-        
         make it not ugly
         preserve whitespace in some manner, preserve comments in file as well
             probably won't preseve whitespace on a given line, but will preseve blank lines between lines with content
         keeping line numbers of all statements shoudl work, but we will also want to track line number that we are currently on, so that we know we are accurate
             otherwise I could see a situation where we end up overshooting where we should be in the file and things get fugged in some manner
         remove extra space before `{` in loops, but keep that extra space for single-line statements
-
         
-    
-    
-    TOOD: maybe we should change how struct literals with explicit types are parsed so that we don't end up with the wierd thing
-    of having and identifier, dot, and struct literal to simply express that the struct literal has an explicit type attached
-    instead, when we get the brace after the dot, we should just throw away the identifier and dot and move whatever necessary data is there to the literal node
-    and I think it is safe to assume we will not implement more complex type expressions than just simple identifiers
 */
 
 
@@ -143,7 +131,10 @@ print_node :: (
         
         
       case Node_Identifier;
+        do_backtick := !is_legal_identifier(node.(*Node_Identifier).name);
+        if do_backtick  append(builder, "`");
         append(builder, node.(*Node_Identifier).name);
+        if do_backtick  append(builder, "`");
         return true;
         
         
@@ -241,7 +232,11 @@ print_node :: (
             memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
         }
         
+        do_backtick := !is_legal_identifier(node.(*Node_Identifier).name);
+        if do_backtick  append(builder, "`");
         append(builder, declaration.name);
+        if do_backtick  append(builder, "`");
+        
         if declaration.init_expression  append(builder, " ");
         append(builder, ":");
         if declaration.type_expression {

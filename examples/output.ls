@@ -29,3 +29,5 @@ const :: 7?;
 echo(const);
 const = 7;
 echo(const);
+`identifier string` := 69;
+echo(`identifier string`);

@@ -242,9 +242,10 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         };
     }
     
-    // parse string
-    if file[0] == #char "\"" { 
+    // parse string or backticked identifier
+    if file[0] == #char "\"" || file[0] == #char "`" { 
         quote_char := file[0];
+        is_identifier := quote_char == #char "`";
         
         if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing string.");
         string_value: string = ---;
@@ -261,7 +262,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         advance(lexer);
         
         return .{ 
-            type              = .STRING, 
+            type              = ifx is_identifier then .IDENTIFIER else .STRING, 
             text              = string_value, 
             source_location   = source_location,
             whitespace_before = whitespace
@@ -294,6 +295,15 @@ try_parse_identifier :: (using lexer: *Lexer) -> (Token, bool) {
         }, true;
     }
     return .{}, false;
+}
+
+
+// NOTE: this must be kept in accord with try_parse_identifier
+is_legal_identifier :: (str: string) -> bool {
+    if !str return false;
+    if !is_alpha(str[0]) && str[0] != #char "_"  return false;
+    for str  if !is_alnum(it)  return false;
+    return true;
 }
 
 

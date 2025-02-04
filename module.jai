@@ -112,6 +112,7 @@ register_type :: (script: *Script, name: string, type: *Type_Info) {
 
 // STACK STUFF
 
+// TODO: instead of having this goofy sentinel value thing on the stack, we should just assert that stack_ptr < stack_base + stack_size after pushing to stack
 STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 
 PTR_SIZE :: size_of(*void);
