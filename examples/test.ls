@@ -71,6 +71,6 @@ echo(`identifier string`);
 // cool_number will be replaced with '35' when re-serialized
 // node replacement is not really something to be used if one plans to re-serialize their ast later, since it's inherently a destructive transformation.
 // but, for throwaway scripts or expressions it can be very handy
-asdf := cool_number;
-echo(asdf);
-echo(cool_number);
+// asdf := cool_number;
+// echo(asdf);
+// echo(cool_number);

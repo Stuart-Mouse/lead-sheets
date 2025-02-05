@@ -50,15 +50,7 @@ Script :: struct {
     lexer:                  Lexer;
     current_parent_node:    *Node;    // perhaps this should be passed on stack, only used during parsing
     
-    callbacks: struct {
-        // callback is responsible for setting all proper values on identifier node!
-        // or if user wants to replace the node entirely, they can return the node to substitute, which should be an ANY literal
-        resolve_identifier: struct { 
-            proc: (*Script, *Node_Identifier, Typechecking_Flags, *Type_Info, *void) -> (resolved: bool, *Node);
-            data: *void;
-        };
-    };
-    
+
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;

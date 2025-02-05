@@ -88,8 +88,6 @@ main :: () {
     set_variable(*script, "struct1", struct1);
     set_variable(*script, "str", str);
     
-    script.callbacks.resolve_identifier.proc = resolve_identifier_proc;
-    
     print("\nPARSING SCRIPT\n");
     source := read_entire_file("test.ls");
     if !parse_source_file(*script, source) {
@@ -121,14 +119,4 @@ main :: () {
     write_entire_file("output.ls", output);
 }
 
-
-
-resolve_identifier_proc :: (script: *Script, identifier: *Node_Identifier, check_flags: Typechecking_Flags, hint_Type: *Type_Info, data: *void) -> (resolved: bool, replacement: *Node) {
-    if identifier.name == "cool_number" {
-        rep := make_number_literal(script, 35);
-        return true, rep;
-    }
-    
-    return false, null;
-}
 

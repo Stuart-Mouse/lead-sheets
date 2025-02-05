@@ -472,7 +472,7 @@ execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     }
     
     for directive.arguments {
-        argument_type := typecheck_node(script, *it);
+        argument_type := typecheck_node(script, it);
         expected_type := ti_proc.argument_types[it_index + 2]; // + 1 for implicitly passing script pointer and data pointer
         if !argument_type || argument_type != expected_type {
             log("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(expected_type), as_type(argument_type));

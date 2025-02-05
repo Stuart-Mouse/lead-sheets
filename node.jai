@@ -255,3 +255,10 @@ alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, source_t
     // TODO: copy stuff from given token
     return node;
 }
+
+replace_node :: inline (original: **Node, new: *Node) {
+    new.parent = original.*.parent;
+    new.next   = original.*.next;
+    new.whitespace_before = original.*.whitespace_before;
+    original.* = new;
+}
