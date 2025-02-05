@@ -425,13 +425,13 @@ typecheck_node :: (
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         base_type := typecheck_node(script, subscript.base_expression, check_flags & .EXPECT_LVALUE).(*Type_Info_Array);
-        if base_type.type != .ARRAY {
+        if base_type == null || base_type.type != .ARRAY {
             log("Typechecking Error: Type '%' cannot be indexed!", as_type(base_type));
             return null;
         }
         
         indexing_type := typecheck_node(script, subscript.indexing_expression/*, hint_type = type_info(int)*/);
-        if indexing_type.type != .INTEGER && indexing_type.type != .FLOAT {
+        if indexing_type == null || (indexing_type.type != .INTEGER && indexing_type.type != .FLOAT) {
             log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
             return null;
         }

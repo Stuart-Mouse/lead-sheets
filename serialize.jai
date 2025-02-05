@@ -82,6 +82,9 @@ print_node :: (
         literal := node.(*Node_Literal);
         
         if literal.literal_type == {
+          case .ANY;
+            print_to_builder(builder, "<literal ANY of type %>", as_type(literal.value_type));
+        
           case .STRING;
             print_to_builder(builder, "\"%\"", literal.text);
             
