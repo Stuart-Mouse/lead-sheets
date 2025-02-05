@@ -112,11 +112,21 @@ main :: () {
         print("failed!\n");
     }
     
+    
     print("\nSERIALIZING SCRIPT\n");
     builder: String_Builder;
     print_script(*script, *builder);
     output := builder_to_string(*builder);
     write_entire_file("output.ls", output);
+    
+    
+    
+    print("\nWALK NODES TEST\n");
+    // walk_nodes(*script, script.ast_root, #code { // TODO: report this, it will crash the compiler
+    walk_nodes(*script, xx *script.ast_root, #code {
+        if ast_node.node_type == Node_Identifier {
+            print("%\n", ast_node.(*Node_Identifier).name);
+        }
+    });
 }
-
 

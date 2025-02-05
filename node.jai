@@ -222,6 +222,7 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
     }
 }
 
+// for iterating nodes with an additional indirection, so that we can replace nodes in a parameter or block statements list
 iterate :: (node: **Node, body: Code, reverse := false) #expand {
     #if reverse {
         // required to define it index here it seems? but it doesn't make any sense to use...

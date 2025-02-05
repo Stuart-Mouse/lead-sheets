@@ -762,74 +762,77 @@ make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
 
 
 
-
-
-walk_nodes :: (script: *Script, node: *Node, body: Code) -> bool #expand {
-    recurse :: (script: *Script, node: *Node) -> bool {
-        if node == null {
+// uses an extra level of indirection so that we can replace any pointer to a node
+// I removed this funcitonality from the typecheking step, but it should work better here
+walk_nodes :: (script: *Script, node: **Node, body: Code) -> bool #expand {
+    recurse :: (script: *Script, _node: **Node) -> bool {
+        ast_node := _node.*;
+        if ast_node == null {
             dprint("Warning: node was null in walk_nodes.\n");
             return true; // TODO: make false later probably...
         }
         
+        replace_node :: (node: *Node) #expand { replace_node(`_node, ast_node); };
+        
         #insert,scope() body;
         
         // recurse for certain node types
-        if node.node_type == {
+        if ast_node.node_type == {
           case Node_Operation;
-            operation := node.(*Node_Operation);
-            return recurse(script, operation.left) 
-                && recurse(script, operation.right);
+            operation := ast_node.(*Node_Operation);
+            return recurse(script, xx *operation.left) 
+                && recurse(script, xx *operation.right);
             
           case Node_Procedure_Call;
-            procedure_call := node.(*Node_Procedure_Call);
-            for procedure_call.arguments {
+            procedure_call := ast_node.(*Node_Procedure_Call);
+            iterate(*procedure_call.arguments, #code {
                 if !recurse(script, it)  return false;
-            }
+            });
             return true;
             
           case Node_Dot;
-            dot := node.(*Node_Dot);
-            return recurse(script, dot.left) 
-                && recurse(script, dot.right);
+            dot := ast_node.(*Node_Dot);
+            return recurse(script, xx *dot.left) 
+                && recurse(script, xx *dot.right);
             
           case Node_Subscript;
-            subscript := node.(*Node_Subscript);
-            return recurse(script, subscript.base_expression)
-                && recurse(script, subscript.indexing_expression);
+            subscript := ast_node.(*Node_Subscript);
+            return recurse(script, xx *subscript.base_expression)
+                && recurse(script, xx *subscript.indexing_expression);
             
           case Node_Declaration;
-            declaration := node.(*Node_Declaration);
-            return recurse(script, declaration.type_expression)
-                && recurse(script, declaration.init_expression);
+            declaration := ast_node.(*Node_Declaration);
+            return recurse(script, xx *declaration.type_expression)
+                && recurse(script, xx *declaration.init_expression);
             
           case Node_Block;
-            block := node.(*Node_Block);
-            for block.statements {
+            block := ast_node.(*Node_Block);
+            iterate(*block.statements, #code {
                 if !recurse(script, it)  return false;
-            }
+            });
             return true;
             
           case Node_If_Statement;
-            if_statement := node.(*Node_If_Statement);
-            return recurse(script, if_statement.condition)
-                && recurse(script, if_statement.statement);
+            if_statement := ast_node.(*Node_If_Statement);
+            return recurse(script, xx *if_statement.condition)
+                && recurse(script, xx *if_statement.statement);
             
           case Node_While_Loop;
-            while_loop := node.(*Node_While_Loop);
-            return recurse(script, while_loop.condition)
-                && recurse(script, while_loop.statement);
+            while_loop := ast_node.(*Node_While_Loop);
+            return recurse(script, xx *while_loop.condition)
+                && recurse(script, xx *while_loop.statement);
             
           case Node_For_Loop;
-            for_loop := node.(*Node_For_Loop);
+            for_loop := ast_node.(*Node_For_Loop);
             if for_loop.control_type == {
               case .RANGE;
-                if !recurse(script, for_loop.range.lower)  return false;
-                if !recurse(script, for_loop.range.upper)  return false;
+                if !recurse(script, xx *for_loop.range.lower)  return false;
+                if !recurse(script, xx *for_loop.range.upper)  return false;
                 
               case .ARRAY;
-                if !recurse(script, for_loop.array_expression)  return false;
+                if !recurse(script, xx *for_loop.array_expression)  return false;
             }
-            if !recurse(script, for_loop.statement)  return false;
+            if !recurse(script, xx *for_loop.statement)  return false;
             return true;
         }
         
