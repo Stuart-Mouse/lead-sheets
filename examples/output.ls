@@ -31,3 +31,6 @@ const = 7;
 echo(const);
 `identifier string` := 69;
 echo(`identifier string`);
+asdf := 35;
+echo(asdf);
+echo(35);

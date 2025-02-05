@@ -48,8 +48,16 @@ Script :: struct {
     // stuff I brought over from Script Constructor
     // this is parser state, basically
     lexer:                  Lexer;
-    current_parent_node:    *Node;    // perhaps this should be passed on stack
+    current_parent_node:    *Node;    // perhaps this should be passed on stack, only used during parsing
     
+    callbacks: struct {
+        // callback is responsible for setting all proper values on identifier node!
+        // or if user wants to replace the node entirely, they can return the node to substitute, which should be an ANY literal
+        resolve_identifier: struct { 
+            proc: (*Script, *Node_Identifier, Typechecking_Flags, *Type_Info, *void) -> (resolved: bool, *Node);
+            data: *void;
+        };
+    };
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -434,6 +442,23 @@ parse_number :: (s: string) -> Small_Any, bool {
     return make_small_any(val), ok;
 }
 
+make_number_literal :: (script: *Script, token: Token) -> *Node {
+    value, ok := parse_number(token.text);
+    if !ok  return null;
+    
+    literal := alloc_node(script, Node_Literal);
+    literal.literal_type = .NUMBER;
+    literal.number = value;
+    return literal;
+}
+
+make_number_literal :: (script: *Script, number: float64) -> *Node {
+    literal := alloc_node(script, Node_Literal);
+    literal.literal_type = .NUMBER;
+    literal.number = make_small_any(number);
+    return literal;
+}
+
 parse_leaf :: (using script: *Script) -> *Node {
     // dprint("parse_leaf()\n");
     // dprint_push_indent();
@@ -482,13 +507,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
       case .NUMBER;
         dprint("NUMBER (%)\n", token.text);
-        value, ok := parse_number(token.text);
-        if !ok  return null;
-        
-        literal := alloc_node(script, Node_Literal);
-        literal.literal_type = .NUMBER;
-        literal.number = value;
-        node = literal;
+        node = make_number_literal(script, token);
         
         
       case .STRING;

@@ -199,7 +199,9 @@ Node_For_Loop :: struct {
     it_decl, it_index_decl: Node_Declaration;
 }
 
+// TODO: Clean up this horrible iterator...
 for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
+    #assert(flags & .POINTER == 0);
     #if flags & .REVERSE {
         // required to define it index here it seems? but it doesn't make any sense to use...
         `it := node;
@@ -220,6 +222,26 @@ for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
     }
 }
 
+iterate :: (node: **Node, body: Code, reverse := false) #expand {
+    #if reverse {
+        // required to define it index here it seems? but it doesn't make any sense to use...
+        `it := node;
+        `it_index := 0;
+        while it.* != null {
+            #insert body;
+            it = *it.*.prev;
+            it_index -= 1;
+        }
+    } else {
+        `it := node;
+        `it_index := 0;
+        while it.* != null {
+            #insert body;
+            it = *it.*.next;
+            it_index += 1;
+        }
+    }
+}
 
 alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, source_token := Token.{}, loc := #caller_location) -> *T_Node #expand
 #modify {

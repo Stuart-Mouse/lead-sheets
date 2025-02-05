@@ -88,6 +88,8 @@ main :: () {
     set_variable(*script, "struct1", struct1);
     set_variable(*script, "str", str);
     
+    script.callbacks.resolve_identifier.proc = resolve_identifier_proc;
+    
     print("\nPARSING SCRIPT\n");
     source := read_entire_file("test.ls");
     if !parse_source_file(*script, source) {
@@ -112,22 +114,21 @@ main :: () {
         print("failed!\n");
     }
     
-    
     print("\nSERIALIZING SCRIPT\n");
     builder: String_Builder;
     print_script(*script, *builder);
     output := builder_to_string(*builder);
     write_entire_file("output.ls", output);
+}
+
+
+
+resolve_identifier_proc :: (script: *Script, identifier: *Node_Identifier, check_flags: Typechecking_Flags, hint_Type: *Type_Info, data: *void) -> (resolved: bool, replacement: *Node) {
+    if identifier.name == "cool_number" {
+        rep := make_number_literal(script, 35);
+        return true, rep;
+    }
     
-    
-    
-    print("\nWALK NODES TEST\n");
-    walk_nodes(*script, script.ast_root, #code {
-        if node.node_type == Node_Identifier {
-            print("%\n", node.(*Node_Identifier).name);
-        }
-    });
-    
-    
+    return false, null;
 }
 
