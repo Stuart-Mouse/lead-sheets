@@ -130,7 +130,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
 
         
       case Node_Operation;
-        operation   := node.(*Node_Operation);
+        operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
             return execute_node(script, operation.overload_procedure);
