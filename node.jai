@@ -85,6 +85,7 @@ Node_Directive :: struct {
     directive_index:        int;
     arguments:              *Node;
     arguments_count:        int;
+    runtime_node:           *Node;  // returned from directive as a replacement node. We still keep the directive itself around for re-serialization, though.
 }
 
 // NOTE: may need something like the Many_Any for doing array literals in the future
@@ -244,13 +245,13 @@ iterate :: (node: **Node, body: Code, reverse := false) #expand {
     }
 }
 
-alloc_node :: (ctxt: *Script, $T_Node: Type, parent_node: *Node = null, source_token := Token.{}, loc := #caller_location) -> *T_Node #expand
+alloc_node :: (script: *Script, $T_Node: Type, parent_node: *Node = null, source_token := Token.{}, loc := #caller_location) -> *T_Node #expand
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
 } {
-    node := New(T_Node,, ctxt.allocator);
+    node := New(T_Node,, script.allocator);
     node.node_type = T_Node;
-    node.parent    = ifx parent_node else ctxt.current_parent_node;
+    node.parent    = ifx parent_node else script.current_parent_node;
     // dprint("allocated % at %\n", T_Node, loc);
     
     // TODO: copy stuff from given token

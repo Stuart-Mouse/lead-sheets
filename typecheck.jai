@@ -15,6 +15,7 @@ Typechecking_Flags :: enum_flags {
 }
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
+// FUTURE REFERENCE: for lowering to bytecode, we will actually want to put result stack location on all instructions rather than pushing and popping from stack
 typecheck_node :: (
     using script:   *Script, 
     node:           *Node, 
@@ -53,9 +54,13 @@ typecheck_node :: (
     }
     check_flags &= ~.IS_STATEMENT_ROOT;
     
+    // TODO: callback here to manually typecheck node
+    // return type and error separately
+    // if type is set, skip the below
     
     if node.node_type == {
       case Node_Directive;
+        node.flags |= .TYPECHECKED; // @Hack? We are getting an error when trying to execute the directive, saying it was not typechecked?
         return type_info(void);
         
         
@@ -322,7 +327,7 @@ typecheck_node :: (
             procedure_index := resolve_procedure_index(script, identifier.name, argument_types, node.flags & .OVERLOAD == .OVERLOAD);
             if procedure_index == -1  return null; // error logged by above
             
-            // TODO: remove need to allocate additional node here
+            identifier.flags |= .TYPECHECKED;
             identifier.identifier_type   = .EXTERNAL_PROCEDURE;
             identifier.procedure_index = procedure_index;
             
@@ -656,3 +661,99 @@ find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need
     return null;
 }
 
+
+// extracted out primarily so that I can use this in evaluate_node
+// I could just call typecheck_node on the identifier but I guess this makes me feel beetter somehow?
+resolve_identifier :: (
+    using script:   *Script, 
+    identifier:     *Node_Identifier, 
+    check_flags:    Typechecking_Flags = .NONE
+    // hint_type:      *Type_Info         = null
+) -> (
+    value_type:     *Type_Info
+) {
+    // try to resolve to internal declaration
+    {
+        parent_block := identifier.parent;
+        while parent_block {
+            if parent_block.node_type == {
+              case Node_Block;
+                declaration := find_declaration_in_block(xx parent_block, identifier.name);
+                if declaration {
+                    // TODO: this is dumb, we should actually compare source location, and report both in error message.
+                    if declaration.(*void) > identifier.(*void) {
+                        log("Error: identifier % used before its declaration.", identifier.name);
+                        return null;
+                    }
+                    identifier.identifier_type = .DECLARATION;
+                    identifier.declaration = declaration;
+                    identifier.value_type = declaration.value_type;
+                    if check_flags & .EXPECT_LVALUE {
+                        if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
+                            log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
+                            return null;                                
+                        }
+                        identifier.flags |= .IS_LVALUE;
+                    }
+                    return identifier.value_type;
+                }
+                
+              case Node_For_Loop;
+                dprint("checking for iterator with identifier '%'\n", identifier.name);
+                declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
+                if declaration {
+                    identifier.identifier_type = .DECLARATION;
+                    identifier.declaration   = declaration;
+                    identifier.value_type    = declaration.value_type;
+                    if check_flags & .EXPECT_LVALUE {
+                        if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
+                            log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
+                            return null;                                
+                        }
+                        identifier.flags |= .IS_LVALUE;
+                    }
+                    return identifier.value_type;
+                }
+            }
+            parent_block = parent_block.parent;
+        }
+    }
+    
+    // try to resolve identifier as an external variable here
+    {
+        variable_index := resolve_variable(script, identifier.name);
+        if variable_index != -1 {
+            if check_flags & .EXPECT_LVALUE {
+                identifier.flags |= .IS_LVALUE;
+            }
+            identifier.identifier_type  = .EXTERNAL_VARIABLE;
+            identifier.variable_index = variable_index;
+            identifier.value_type     = variables[variable_index].binding.type;
+            return identifier.value_type;
+        }
+    }
+    
+    // try to resolve identifier as a type here
+    {
+        for script.type_table {
+            if it.name == identifier.name {
+                if check_flags & .EXPECT_LVALUE {
+                    log("Error: a type cannot be used as an lvalue.");
+                    return null;
+                }
+                
+                identifier.identifier_type = .TYPE;
+                identifier.type_info_pointer = it.type;
+                identifier.value_type = type_info(Type);
+                return identifier.value_type;
+            }
+        }
+    }
+    
+    // if the identifier is referring to an external procedure, that will have to be handled in PROCEDURE_CALL case, 
+    //     since we need the additional context for overlaod resolution.
+    if !(check_flags & .IS_PROCEDURE_EXPRESSION) {
+        dprint("Error: Unable to resolve identifier '%'.\n", identifier.name);
+    }
+    return null;
+}

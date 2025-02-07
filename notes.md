@@ -405,3 +405,96 @@ in future, we should allow a directive to return values
 also, in the future we should definitely just pass the raw `*Node` if that is the argument type that a directive accepts
 
 
+
+
+
+
+Going to probably branch further off of gon and overhaul the syntax, focus more on the lead sheets integration
+    and probably remove weird inconsistencies between how field refs and code expressions work
+    
+but first step is changing some things here in lead sheets
+particularly, I want to stop passing around the script to everything and make parsing/typechecking/execution more individually usable
+
+disentangle execution/evaluation from allocation in pool
+make it easier to swap the allocator used for nodes, 
+
+we will always have to allocate nodes, since the grammar is too complex to do everything purely on the stack
+    plus we already need temp storage for intermediates, so may as well just allocate the nodes there and make life easier
+    
+
+
+    
+first
+    write evaluate_node proc
+        thought this would requre factoring all the nodes out into their own typecheck routines, but the thing is, its just too damn recursive
+        we can't really use the existing typechecking proc or factoring it any way that allows us to use it piecemeal in the way we would need to to implement an evaluate_node proc
+        and besides, I suppose it only makes sense that typechecking is all done at the same time, rather than interleaving it with execution or evaluation
+        
+        so wat we really want is just an execute_temp proc that uses temp storage for the results instead of the stack
+        
+        
+    test this with existing framework
+second
+    figure out how to nicely swap node allocator in script
+
+test run
+    switch to using evaluate and temp storage for directives 
+        and just throw away the node afterwards
+
+
+
+script state used during...
+    parsing
+        directives
+            
+        pool / allocator
+            can probably just push this as context.allocator
+            but need to be careful about that...
+            also a bit tricky maybe to disentangle this from the stack that we allocate in the pool before the nodes?
+        
+        lexer
+        
+        current_parent_node
+            this can be passed as parameter, but this is cumbersome
+    
+
+both typechecking and execution need access to the the variables and procedures arrays
+    for procedures, we really could just store the fn ptr, 
+    but for variables we have to be abel to sub them out, so there will always be a need for an additional indirection
+
+
+
+
+
+the biggest thing preventing just having a totally general 'evaluate' or 'interpret' proc that just takes a string of text input as expression and then evaluates it is that we have tied our allocation and execution (due to using the stack)
+    we could certainly just set our script's allocator to temp in order to interpret throwaway expressions, but then we still need the stack to execute those
+    so, we should also have the option to use temp storage for our intermediate values
+    and maybe we can even clean uip after ourselves with the whole set_watermark thing, assuming that's still in the language
+
+
+
+we do want to put ref to token on node after all if we do end up wanting source info for the node
+this will keep our nodes slimmer and the tokens are honestly not too much to hold on to
+    this would also mean we could just tokenize the entire script at once if we wanted to, which would give better locality to both our tokens and nodes
+    
+likewise for bytecode instructions in the future, we should hold on to a pointer to the node (only in debug) so that we can, well, debug.
+
+regardless of whether we want to keep nodes or throw them away, we should run all expressions through the same basic pipeline of parse/typecheck/eval
+
+
+evaluate doing its own typecheck may actually work out
+    and maybe it really is better to do everything in a single traversal of the AST
+because we basically have either leaf nodes
+    literals, identifiers don't call into recursive typechecking and may benefit from special coercions
+    then there are just structural nodes like block, if, for, while
+    and then misc like cast, subscript, dot
+    the real tricky part is primarily gonna be the mig messy nodes like operation and procedure
+    but maybe we can break these up in a nicer way?
+
+random
+    maybe we don't do declarations in eval?
+    malleable literals don't make sense in eval
+    neither do directives, really. but that's harmless I guess
+    tbh, maybe even assignments don't make sense in an eval?
+        nvm, can make sense if lvalue is external variable
+    

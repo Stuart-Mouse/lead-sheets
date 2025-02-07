@@ -121,12 +121,12 @@ main :: () {
     
     
     
-    print("\nWALK NODES TEST\n");
-    // walk_nodes(*script, script.ast_root, #code { // TODO: report this, it will crash the compiler
-    walk_nodes(*script, xx *script.ast_root, #code {
-        if ast_node.node_type == Node_Identifier {
-            print("%\n", ast_node.(*Node_Identifier).name);
-        }
-    });
+    // print("\nWALK NODES TEST\n");
+    // // walk_nodes(*script, script.ast_root, #code { // TODO: report this, it will crash the compiler
+    // walk_nodes(*script, xx *script.ast_root, #code {
+    //     if node.node_type == Node_Identifier {
+    //         print("%\n", node.(*Node_Identifier).name);
+    //     }
+    // });
 }
 

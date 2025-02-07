@@ -412,6 +412,8 @@ is_numeric_type :: (ti: *Type_Info) -> bool {
 */
 Small_Any :: #type,distinct Any; 
 
+// kind of feels like this should have ot be passed by pointer, but it works?
+// and there's a strange error when I do it that way, so...
 to_any :: inline (any: Small_Any) -> Any { 
     return Any.{ any.type, *any.value_pointer }; 
 };

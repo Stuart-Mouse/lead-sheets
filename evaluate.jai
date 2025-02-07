@@ -1,73 +1,29 @@
 
 
 /*
-    TODO: we should differentiate execute and evaluate procs
-    the procs here should be labelled execute, since they work primarily through side effects
-        i.e., they push/pop things on the preallocated stack and rely on typecheck phase to have been done correctly
-
-    by contrast, I will probably reintroduce some evaluate procs that basically do things the old way of dynamically typechecking and returning Any's
-    these may be useful in the case of scripts that only need to be run once, e.g. evaluating expresions in gon files or seomthing
+    evaluate.jai
     
-    as it stands, I think the execute procs will probably have decent enough performance characteristics that going to a bytecode will probabyl not be worth it for a good while
-    it will be much easier to debug things using the old ast walking method, and because we are typechecked, it's really more like a fat ass bytecode with horrible cache misses
-    but we would still have bad cache misses in bytecode with procedure calls anyhow because of the type info navigation that's required
+    As an alternative to executing AST nodes which have already been typechecked.
+    Evaluate node will typecheck nodes as it goes and returns intermediate values allocated with temp storage instead of using the script's stack.
+    Obviously, this is slower than just executing pre-typechecked nodes, but there are a few reasons why you may want to use evaluate_node instead.
+    For example, you've parsed an expression that you plan to only evaluate once, then throw away.
 */
 
-execute_script :: (script: *Script) -> bool {
-    if !(script.flags & .PARSED) {
-        log("Error: cannot execute script before AST has been constructed!\n");
-        return false;
-    }
-    if !(script.flags & .TYPECHECKED) {
-        log("Error: cannot execute script before AST has been typechecked!\n");
-        return false;
-    }
-    
-    script.stack_ptr = script.stack_base;
-    
-    for script.ast_root.statements {
-        dprint("executing statement #%\n", it_index);
-        if !execute_node(script, it)  return false;
-    }
-    
-    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
-    if sentinel.* != STACK_SENTINEL_VALUE {
-        log("Error: sentinel value was overwritten! was %\n", sentinel.*);
-        return false;
-    }
-    
-    return true;
-}
 
-/*
-    Even though the script has already been typechecked, I use stack_push_any and stack_pop_any 
-        so that it's easier to get the type info when needed for debugging.
-    Using these procedures also just makes the code here a bit easier to read and captures the 
-        type-specific rules about additional indirections automatically.
-    When moving to bytecode though, we should be just use stack_push and stack_pop, 
-        which are probably slightly faster and don't require passing type info.
-*/
-execute_node :: (script: *Script, node: *Node) -> bool {
-    dprint("executing node %: %\n", node, node.node_type);
+evaluate_node :: (
+    script:         *Script, 
+    node:           *Node
+    check_flags:    Typechecking_Flags  = .NONE, 
+    hint_type:      *Type_Info          = null,
+    hint_storage:   *void               = null
+    // TODO: hint storage will actaully matter a lot here in terms of reducing temp storage spam
+) -> Any, bool {
+    dprint("evaluating node %: %\n", node, node.node_type);
     dprint_push_indent();
-    
-    dprint("stack_pointer offset: %  (%)\n", script.stack_ptr - script.stack_base, script.stack_ptr);
-    if node.flags & .IS_LVALUE  dprint("expecting lvalue\n");
-    
-    if !node.value_type {
-        dprint("Warning: node has no set value type!\n");
-    }
-    
-    if !node.flags & .TYPECHECKED {
-        // TODO: file/line or content of node please?
-        log("Error: cannot execute a node that has not been typechecked!");
-        return false;
-    }
     
     if node.node_type == {
       case Node_Directive;
         return true; // Directives are run as soon as they are parsed, so just skip this node.
-        // TODO: execute replacement node
         
         
       case Node_Literal;
@@ -76,42 +32,67 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
         if literal.literal_type == {
           case .ANY;
-            if !stack_push_any(script, literal.any, literal.flags & .IS_LVALUE != 0)  return false;
-            dprint("returning literal with value %\n", literal.any);
-            return true;
+            dprint("returning any literal with value %\n", literal.any);
+            return literal.any, true;
             
           case .STRING;
-            if !stack_push_any(script, literal.text, literal.flags & .IS_LVALUE != 0)  return false;
-            dprint("returning literal with value %\n", literal.text);
-            return true;
+            dprint("returning string literal with value %\n", literal.text);
+            return literal.any, true;
             
           case .NUMBER;
-            if !stack_push_any(script, to_any(literal.number), literal.flags & .IS_LVALUE != 0)  return false;
-            dprint("returning literal with value %\n", to_any(literal.number));
-            return true;
+            hint_type = ifx hint_type else type_info(float32); // @Hack: later, we probably won't force default to f32
+            if hint_type {
+                new_number := Small_Any.{ hint_type, null };
+                remap_data(to_any(new_number), to_any(literal.number));
+                literal.number = new_number;
+            }
+            dprint("returning number literal with value %\n", to_any(literal.number));
+            return to_any(literal.number), true;
             
           case .STRUCT;
-            if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .IS_LVALUE != 0)  return false;
-            write_ptr := literal.aggr.value_pointer;
-            // TODO: if we enhance typechecking to pass value pointer for these values, 
-            //       then we don't need to do any pushing or popping from stack here.
-            //       will require changes to almost all execute cases though...
-            //       if node.dst_provided  memcpy directly  else push stack
-            for literal.aggr.expressions {
-                if !execute_node(script, it)  return false;
-                memcpy(write_ptr, stack_pop_any(script, it.value_type).value_pointer, it.value_type.runtime_size);
-                write_ptr += it.value_type.runtime_size;
+            ret_type: *Type_Info_Struct;
+            
+            // block copied from typecheck.jai      maybe we can factor this out somehow?
+            {
+                if literal.aggr.type_identifier != null {
+                    type_identifier_type := typecheck_node(script, literal.aggr.type_identifier);
+                    if type_identifier_type == null || type_identifier_type.type != .TYPE || literal.aggr.type_identifier.identifier_type != .TYPE {
+                        log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+                        return null;
+                    }
+                    ret_type = xx literal.aggr.type_identifier.type_info_pointer;
+                } else {
+                    ret_type = xx hint_type;
+                }
+                
+                if ret_type == null  return null;
+                if ret_type.type != .STRUCT {
+                    log("Error: type hint provided to struct literal is not a struct type. (was '%')", as_type(ret_type));
+                    return null;
+                }
             }
-            return true;
+            
+            ret := Dynamic_New_Any(literal.value_type,, temp);
+            member_ptr := ret.value_pointer;
+            for literal.aggr.expressions {
+                member := ret_type.members[it_index];
+                member_any, ok := evaluate_node(script, it, .NONE, member.type, member_ptr);
+                if member_any.value_pointer != member_ptr {
+                    memcpy(member_ptr, member_any.value_pointer, member.runtime_size);
+                }
+                member_ptr += member.runtime_size;
+            }
+            return ret, true;
             
           case .ARRAY;
             log("Error: array literals not yet implemented.");
         }
-        return false;
+        return Any.{}, false;
         
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
+        if !resolve_identifier(script, identifier, check_flags);
         if identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
