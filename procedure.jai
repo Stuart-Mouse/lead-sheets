@@ -1,8 +1,8 @@
 
 External_Procedure :: struct {
-    name  : string;
-    type  : *Type_Info_Procedure;
-    ptr   : *void;
+    name:   string;
+    type:   *Type_Info_Procedure;
+    ptr:    *void;
 }
 
 // adds a procedure to the given script's context

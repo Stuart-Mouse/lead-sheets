@@ -360,21 +360,21 @@ parse_leaf :: (using script: *Script) -> *Node {
 // TODO: make a similar procedure that instead returns the value of the evaluated expression
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_expression :: (using script: *Script, expr: string, allocator: *Allocator = null) -> *Node {
+parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null) -> *Node {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
     
-    prev_allocator := script.lexer;
+    prev_allocator := script.allocator;
     defer script.allocator = prev_allocator;
     if allocator  script.allocator = allocator;
     
     // we have to reinit lexer for every expression
     // TODO: set the lexer source location based on dom node?
-    LS.init_lexer(*script.lexer, expr);
-    expression := LS.parse_expression(script, 0);
+    init_lexer(*script.lexer, expr);
+    expression := parse_expression(script, 0);
     
-    if !expect_token_type(*lexer, .EOF)  return null;
+    if !expect_token_type(*script.lexer, .EOF)  return null;
     return expression;
 }
 

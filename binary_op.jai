@@ -177,13 +177,13 @@ execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *vo
         append(*builder, "if oper_idx == {\n");
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "  case %;\n", it_index);
-            if it.operator_type == {
+            if it.type == {
               case .UNARY;
-                print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.operator_ident);
+                print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
               case .BINARY;
-                print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.operator_ident, it.right);
+                print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.identifier, it.right);
               case .ASSIGNMENT;
-                print_to_builder(*builder, "    ret.(*%1).* = left.(*%1).* %2 right.(*%3).*;\n", it.left, it.operator_ident, it.right);
+                print_to_builder(*builder, "    left.(*%1).* %2 right.(*%3).*;\n", it.left, it.identifier, it.right);
             }
             append(*builder, "    return true;\n");
         }

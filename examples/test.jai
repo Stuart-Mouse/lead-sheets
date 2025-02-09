@@ -130,9 +130,13 @@ main :: () {
     // });
     
     
-    print("\nEVALUATION TEST\n");
+    print("\nEVAL TEST\n");
     
+    _, ok = evaluate_expression(*script, "x = 3");
     
+    value:, ok = evaluate_expression(*script, "x + 5");
+    if !ok  return;
     
+    print("value: %\n", value);
 }
 

@@ -3,20 +3,26 @@
 /*
     evaluate.jai
     
-    As an alternative to executing AST nodes which have already been typechecked.
-    Evaluate node will typecheck nodes as it goes and returns intermediate values allocated with temp storage instead of using the script's stack.
-    Obviously, this is slower than just executing pre-typechecked nodes, but there are a few reasons why you may want to use evaluate_node instead.
-    For example, you've parsed an expression that you plan to only evaluate once, then throw away.
+    As an alternative to execute_node, which pushes results on the script stack, evalaute_node will allocate the intermediate values in temproary storage.
+    In the future, it may be ideal to re-implement execute_node in terms of evaluate_node, using hint_storage to stick the results on the script stack instead of doing so by default
+    Ultimately, this should simplify execute_node while also offering multiple ways of interfacing with lead sheets expressions.
+    
 */
 
+evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
+    root := parse_expression(script, expr);
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
+    
+    value, ok := evaluate_node(script, root);
+    if !ok  return Any.{}, false;
+    
+    return value, true;
+}
 
 evaluate_node :: (
     script:         *Script, 
-    node:           *Node
-    check_flags:    Typechecking_Flags  = .NONE, 
-    // hint_type:      *Type_Info          = null,
-    hint_storage:   *void               = null
-    // TODO: hint storage will actaully matter a lot here in terms of reducing temp storage spam
+    node:           *Node,
+    hint_storage:   *void    = null
 ) -> Any, bool {
     dprint("evaluating node %: %\n", node, node.node_type);
     dprint_push_indent();
@@ -32,7 +38,7 @@ evaluate_node :: (
     
     if node.node_type == {
       case Node_Directive;
-        return true; // Directives are run as soon as they are parsed, so just skip this node.
+        return null, true; // Directives are run as soon as they are parsed, so just skip this node.
         
         
       case Node_Literal;
@@ -56,11 +62,11 @@ evaluate_node :: (
             member_ptr := ret.value_pointer;
             for literal.aggr.expressions {
                 member := literal.value_type.(*Type_Info_Struct).members[it_index];
-                member_any, ok := evaluate_node(script, it, .NONE, member.type, member_ptr);
+                member_any, ok := evaluate_node(script, it, hint_storage = member_ptr);
                 if member_any.value_pointer != member_ptr {
-                    memcpy(member_ptr, member_any.value_pointer, member.runtime_size);
+                    memcpy(member_ptr, member_any.value_pointer, member.type.runtime_size);
                 }
-                member_ptr += member.runtime_size;
+                member_ptr += member.type.runtime_size;
             }
             return ret, true;
             
@@ -88,19 +94,20 @@ evaluate_node :: (
             procedure := *script.procedures[identifier.procedure_index];
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
-            return procedure.ptr, true;
+            return Any.{ procedure.type, *procedure.ptr }, true;
         }
-        return false;
+        return null, false;
 
         
       case Node_Operation;
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
-            return evalaute_node(script, operation.overload_procedure);
+            any, ok := evaluate_node(script, operation.overload_procedure);
+            return any, ok;
         }
         
-        left_any, ok := evaluate_node(script, operation.left)  
+        left_any, ok := evaluate_node(script, operation.left);
         if !ok  return null, false;
         
         right_any: Any;
@@ -118,7 +125,7 @@ evaluate_node :: (
         
         ret := make_return_value();
         
-        ok = execute_builtin_operation(operation.operator_index, left, right, ret);
+        ok = execute_builtin_operation(operation.operator_index, left_any.value_pointer, right_any.value_pointer, ret.value_pointer);
         if !ok  return null, false;
         
         dprint("returning result of binary operation: % %\n", as_type(operation.value_type), ret);
@@ -131,25 +138,28 @@ evaluate_node :: (
         ret := make_return_value();
         
         proc_any, ok := evaluate_node(script, procedure_call.procedure_expression);
-        if !ok  return false;
+        if !ok  return null, false;
         assert(proc_any.type.type == .PROCEDURE);
         dprint("proc_type: %\n", as_type(proc_any.type));
+        
+        proc_ptr := proc_any.value_pointer.(**void).*;
+        ti_proc  := proc_any.type.(*Type_Info_Procedure);
         
         {
             dcReset(script.dyncall_vm);
             jai_call :: true;
-            if jai_call || !(proc_any.type.procedure_flags & .HAS_NO_CONTEXT) {
+            if jai_call || !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
-            return_type := ifx proc_any.type.return_types 
-                then proc_any.type.return_types[0]
+            return_type := ifx ti_proc.return_types 
+                then ti_proc.return_types[0]
                 else type_info(void);
             
             for procedure_call.arguments {
                 arg_any, ok := evaluate_node(script, it);
-                if !ok  return false;
-                if !push_argument(script.dyncall_vm, arg_any.type, arg_any.value_pointer, true)  return false;
+                if !ok  return null, false;
+                if !push_argument(script.dyncall_vm, arg_any.type, arg_any.value_pointer, true)  return null, false;
             }
             
             dcArgPointer(script.dyncall_vm, ret.value_pointer);
@@ -166,7 +176,7 @@ evaluate_node :: (
         ret := make_return_value();
         
         left_any, ok := evaluate_node(script, node_cast.left);
-        if !remap_data(ret, left)  return null, false;
+        if !remap_data(ret, left_any)  return null, false;
         
         return ret, true;
         
@@ -175,7 +185,7 @@ evaluate_node :: (
         dot := node.(*Node_Dot);
         
         struct_any, ok := evaluate_node(script, dot.left);
-        if !ok  return null false;
+        if !ok  return null, false;
         member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
         
         dprint("struct value ptr: %\n", struct_any.value_pointer);
@@ -254,32 +264,32 @@ evaluate_node :: (
         
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
-        condition, ok := evaluate_node(script, if_statement.condition)
+        condition, ok := evaluate_node(script, if_statement.condition);
         if !ok {
             dprint("failed to evaluate left side of assignment statement!\n");
-            return false;
+            return null, false;
         }
         dprint("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
-            _, ok := evaluate_node(script, if_statement.statement)
+            _, ok := evaluate_node(script, if_statement.statement);
             if !ok {
                 dprint("failed to evaluate left side of assignment statement!\n");
-                return false;
+                return null, false;
             }
         }
-        return true;
+        return null, true;
         
         
       case Node_While_Loop;
         while_loop := node.(*Node_While_Loop);
         while loop := true {
-            condition, ok := evaluate_node(script, while_loop.condition)
+            condition, ok := evaluate_node(script, while_loop.condition);
             if !ok {
                 dprint("failed to evaluate left side of assignment statement!\n");
-                return false;
+                return null, false;
             }
             dprint("condition: % %\n", as_type(condition.type), condition);
             
@@ -287,23 +297,23 @@ evaluate_node :: (
             any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
-            _, ok := evaluate_node(script, while_loop.statement)
+            _, ok = evaluate_node(script, while_loop.statement);
             if !ok {
                 dprint("failed to evaluate left side of assignment statement!\n");
-                return false;
+                return null, false;
             }
         }
-        return true;
+        return null, true;
         
         
       case Node_For_Loop;
         for_loop := node.(*Node_For_Loop);
         if for_loop.control_type == {
           case .ARRAY;
-            array, ok := evaluate_node(script, for_loop.array_expression)
+            array, ok := evaluate_node(script, for_loop.array_expression);
             if !ok {
                 dprint("failed to evaluate for loop control node!\n");
-                return false;
+                return null, false;
             }
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
@@ -321,21 +331,21 @@ evaluate_node :: (
                     it_index += 1;
                 }
                 
-                _, ok := evaluate_node(script, for_loop.statement)
+                _, ok := evaluate_node(script, for_loop.statement);
                 if !ok {
                     dprint("failed to evaluate left side of assignment statement!\n");
-                    return false;
+                    return null, false;
                 }
             }
-            return true;
+            return null, true;
             
           case .RANGE;
-            lower, ok := evaluate_node(script, for_loop.range.lower)
+            lower, ok := evaluate_node(script, for_loop.range.lower);
             if !ok {
                 dprint("failed to evaluate for_loop.range.lower!\n");
                 return null, false;
             }
-            upper:, ok = evaluate_node(script, for_loop.range.upper)
+            upper:, ok = evaluate_node(script, for_loop.range.upper);
             if !ok {
                 dprint("failed to evaluate for_loop.range.upper!\n");
                 return null, false;
@@ -355,7 +365,7 @@ evaluate_node :: (
                 // TODO: for now we just don't set it_index. 
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
-                _, ok := evaluate_node(script, for_loop.statement)
+                _, ok := evaluate_node(script, for_loop.statement);
                 if !ok {
                     dprint("failed to evaluate left side of assignment statement!\n");
                     return null, false;
@@ -412,8 +422,10 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     }
     arg_ptr_start := script.stack_ptr;
     
-    _, ok := evaluate_node(script, it)  return 
-    for directive.arguments  if !falsoke;
+    for directive.arguments {
+        _, ok := evaluate_node(script, it);
+        if !ok  return false;
+    }
     
     dcReset(script.dyncall_vm);
     jai_call :: true;

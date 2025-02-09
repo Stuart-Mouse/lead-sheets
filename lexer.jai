@@ -224,7 +224,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     // parse a number
     if is_digit(file[0]) {//|| file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
+        advance(lexer);
         
         after_dot := false;
         while file {
@@ -236,7 +236,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             }
             
             str.count += 1;
-            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
+            advance(lexer);
         }
         
         val, ok, rem := string_to_float(str);
@@ -287,11 +287,11 @@ try_parse_identifier :: (using lexer: *Lexer) -> (Token, bool) {
     source_location := cursor_location;
     if is_alpha(file[0]) || file[0] == #char "_" {
         str: string = .{ 1, *file[0] };
-        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing identifier."), true;
+        advance(lexer);
         
         while file && is_alnum(file[0]) {
             str.count += 1;
-            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing identifier."), true;
+            advance(lexer);
         }
         
         return .{

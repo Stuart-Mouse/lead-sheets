@@ -18,6 +18,7 @@
 #load "procedure.jai";
 #load "binary_op.jai";
 #load "serialize.jai";
+#load "evaluate.jai";
 
 
 #module_parameters (DEBUG := false);
