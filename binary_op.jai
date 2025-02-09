@@ -169,32 +169,32 @@ resolve_builtin_operation :: (
     return -1, .BINARY, false;
 }
 
-// execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *void) -> bool {
-//     // generate switch case for all builtin operations
-//     #insert -> string {
-//         builder: String_Builder;
+execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *void) -> bool {
+    // generate switch case for all builtin operations
+    #insert -> string {
+        builder: String_Builder;
         
-//         append(*builder, "if oper_idx == {\n");
-//         for BUILTIN_OPERATIONS {
-//             print_to_builder(*builder, "  case %;\n", it_index);
-//             if it.operator_type == {
-//               case .UNARY;
-//                 print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.operator_ident);
-//               case .BINARY;
-//                 print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.operator_ident, it.right);
-//               case .ASSIGNMENT;
-//                 print_to_builder(*builder, "    ret.(*%1).* = left.(*%1).* %2 right.(*%3).*;\n", it.left, it.operator_ident, it.right);
-//             }
-//             append(*builder, "    return true;\n");
-//         }
-//         append(*builder, "}\n");
+        append(*builder, "if oper_idx == {\n");
+        for BUILTIN_OPERATIONS {
+            print_to_builder(*builder, "  case %;\n", it_index);
+            if it.operator_type == {
+              case .UNARY;
+                print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.operator_ident);
+              case .BINARY;
+                print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.operator_ident, it.right);
+              case .ASSIGNMENT;
+                print_to_builder(*builder, "    ret.(*%1).* = left.(*%1).* %2 right.(*%3).*;\n", it.left, it.operator_ident, it.right);
+            }
+            append(*builder, "    return true;\n");
+        }
+        append(*builder, "}\n");
         
-//         return builder_to_string(*builder);
-//     }
+        return builder_to_string(*builder);
+    }
     
-//     assert(false, "Called execute_builtin_operation with an invalid operation index.");
-//     return false;
-// }
+    assert(false, "Called execute_builtin_operation with an invalid operation index.");
+    return false;
+}
 
 // this version may not be worth it
 // because we will still probably need the other version for eval procs

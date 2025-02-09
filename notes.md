@@ -488,7 +488,7 @@ because we basically have either leaf nodes
     literals, identifiers don't call into recursive typechecking and may benefit from special coercions
     then there are just structural nodes like block, if, for, while
     and then misc like cast, subscript, dot
-    the real tricky part is primarily gonna be the mig messy nodes like operation and procedure
+    the real tricky part is primarily gonna be the big messy nodes like operation and procedure
     but maybe we can break these up in a nicer way?
 
 random
@@ -497,4 +497,4 @@ random
     neither do directives, really. but that's harmless I guess
     tbh, maybe even assignments don't make sense in an eval?
         nvm, can make sense if lvalue is external variable
-    
+

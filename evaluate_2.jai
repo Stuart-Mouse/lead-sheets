@@ -1,5 +1,8 @@
 
 
+// NOTE: this is a backup of evaulate where I am trying to interleave the typechecking and execution
+//       putting on back burner to first just do a version that does the eval thing on pre-typechecked nodes
+
 /*
     evaluate.jai
     
@@ -14,21 +17,12 @@ evaluate_node :: (
     script:         *Script, 
     node:           *Node
     check_flags:    Typechecking_Flags  = .NONE, 
-    // hint_type:      *Type_Info          = null,
+    hint_type:      *Type_Info          = null,
     hint_storage:   *void               = null
     // TODO: hint storage will actaully matter a lot here in terms of reducing temp storage spam
 ) -> Any, bool {
     dprint("evaluating node %: %\n", node, node.node_type);
     dprint_push_indent();
-    
-    // only allocates space for the return value if hint_storage was null (TODO?: or hint_type did not match node.value_type)
-    make_return_value :: () -> Any #expand {
-        ret := Any.{ node.value_type, hint_storage };
-        if ret.value_pointer == null {
-            ret.value_pointer = Dynamic_New(node.value_type,, temp);
-        }
-        return ret;
-    }
     
     if node.node_type == {
       case Node_Directive;
@@ -49,13 +43,42 @@ evaluate_node :: (
             return literal.any, true;
             
           case .NUMBER;
+            hint_type = ifx hint_type else type_info(float32); // @Hack: later, we probably won't force default to f32
+            if hint_type {
+                new_number := Small_Any.{ hint_type, null };
+                remap_data(to_any(new_number), to_any(literal.number));
+                literal.number = new_number;
+            }
+            dprint("returning number literal with value %\n", to_any(literal.number));
             return to_any(literal.number), true;
             
           case .STRUCT;
-            ret := make_return_value();
+            ret_type: *Type_Info_Struct;
+            
+            // block copied from typecheck.jai      maybe we can factor this out somehow?
+            {
+                if literal.aggr.type_identifier != null {
+                    type_identifier_type := typecheck_node(script, literal.aggr.type_identifier);
+                    if type_identifier_type == null || type_identifier_type.type != .TYPE || literal.aggr.type_identifier.identifier_type != .TYPE {
+                        log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+                        return null;
+                    }
+                    ret_type = xx literal.aggr.type_identifier.type_info_pointer;
+                } else {
+                    ret_type = xx hint_type;
+                }
+                
+                if ret_type == null  return null;
+                if ret_type.type != .STRUCT {
+                    log("Error: type hint provided to struct literal is not a struct type. (was '%')", as_type(ret_type));
+                    return null;
+                }
+            }
+            
+            ret := Dynamic_New_Any(literal.value_type,, temp);
             member_ptr := ret.value_pointer;
             for literal.aggr.expressions {
-                member := literal.value_type.(*Type_Info_Struct).members[it_index];
+                member := ret_type.members[it_index];
                 member_any, ok := evaluate_node(script, it, .NONE, member.type, member_ptr);
                 if member_any.value_pointer != member_ptr {
                     memcpy(member_ptr, member_any.value_pointer, member.runtime_size);
@@ -72,23 +95,27 @@ evaluate_node :: (
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
+        if !resolve_identifier(script, identifier, check_flags);
         if identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
             dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
-            return variable_any, true;
+            if !stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
+            return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.variable_index];
             dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
-            return variable.binding, true;
+            if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
+            return true;
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.procedure_index];
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
-            return procedure.ptr, true;
+            if !stack_push_any(script, procedure.ptr)  return false;
+            return true;
         }
         return false;
 
@@ -97,98 +124,150 @@ evaluate_node :: (
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
-            return evalaute_node(script, operation.overload_procedure);
+            return execute_node(script, operation.overload_procedure);
         }
         
-        left_any, ok := evaluate_node(script, operation.left)  
-        if !ok  return null, false;
+        if operation.operator_type != .ASSIGNMENT {
+            if is_aggr(operation.value_type) {
+                if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
+            } else {
+                if !stack_push_zeroes(script, 8)  return false;
+            }
+        }
         
-        right_any: Any;
+        if !execute_node(script, operation.left)  return false;
+        
         if operation.operator_type != .UNARY {
-            right_any, ok = evaluate_node(script, operation.right);
-            if !ok  return null, false;
+            if !execute_node(script, operation.right)  return false;
         }
         
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
             assert(operation.left.flags & .IS_LVALUE != 0);
-            memcpy(left_any.value_pointer, right_any.value_pointer, right_any.type.runtime_size);
-            return null, true;
+            r_value := stack_pop_any(script, operation.right.value_type);
+            l_value := stack_pop_any(script, operation.left.value_type, true);
+            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
+            return true;
         }
         
-        ret := make_return_value();
+        // TODO: maybe use the simpler version of execute_builtin_operation, but with this more dynamic stack popping
+        //       this is probably a little bit slower, but it may be worth it to reduce code bloat
+        //       the other benefit(?) of going this way is that we could do the swap args swizzle here, rather than swap them at the ast level
+        // op    := BUILTIN_OPERATIONS[operation.operator_index];
+        // right := null;
+        // if !is_unary  right = stack_pop (script, is_aggr(op.right));
+        // left  := stack_pop (script, is_aggr(op.left ));
+        // ret   := stack_peek(script, is_aggr(op.ret  ));
+        // if !execute_builtin_operation(operation.operator_index, left, right, ret)  return false;
         
-        ok = execute_builtin_operation(operation.operator_index, left, right, ret);
-        if !ok  return null, false;
+        // dprint("operation: %\n", op);
         
-        dprint("returning result of binary operation: % %\n", as_type(operation.value_type), ret);
-        return ret, true;
+        execute_builtin_operation(script, operation.operator_index);
+        
+        result_any := Any.{ 
+            operation.value_type, 
+            ifx is_aggr(operation.value_type) then operation.return_ptr else script.stack_ptr
+        };
+        dprint("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
+        return true;
         
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
+        // TODO: this will have to be refactored later for bytecode (to push result ptr after popping args)
         
-        ret := make_return_value();
+        if !execute_node(script, procedure_call.procedure_expression)  return false;
+        proc_type  := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
+        assert(proc_type.type == .PROCEDURE);
+        dprint("proc_type: %\n", as_type(proc_type));
         
-        proc_any, ok := evaluate_node(script, procedure_call.procedure_expression);
-        if !ok  return false;
-        assert(proc_any.type.type == .PROCEDURE);
-        dprint("proc_type: %\n", as_type(proc_any.type));
+        procedure  := stack_pop_any(script, proc_type); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
+        // we have to grab the actual procedure pointer value now before overwriting with another stack push below
+        proc_ptr   := procedure.value_pointer.(**void).*;
+        return_ptr := script.stack_ptr;
         
+        if is_aggr(procedure_call.value_type) {
+            if !stack_push_any(script, Any.{ procedure_call.value_type, procedure_call.return_ptr })  return false;
+            return_ptr = procedure_call.return_ptr;
+        } else {
+            // stack_push_zeroes(script, procedure_call.value_type.runtime_size);
+            stack_push_zeroes(script, 8);
+        }
+        arg_ptr_start := script.stack_ptr;
+        
+        for procedure_call.arguments  if !execute_node(script, it)  return false;
+        
+        // script.stack_ptr -= procedure_call.arg_count * PTR_SIZE;
         {
             dcReset(script.dyncall_vm);
             jai_call :: true;
-            if jai_call || !(proc_any.type.procedure_flags & .HAS_NO_CONTEXT) {
+            if jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
-            return_type := ifx proc_any.type.return_types 
-                then proc_any.type.return_types[0]
+            return_type := ifx proc_type.return_types 
+                then proc_type.return_types[0]
                 else type_info(void);
             
-            for procedure_call.arguments {
-                arg_any, ok := evaluate_node(script, it);
-                if !ok  return false;
-                if !push_argument(script.dyncall_vm, arg_any.type, arg_any.value_pointer, true)  return false;
+            arg_ptr := arg_ptr_start;
+            for arg_type: proc_type.argument_types {
+                value_pointer := arg_ptr;
+                if is_aggr(arg_type)  value_pointer = value_pointer.(**void).*;
+                if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
+                arg_ptr += size_of(*void);
             }
             
-            dcArgPointer(script.dyncall_vm, ret.value_pointer);
+            dcArgPointer(script.dyncall_vm, return_ptr);
             dcCallVoid(script.dyncall_vm, xx proc_ptr);
         }
         
-        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, ret.value_pointer });
-        return ret, true;
+        script.stack_ptr = arg_ptr_start;
+        
+        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
+        
+        if procedure_call.flags & .DISCARD_VALUE {
+            stack_pop_any(script, procedure_call.value_type);
+        }
+        return true;
         
         
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
-        ret := make_return_value();
+        // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
+        dst := Any.{ node.value_type, script.stack_ptr };
+        if !stack_push_zeroes(script, 8)  return false;
         
-        left_any, ok := evaluate_node(script, node_cast.left);
-        if !remap_data(ret, left)  return null, false;
+        if !execute_node(script, node_cast.left)  return false;
+        src := stack_pop_any(script, node_cast.left.value_type);
         
-        return ret, true;
+        if !remap_data(dst, src)  return false;
+        
+        return true;
         
         
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        struct_any, ok := evaluate_node(script, dot.left);
-        if !ok  return null false;
+        if !execute_node(script, dot.left)  return false;  
+        struct_any := stack_pop_any(script, dot.left.value_type, true);
         member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
         
         dprint("struct value ptr: %\n", struct_any.value_pointer);
         dprint("member value ptr: %\n", member_any.value_pointer);
         
-        return member_any, true;
+        if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+        return true;
         
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         
-        base_any,   ok := evaluate_node(script, subscript.base_expression);
-        index_any:, ok  = evaluate_node(script, subscript.indexing_expression);
+        if !execute_node(script, subscript.base_expression)  return false;      
+        if !execute_node(script, subscript.indexing_expression)  return false;      
+        
+        index_any := stack_pop_any(script, subscript.indexing_expression.value_type);
+        base_any  := stack_pop_any(script, subscript.base_expression.value_type, true);
         
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
         indexing_type := subscript.indexing_expression.value_type;
@@ -203,12 +282,13 @@ evaluate_node :: (
         
         if index_as_s64 < 0 || index_as_s64 >= array_count {
             log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
-            return null, false;
+            return false;
         }
         
-        element_any := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        dprint("returning result of indexing operation: %\n", element_any);
-        return element_any, true;
+        element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
+        if !stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE)  return false;
+        dprint("returning result of indexing operation: %\n", element);
+        return true;
         
     
       case Node_Declaration;
@@ -220,12 +300,12 @@ evaluate_node :: (
         
         // TODO: we need to check that the identifier does not refer to a previously declared variable
         if declaration.init_expression {
-            r_value, ok := evaluate_node(script, declaration.init_expression);
-            if !ok {
+            if !execute_node(script, declaration.init_expression) {
                 dprint("failed to evaluate init expression of declaration statement!\n");
-                return null, false;
+                return false;
             }
             
+            r_value := stack_pop_any(script, declaration.init_expression.value_type);
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             
             dprint("l_value.value_pointer: %\n", l_value.value_pointer);
@@ -239,33 +319,32 @@ evaluate_node :: (
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
-        return null, true;
+        return true;
         
         
       case Node_Block;
         block := node.(*Node_Block);
         for block.statements {
             dprint("executing statement #%\n", it_index);
-            _, ok := evaluate_node(script, it);
-            if !ok  return null, false;
+            if !execute_node(script, it)  return false;
         }
-        return null, true;
+        return true;
         
         
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
-        condition, ok := evaluate_node(script, if_statement.condition)
-        if !ok {
+        if !execute_node(script, if_statement.condition) {
             dprint("failed to evaluate left side of assignment statement!\n");
             return false;
         }
+        
+        condition := stack_pop_any(script, if_statement.condition.value_type);
         dprint("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
-            _, ok := evaluate_node(script, if_statement.statement)
-            if !ok {
+            if !execute_node(script, if_statement.statement) {
                 dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
@@ -276,19 +355,19 @@ evaluate_node :: (
       case Node_While_Loop;
         while_loop := node.(*Node_While_Loop);
         while loop := true {
-            condition, ok := evaluate_node(script, while_loop.condition)
-            if !ok {
+            if !execute_node(script, while_loop.condition) {
                 dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
+            
+            condition := stack_pop_any(script, while_loop.condition.value_type);
             dprint("condition: % %\n", as_type(condition.type), condition);
             
             condition_as_bool: bool;
             any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
-            _, ok := evaluate_node(script, while_loop.statement)
-            if !ok {
+            if !execute_node(script, while_loop.statement) {
                 dprint("failed to evaluate left side of assignment statement!\n");
                 return false;
             }
@@ -300,13 +379,13 @@ evaluate_node :: (
         for_loop := node.(*Node_For_Loop);
         if for_loop.control_type == {
           case .ARRAY;
-            array, ok := evaluate_node(script, for_loop.array_expression)
-            if !ok {
+            if !execute_node(script, for_loop.array_expression) {
                 dprint("failed to evaluate for loop control node!\n");
                 return false;
             }
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
+            array := stack_pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
             
             array_count, array_data := get_array_count_and_data(array.value_pointer, xx array.type);
             
@@ -321,8 +400,7 @@ evaluate_node :: (
                     it_index += 1;
                 }
                 
-                _, ok := evaluate_node(script, for_loop.statement)
-                if !ok {
+                if !execute_node(script, for_loop.statement) {
                     dprint("failed to evaluate left side of assignment statement!\n");
                     return false;
                 }
@@ -330,18 +408,18 @@ evaluate_node :: (
             return true;
             
           case .RANGE;
-            lower, ok := evaluate_node(script, for_loop.range.lower)
-            if !ok {
+            if !execute_node(script, for_loop.range.lower) {
                 dprint("failed to evaluate for_loop.range.lower!\n");
-                return null, false;
+                return false;
             }
-            upper:, ok = evaluate_node(script, for_loop.range.upper)
-            if !ok {
+            if !execute_node(script, for_loop.range.upper) {
                 dprint("failed to evaluate for_loop.range.upper!\n");
-                return null, false;
+                return false;
             }
             
             control_type := for_loop.range.lower.value_type;
+            upper := stack_pop_any(script, control_type);
+            lower := stack_pop_any(script, control_type);
             upper_as_s64: int;
             lower_as_s64: int;
             remap_int(upper_as_s64, upper);
@@ -355,27 +433,26 @@ evaluate_node :: (
                 // TODO: for now we just don't set it_index. 
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
-                _, ok := evaluate_node(script, for_loop.statement)
-                if !ok {
+                if !execute_node(script, for_loop.statement) {
                     dprint("failed to evaluate left side of assignment statement!\n");
-                    return null, false;
+                    return false;
                 }
             }
-            return null, true;
+            return true;
         }
         
-        return null, false;
+        return false;
     }
     
     assert(false);
-    return null, false;
+    return false;
 }
 
 
 
 
 
-evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
+execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     procedure := script.directives[directive.directive_index];
     ti_proc   := procedure.type;
     
@@ -412,8 +489,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     }
     arg_ptr_start := script.stack_ptr;
     
-    _, ok := evaluate_node(script, it)  return 
-    for directive.arguments  if !falsoke;
+    for directive.arguments  if !execute_node(script, it)  return false;
     
     dcReset(script.dyncall_vm);
     jai_call :: true;
