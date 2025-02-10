@@ -169,5 +169,3 @@ resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *T
 
 
 
-
-
