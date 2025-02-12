@@ -52,7 +52,7 @@ evaluate_node :: (
             
           case .STRING;
             dprint("returning string literal with value %\n", literal.text);
-            return literal.any, true;
+            return literal.text, true;
             
           case .NUMBER;
             return to_any(literal.number), true;

@@ -91,6 +91,9 @@ Lexer :: struct {
     file:               string;
     next_token:         Token;
     cursor_location:    Source_Location;
+    
+    // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
+    ptr_after_last_token: *u8; 
 }
 
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
@@ -120,6 +123,7 @@ get_token :: inline (using lexer: *Lexer) -> Token {
     }
     
     current_token := next_token;
+    ptr_after_last_token = file.data;
     next_token = lex_next_token(lexer);
     return current_token;
 }
