@@ -386,6 +386,27 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
 
 
 
+// CONVENIENCE STUFF
+
+// user can append to this as they wish, or just change it here
+common_types: [..] struct { name: string; type: *Type_Info; } = .[
+    .{ "u8",      type_info(u8)      }, 
+    .{ "u16",     type_info(u16)     }, 
+    .{ "u32",     type_info(u32)     }, 
+    .{ "u64",     type_info(u64)     },
+    .{ "s8",      type_info(s8)      }, 
+    .{ "s16",     type_info(s16)     }, 
+    .{ "s32",     type_info(s32)     }, 
+    .{ "s64",     type_info(s64)     },
+    .{ "int",     type_info(int)     }, 
+    .{ "float",   type_info(float)   }, 
+    .{ "float32", type_info(float32) }, 
+    .{ "float64", type_info(float64) },
+];
+
+register_common_types :: (script: *Script) {
+    for common_types  register_type(script, it.name, it.type);
+}
 
 
 
@@ -489,6 +510,11 @@ as_type :: inline (ti: *Type_Info) -> Type {
     return (*ti).(*Type).*;
 }
 
+enum_name_to_value :: (ti: *Type_Info_Enum, name: string) -> s64, bool {
+    assert(ti.type == .ENUM);
+    for ti.names  if name == it  return ti.values[it_index], true;
+    return 0, false;
+}
 
 
 

@@ -90,6 +90,12 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             dprint("returning literal with value %\n", to_any(literal.number));
             return true;
             
+          case .ENUM;
+            ret := Any.{ literal.value_type, *literal._enum.value };
+            if !stack_push_any(script, ret, literal.flags & .IS_LVALUE != 0)  return false;
+            dprint("returning literal with value %\n", ret);
+            return true;
+            
           case .STRUCT;
             if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .IS_LVALUE != 0)  return false;
             write_ptr := literal.aggr.value_pointer;
@@ -131,6 +137,10 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
             if !stack_push_any(script, procedure.ptr)  return false;
+            return true;
+            
+          case .ENUM_VALUE; // TODO: rename to literal value or something...
+            if !stack_push_any(script, Any.{ identifier.value_type, *identifier.enum_value })  return false;
             return true;
         }
         return false;
@@ -265,16 +275,23 @@ execute_node :: (script: *Script, node: *Node) -> bool {
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        if !execute_node(script, dot.left)  return false;  
-        struct_any := stack_pop_any(script, dot.left.value_type, true);
-        member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+        if node.value_type.type == {
+          case .STRUCT;
+            if !execute_node(script, dot.left)  return false;  
+            struct_any := stack_pop_any(script, dot.left.value_type, true);
+            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+            
+            dprint("struct value ptr: %\n", struct_any.value_pointer);
+            dprint("member value ptr: %\n", member_any.value_pointer);
+            
+            if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            return true;
+            
+          case .ENUM;
+            return execute_node(script, dot.right);
+        }
         
-        dprint("struct value ptr: %\n", struct_any.value_pointer);
-        dprint("member value ptr: %\n", member_any.value_pointer);
-        
-        if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
-        return true;
-        
+        assert(false);
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);

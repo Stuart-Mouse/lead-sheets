@@ -103,6 +103,28 @@ typecheck_node :: (
             }
             literal.value_type = literal.number.type; 
             
+          case .ENUM;
+            if hint_type == null {
+                log("Error: no type hint provided to unary dot enum value.");
+                return null;
+            }
+            ti_enum := hint_type.(*Type_Info_Enum);
+            if ti_enum.type != .ENUM {
+                log("Error: type hint provided to unary dot enum was not an enum type.");
+                return null;
+            }
+            if check_flags & .EXPECT_LVALUE {
+                log("Error: an enum literal cannot be used as an lvalue.");
+                return null;
+            }
+            value, found := enum_name_to_value(ti_enum, literal._enum.identifier);
+            if !found {
+                log("Error: invalid enum value name '%' for enum type '%'.", literal._enum.identifier, as_type(ti_enum));
+                return null;
+            }
+            literal._enum.value = value;
+            literal.value_type = ti_enum;
+            
           case .STRUCT;
             // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
             // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
@@ -399,33 +421,69 @@ typecheck_node :: (
         
       case Node_Dot;
         dot := node.(*Node_Dot);
-
+        
         left_type := typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
         if left_type == null  return null;
-        if left_type.type != .STRUCT {
-            log("Error: left side of member access expression must be a struct.");
-            return null;
-        }
         
         if dot.right.node_type != Node_Identifier {
-            log("Error: right side of struct member access expression must be an identifier.");
+            log("Error: right side of dot expression must be an identifier.");
             return null;
         }
         
-        // TODO: now that this node is only for struct member dereference, we should rename it and try to change the right side to just be a string for the member name
-        member_identifier := dot.right.(*Node_Identifier);
-        member_ti, member_offset := get_field(xx left_type, member_identifier.name);
-        if member_ti == null  return null;
+        if left_type.type == {
+          case .STRUCT;
+            // TODO: now that this node is only for struct member dereference, we should rename it and try to change the right side to just be a string for the member name
+            // TODO: we should check that member offset is non-negative so as to preven tuse of constants until we can properly support those
+            member_identifier := dot.right.(*Node_Identifier);
+            member_ti, member_offset := get_field(xx left_type, member_identifier.name);
+            if member_ti == null  return null;
+            
+            member_identifier.identifier_type = .STRUCT_MEMBER;
+            member_identifier.value_type      = member_ti.type;
+            member_identifier.flags |= .TYPECHECKED;
+            
+            dot.value_type    = member_ti.type;
+            dot.member_offset = member_offset;
+            
+            if check_flags & .EXPECT_LVALUE then dot.flags |= .IS_LVALUE;
+            return dot.value_type;
+            
+          case .TYPE;   // TODO: maybe we want to allow anything here that can act as a namespace?
+            type_identifier := dot.left.(*Node_Identifier);
+            if left_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
+                log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+                return null;
+            }
+            
+            ti_enum := type_identifier.type_info_pointer.(*Type_Info_Enum);
+            if ti_enum.type != .ENUM {
+                log("Error: type expression on left side of dot must be an enum type.");
+                return null;
+            }
+            
+            if check_flags & .EXPECT_LVALUE {
+                log("Error: an enum literal cannot be used as an lvalue.");
+                return null;
+            }
+            member_identifier := dot.right.(*Node_Identifier);
+            value, found := enum_name_to_value(ti_enum, member_identifier.name);
+            if !found {
+                log("Error: invalid enum value name '%' for enum type '%'.", member_identifier.name, as_type(ti_enum));
+                return null;
+            }
+            
+            member_identifier.identifier_type = .ENUM_VALUE;
+            member_identifier.value_type      = ti_enum;
+            member_identifier.enum_value      = value;
+            member_identifier.flags |= .TYPECHECKED;
+            
+            dot.value_type = ti_enum;
+            
+            return dot.value_type;
+        }
         
-        member_identifier.identifier_type = .STRUCT_MEMBER;
-        member_identifier.value_type    = member_ti.type;
-        
-        dot.value_type    = member_ti.type;
-        dot.member_offset = member_offset;
-        
-        if check_flags & .EXPECT_LVALUE then dot.flags |= .IS_LVALUE;
-        return dot.value_type;
-        
+        log("Error: left side of dot expression must be a struct or type.");
+        return null;
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);

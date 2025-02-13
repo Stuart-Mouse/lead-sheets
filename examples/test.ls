@@ -74,3 +74,9 @@ echo(`identifier string`);
 // asdf := cool_number;
 // echo(asdf);
 // echo(cool_number);
+
+
+e := Fruits.BANANA;
+echo(e);
+e = .PEAR;
+echo(e);

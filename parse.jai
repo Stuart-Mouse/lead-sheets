@@ -253,7 +253,8 @@ parse_leaf :: (using script: *Script) -> *Node {
     if token.type == {
       case .DOT;
         dprint("DOT (UNARY)\n");
-        if expect_token_type(*lexer, .OPEN_BRACE) {
+        token_after_dot := get_token(*lexer);
+        if token_after_dot.type == .OPEN_BRACE {
             literal := alloc_node(script, Node_Literal);
             literal.literal_type = .STRUCT;
             ok: bool;
@@ -261,9 +262,14 @@ parse_leaf :: (using script: *Script) -> *Node {
             if !ok  return null;
             node = literal;
         }
-        else log("Error: unexpected DOT token at (%:%)", token.source_location.line, token.source_location.char);
-        // TODO: identifer -> unary dot enum thing
-        
+        else if token_after_dot.type == .IDENTIFIER {
+            literal := alloc_node(script, Node_Literal);
+            literal.literal_type     = .ENUM;
+            literal._enum.identifier = token_after_dot.text;
+            node = literal;
+        }
+        else log("Error: unexpected DOT token at (%:%)", token_after_dot.source_location.line, token_after_dot.source_location.char);
+
         
       case .OPEN_PAREN;
         open_paren_location := token.source_location;

@@ -49,17 +49,31 @@ Node_Cast :: struct {
         creating and maintaining declaration nodes for the external variables and procedures.
     The external variables in particular add complication because they can be subbed out, 
         so we need an additional indirection in accessing them from scripts.
+        
+    TODO: identifiers as literals
+        Enum values are currently sort of hacked in, and maybe it would be better 
+            if we just properly supported any namespaced literals generally,
+            but then we really would want to do some kind of small-value optimization with 
+            the *void so that we don't need to allocate for small values.
+        For now I am just leaving the hacky solution and will come up with something better 
+            when it becomes worthwhile to spend more time on this.
+        Another thing to consider is how having literal values be stored on identifier nodes
+            will play with the question mark operator for malleable literals.
+        But I don't really care to do malleable enum literals at this time so I'm not gonna pursue this quite yet.
+        
 */
 Node_Identifier :: struct {
     using #as node_base:    Node;
     name:                   string;
-    identifier_type:        enum { UNRESOLVED; TYPE; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    identifier_type:        enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
     union {
         variable_index:     int; // external variable
         procedure_index:    int; // external procedure
         declaration:        *Node_Declaration;
         member_type:        *Type_Info_Struct_Member;
         type_info_pointer:  *Type_Info;
+        // literal:            *void;
+        enum_value:         int;
     }
 }
 
@@ -95,7 +109,7 @@ Node_Directive :: struct {
 //       also we could do some kind of modified Any which also captures the semantics we need around additional indirections to value_pointers
 Node_Literal :: struct {
     using #as node_base: Node;
-    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; ANY; };
+    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; ENUM; ANY; };
     using value_union: union { // determined by literal_type
         number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
         text:    string;
@@ -103,6 +117,10 @@ Node_Literal :: struct {
             type_identifier:    *Node_Identifier;   // can we refactor identifier resolution so that this can just be a string?
             value_pointer:      *void;              // once type is resolved, we store pointer to allocated value here
             expressions:        *Node; // expressions to init struct members or array values by. later maybe also accepting statements
+        }
+        _enum: struct {
+            value:      s64;
+            identifier: string;
         }
         any: Any;
     }
@@ -249,6 +267,7 @@ alloc_node :: (script: *Script, $T_Node: Type, parent_node: *Node = null, source
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
 } {
+    print("%\n",script.allocator);
     node := New(T_Node,, script.allocator);
     node.node_type = T_Node;
     node.parent    = ifx parent_node else script.current_parent_node;

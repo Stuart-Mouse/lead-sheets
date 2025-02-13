@@ -6,9 +6,24 @@
 #import "Lead_Sheets"(DEBUG = true);
 #import "File";
 
+Fruits :: enum {
+    APPLE;
+    PEAR;
+    BANANA;
+    STRAWBERRY;
+}
+
 main :: () {
     script: Script;
     init_script(*script);
+    
+    register_common_types(*script);
+    register_type(*script, "Vector2", type_info(Vector2));
+    register_type(*script, "Vector3", type_info(Vector3));
+    register_type(*script, "Vector3", type_info(Vector3));
+    register_type(*script, "Fruits",  type_info(Fruits));
+    
+    echo :: (value: $T) -> T { print("%\n", value); return value; };
     
     register_procedure(*script, "Vec2", (x: float, y: float) -> Vector2 { return .{ x, y }; });
     register_procedure(*script, "pow", pow);
@@ -16,16 +31,12 @@ main :: () {
     register_procedure(*script, "cos", cos);
     register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
-    register_procedure(*script, "echo", (value: Vector2) -> Vector2 { print("%\n", value); return value; });
-    register_procedure(*script, "echo", (value: Vector3) -> Vector3 { print("%\n", value); return value; });
+    register_procedure(*script, "echo", #procedure_of_call echo(Vector2.{}));
+    register_procedure(*script, "echo", #procedure_of_call echo(Vector3.{}));
+    register_procedure(*script, "echo", #procedure_of_call echo(Fruits.APPLE));
     register_procedure(*script, "print", (value: string) -> string { print("%\n", value); return value; });
     register_procedure(*script, "f32", (value: int) -> float { return xx value; });
     register_procedure(*script, "*", #procedure_of_call operator*(Vector3.{}, 1.0));
-    
-    register_type(*script, "float", type_info(float));
-    register_type(*script, "int", type_info(int));
-    register_type(*script, "Vector2", type_info(Vector2));
-    register_type(*script, "Vector3", type_info(Vector3));
     
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;

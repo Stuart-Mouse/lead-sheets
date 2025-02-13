@@ -31,3 +31,7 @@ const = 7;
 echo(const);
 `identifier string` := 69;
 echo(`identifier string`);
+e := Fruits.BANANA;
+echo(e);
+e = ;
+echo(e);
