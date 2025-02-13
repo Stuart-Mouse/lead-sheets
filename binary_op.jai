@@ -53,12 +53,17 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
     
     .{ "&&", .BINARY, 2 },
     .{ "||", .BINARY, 2 },
-     
+    
     .{ "==", .BINARY, 3 },
     .{ ">=", .BINARY, 3 },
     .{ "<=", .BINARY, 3 },
     .{ ">",  .BINARY, 3 },
     .{ "<",  .BINARY, 3 },
+    
+    .{ "|", .BINARY, 4 },
+    .{ "&", .BINARY, 4 },
+    .{ "^", .BINARY, 4 },
+    .{ "~", .BINARY, 4 },
     
     .{ "+",  .BINARY, 5 },
     .{ "-",  .BINARY, 5 },
@@ -87,6 +92,10 @@ BUILTIN_OPERATIONS :: (
     .{ .BINARY, ">=", int, int, bool, false },
     .{ .BINARY, "<=", int, int, bool, false },
     
+    .{ .BINARY, "|", s64, s64, s64, false },
+    .{ .BINARY, "&", s64, s64, s64, false },
+    .{ .BINARY, "^", s64, s64, s64, false },
+    
     .{ .BINARY, "+", float, float, float, false },
     .{ .BINARY, "-", float, float, float, false },
     .{ .BINARY, "*", float, float, float, false },
@@ -114,6 +123,7 @@ BUILTIN_OPERATIONS :: (
     // UNARY    (right type will be ignored)
     .{ type = .UNARY, identifier = "-", left = int,   ret = int   },
     .{ type = .UNARY, identifier = "-", left = float, ret = float },
+    .{ type = .UNARY, identifier = "~", left = s64,   ret = s64   },
     
     
     // ASSIGNMENT

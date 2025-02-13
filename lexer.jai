@@ -41,6 +41,11 @@ Token_Type :: enum {
     SEMICOLON       :: #char ";";
     ASSIGN_EQUAL    :: #char "=";
     
+    BINARY_OR       :: #char "|";
+    BINARY_AND      :: #char "&";
+    BINARY_NOT      :: #char "~";
+    BINARY_XOR      :: #char "^";
+    
     LESS_THAN       :: #char "<";
     GREATER_THAN    :: #char ">";
     
@@ -192,7 +197,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     
     
     // single-character tokens
-    if is_any(file[0], "+-*/(),:;?=.[]{}<>") {
+    if is_any(file[0], "+-*/(),:;?=.[]{}|&~^<>") {
         return make_token(xx file[0], 1);
     }
     

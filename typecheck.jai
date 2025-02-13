@@ -294,6 +294,18 @@ typecheck_node :: (
             return operation.value_type;
         }
         
+        // TODO: figure out better casting system and remove this horrible hack
+        // enums are coerced to their underlying type for the purposes of binary operations, then will be cast back to proper type
+        // for now, we will just coerce all to s64/int 
+        // in order for this to be ok, the values being pointed to need to not have junk in the unused bytes... 
+        // and currently we don't do anything to really intentionally ensure this
+        coerce_enum_return_type: *Type_Info;
+        if left_type.type == .ENUM && left_type == right_type {
+            coerce_enum_return_type = left_type;
+            left_type  = type_info(s64);
+            right_type = type_info(s64);
+        }
+        
         operator_index, _, swap_args := resolve_builtin_operation(operation.name, operation.operator_type, left_type, right_type);
         if operator_index >= 0 {
             operation.operator_index = operator_index;
@@ -303,6 +315,11 @@ typecheck_node :: (
             }
             
             operation.value_type = BUILTIN_OPERATIONS[operator_index].ret.(*Type_Info);
+            
+            // TODO: figure out better casting system and remove this horrible hack
+            if coerce_enum_return_type != null && operation.value_type == type_info(s64) {
+                operation.value_type = coerce_enum_return_type;
+            }
             
             if is_aggr(operation.value_type) {
                 operation.return_ptr = Dynamic_New(operation.value_type,, script.allocator);
