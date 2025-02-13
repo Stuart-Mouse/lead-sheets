@@ -33,5 +33,5 @@ echo(const);
 echo(`identifier string`);
 e := Fruits.BANANA;
 echo(e);
-e = ;
+e = .PEAR;
 echo(e);

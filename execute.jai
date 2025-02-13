@@ -275,7 +275,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        if node.value_type.type == {
+        if dot.left.value_type.type == {
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;  
             struct_any := stack_pop_any(script, dot.left.value_type, true);
@@ -287,7 +287,8 @@ execute_node :: (script: *Script, node: *Node) -> bool {
             if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
             return true;
             
-          case .ENUM;
+          case .TYPE;
+            assert(node.value_type.type == .ENUM);
             return execute_node(script, dot.right);
         }
         

@@ -63,7 +63,7 @@ print_node :: (
     if node == null {
         log("Tried to read from null pointer in print_node().");
         // TODO: proabbly print call stack here...
-        return true;
+        return false;
     }
     
     if node.node_type == {
@@ -90,6 +90,14 @@ print_node :: (
             
           case .NUMBER;
             print_to_builder(builder, "%", to_any(literal.number));
+            
+          case .ENUM;
+            name := enum_value_to_name(xx literal.value_type, literal._enum.value);
+            if name {
+                print_to_builder(builder, ".%", name);
+            } else {
+                print_to_builder(builder, "(%).(%)", literal._enum.value, as_type(literal.value_type)); // for out-of-band values
+            }
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);

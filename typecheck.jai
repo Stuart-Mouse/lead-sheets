@@ -432,7 +432,6 @@ typecheck_node :: (
         
         if left_type.type == {
           case .STRUCT;
-            // TODO: now that this node is only for struct member dereference, we should rename it and try to change the right side to just be a string for the member name
             // TODO: we should check that member offset is non-negative so as to preven tuse of constants until we can properly support those
             member_identifier := dot.right.(*Node_Identifier);
             member_ti, member_offset := get_field(xx left_type, member_identifier.name);
@@ -451,13 +450,13 @@ typecheck_node :: (
           case .TYPE;   // TODO: maybe we want to allow anything here that can act as a namespace?
             type_identifier := dot.left.(*Node_Identifier);
             if left_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
-                log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+                log("Error: Type expression on left-hand side of enum literal did not resolve to a Type.");
                 return null;
             }
             
             ti_enum := type_identifier.type_info_pointer.(*Type_Info_Enum);
             if ti_enum.type != .ENUM {
-                log("Error: type expression on left side of dot must be an enum type.");
+                log("Error: type expression on left-hand side of dot must be an enum type.");
                 return null;
             }
             

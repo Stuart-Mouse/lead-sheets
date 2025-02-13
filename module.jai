@@ -516,6 +516,11 @@ enum_name_to_value :: (ti: *Type_Info_Enum, name: string) -> s64, bool {
     return 0, false;
 }
 
+enum_value_to_name :: (ti: *Type_Info_Enum, value: s64) -> string {
+    assert(ti.type == .ENUM);
+    for ti.values  if value == it  return ti.names[it_index];
+    return "";
+}
 
 
 

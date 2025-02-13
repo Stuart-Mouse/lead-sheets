@@ -47,15 +47,16 @@ evaluate_node :: (
         
         if literal.literal_type == {
           case .ANY;
-            dprint("returning any literal with value %\n", literal.any);
             return literal.any, true;
             
           case .STRING;
-            dprint("returning string literal with value %\n", literal.text);
             return literal.text, true;
             
           case .NUMBER;
             return to_any(literal.number), true;
+            
+          case .ENUM;
+            return Any.{ literal.value_type, *literal._enum.value }, true;
             
           case .STRUCT;
             ret := make_return_value();
@@ -95,6 +96,9 @@ evaluate_node :: (
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
             return Any.{ procedure.type, *procedure.ptr }, true;
+            
+          case .ENUM_VALUE;
+            return Any.{ identifier.value_type, *identifier.enum_value }, true;
         }
         return null, false;
 
@@ -384,7 +388,7 @@ evaluate_node :: (
 
 
 
-
+// TODO
 evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     procedure := script.directives[directive.directive_index];
     ti_proc   := procedure.type;
