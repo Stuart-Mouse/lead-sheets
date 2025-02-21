@@ -462,17 +462,20 @@ typecheck_node :: (
         value_type := typecheck_node(script, node_cast.value);
         if value_type == null  return null;
         
-        type_identifier := node_cast.type_identifier;
-        type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
-        if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
-            log("Error: Type expression in RHS of cast did not resolve to a Type.");
-            return null;
+        if node_cast.flags & .IMPLICIT {
+            node.value_type = node_cast.implicit_type;
+        } else {
+            type_identifier := node_cast.type_identifier;
+            type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
+            if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
+                log("Error: Type expression in RHS of cast did not resolve to a Type.");
+                return null;
+            }
+            node.value_type = type_identifier.type_info_pointer;
         }
         
         // TODO: check if we can actually perform the cast here
         //       for now, we won't precheck this since we will just use remap_data
-        
-        node.value_type = type_identifier.type_info_pointer;
         return node.value_type;
         
         

@@ -368,7 +368,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> (whitespace: string, is
         }
         if begins_with(file, "//") {
             while file[0] != #char "\n" {
-                if !advance(lexer)  return "", true, false;
+                if !advance(lexer)  return "", true, true;
             }
         }
         else if begins_with(file, "/*") {

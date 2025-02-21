@@ -85,3 +85,12 @@ echo(e);
 echo(length(.{1, 2} + .{2, 2}));
 echo(f32(5)); // stupid and confusing example
 
+// TODO: make the below example work properly
+// {
+//    a: int = 5;
+//    b: u8  = 3; 
+//    echo(a);
+//    echo(b);
+//    a = b;
+//    echo(a);
+// }

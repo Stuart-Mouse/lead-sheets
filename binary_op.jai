@@ -142,6 +142,8 @@ BUILTIN_OPERATIONS :: (
     .{ .ASSIGNMENT, "/=", Vector2, float,   Vector2, false },
 ];
 
+// TODO: we should probably adapt some of the same ideas from the improved procedure overload resolution and adapt that to binary operators
+//       for example, if we know the type of one side of the operation, but not the other, then perhaps we can use the side we do know to intelligently hint a type for the other side?
 resolve_builtin_operation :: (
     identifier:     string, 
     type:           Operator_Type, 

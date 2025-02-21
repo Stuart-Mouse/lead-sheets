@@ -498,3 +498,59 @@ random
     tbh, maybe even assignments don't make sense in an eval?
         nvm, can make sense if lvalue is external variable
 
+
+
+
+
+
+
+thinking about use of script as a context for evaluating scripts for a builtin console
+we could use the stack for executing statements / expressions on if we really wanted to, but eval + temp storage works just as well for that
+a more interesting idea is being able to play with declarations and scope in the console/repl
+user could get and store variables in the console's script ctxt and then use those later
+and if we wanted to just scope some stuff for a short while, we could have some directive to push/pop a scope as a little throwaway workspace
+or, we could even save the current scope/workspace and its variables to a file, since we can serialize our scripts pretty well
+if we add named blocks, you could also write and run blocks by name
+
+```
+#block(block_name)
+do_stuff(a, b, c)
+do_stuff(x, y, z)
+#end_block()
+
+#run_block(block_name)
+```
+
+
+named blocks will essentially be like functions in the script
+they wont' be run like everything else in the global scope if you jsut call execute_script()
+they can be called by name with #run(block_name)
+more like subroutines that functions, and they maintain their own state just like things in the global scope can
+don't take parameters or return values (just write a proc in jai and call that)
+
+I could write an init script for my game that would restore the state or current level and such or set certain conditions 
+just simple things like:
+```
+debug_init: {
+    load_level("platform.lvl");
+    set_player_powerup_state(.HAMMER);
+    debug_rendering = .PLAYER_VECTORS | .TILEMAP_COLLISION;
+}
+```
+then any time i build in debug I just call the debug_init block on startup
+
+
+
+default procedure parameters
+    because type info for procedures doesn't contain info about default parameter values, we end up having to be pretty explicit in the scripts
+    though tbh I've never had a procedure take more than like 2 parameters yet
+    though I'm sure I will have that happen with some of the editro ui handles stuff coming up
+    so one thought is to give the user the option for certain procedures to get default values for stuff that we would like to just be contextual to the script
+    we can already insert a sort of explicit context for the script in the form of external variables and external procedures, but this is more like a contextual variable that gets filled in automatically for a specific procedure
+    
+    idk.. I tried to write out an exampel and couldnt even think of a good contrived one
+    so this felt like a good idea for 1 minute and now I'm not sure if it would ever be useful tbhj
+
+
+
+

@@ -150,10 +150,10 @@ parse_statement :: (using script: *Script) -> *Node {
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
             dprint("WITH EXPLICIT TYPE\n");
-            declaration.type_expression = xx parse_expression(script, 0);
+            declaration.type_expression = xx parse_expression(script, 999);
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
-                log("Error: type expression of a declaration must be an identifier.");
+                log("Error: type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type);
                 return null;
             }
         }
