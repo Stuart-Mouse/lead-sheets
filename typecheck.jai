@@ -786,6 +786,31 @@ find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need
     return null;
 }
 
+make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node {
+    _cast := alloc_node(script, Node_Cast);
+    _cast.flags |= .IMPLICIT | .TYPECHECKED;
+    _cast.implicit_type = type;
+    _cast.value         = node;
+    _cast.value_type    = type;
+    if node.flags & .TYPECHECKED {
+        _cast.flags |= .TYPECHECKED;
+    }
+    return _cast;
+}
+
+get_integer_coercion_distance :: (from: *Type_Info_Integer, to: *Type_Info_Integer) -> int {
+    if (from.signed && !to.signed) 
+    || (from.runtime_size > to.runtime_size)
+    || (!from.signed && to.signed && to.runtime_size == from.runtime_size)
+        then return -1;
+    
+    // NOTE: for now, we just add +1 for signed. maybe this should be weighted differently.
+    from_size := from.runtime_size + from.signed.(int);
+    to_size   :=   to.runtime_size +   to.signed.(int);
+    return to_size - from_size;
+}
+
+
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
     
@@ -801,26 +826,13 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
             if type.type == {
               case .FLOAT;
                 if type.runtime_size >= node.value_type.runtime_size {
-                    _cast := alloc_node(script, Node_Cast);
-                    _cast.flags |= .IMPLICIT;
-                    _cast.implicit_type = type;
-                    _cast.value = node;
-                    _cast.value_type = type;
-                    _cast.flags |= .TYPECHECKED;
-                    return true, _cast;
+                    return true, make_implicit_cast(script, node, type);
                 }
                 
               case .INTEGER;
-                expected_size := type.runtime_size + type.(*Type_Info_Integer).signed.(int);
-                value_size    := node.value_type.runtime_size + node.value_type.(*Type_Info_Integer).signed.(int);
-                if expected_size >= value_size {
-                    _cast := alloc_node(script, Node_Cast);
-                    _cast.flags |= .IMPLICIT;
-                    _cast.implicit_type = type;
-                    _cast.value = node;
-                    _cast.value_type = type;
-                    _cast.flags |= .TYPECHECKED;
-                    return true, _cast;
+                distance := get_integer_coercion_distance(xx node.value_type, xx type);
+                if distance >= 0 {
+                    return true, make_implicit_cast(script, node, type);
                 }
             }
         }

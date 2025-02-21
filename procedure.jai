@@ -123,21 +123,16 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
                         // if so, we can do a runtime coercion to widen the type, and mark that coercion distance accordingly
                         if expected_type.type == argument_type.type {
                             if expected_type.type == {
-                              case .FLOAT;  
+                              case .FLOAT;
                                 if expected_type.runtime_size >= argument_type.runtime_size {
                                     overload.coercion_distance += expected_type.runtime_size - argument_type.runtime_size;
                                     continue;
                                 }
                                 
                               case .INTEGER;
-                                // factor signedness into size
-                                // TODO: maybe we should actually weight signedness changes higher than size changes?
-                                //       maybe float up-casting should be weighed more than int upcasting?
-                                //       currently, s8 -> u16 would rate as less distance than u8 -> u16, which seems really wrong
-                                expected_size := expected_type.runtime_size + expected_type.(*Type_Info_Integer).signed.(int);
-                                argument_size := argument_type.runtime_size + argument_type.(*Type_Info_Integer).signed.(int);
-                                if expected_size >= argument_size {
-                                    overload.coercion_distance += expected_size - argument_size;
+                                distance := get_integer_coercion_distance(xx argument_type, xx expected_type);
+                                if distance >= 0 {
+                                    overload.coercion_distance += distance;
                                     continue;
                                 }
                             }
