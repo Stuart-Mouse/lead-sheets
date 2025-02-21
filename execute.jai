@@ -264,8 +264,8 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         dst := Any.{ node.value_type, script.stack_ptr };
         if !stack_push_zeroes(script, 8)  return false;
         
-        if !execute_node(script, node_cast.left)  return false;
-        src := stack_pop_any(script, node_cast.left.value_type);
+        if !execute_node(script, node_cast.value)  return false;
+        src := stack_pop_any(script, node_cast.value.value_type);
         
         if !remap_data(dst, src)  return false;
         

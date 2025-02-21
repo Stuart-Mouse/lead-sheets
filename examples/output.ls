@@ -35,3 +35,5 @@ e := Fruits.BANANA;
 echo(e);
 e = .PEAR;
 echo(e);
+echo(length(.{ 1, 2 } + .{ 2, 2 }));
+echo(f32(5));

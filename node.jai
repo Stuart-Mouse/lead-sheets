@@ -4,7 +4,6 @@ Node :: struct {
     parent, next:           *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
-    whitespace_before:      string;             // can include comments, gets pasted back when serializing
     source_location:        Source_Location;
     
     Flags :: enum_flags { 
@@ -15,6 +14,7 @@ Node :: struct {
         DISCARD_VALUE;
         MUST_BE_STATEMENT_ROOT;
         TYPECHECKED;
+        IMPLICIT;
     };
 }
 
@@ -37,9 +37,12 @@ Node_Block :: struct {
 // }
 
 Node_Cast :: struct {
-    using #as base:         Node;
-    left:                   *Node;
-    right:                  *Node_Identifier;
+    using #as base:     Node;
+    value:              *Node;
+    union {
+        type_identifier:  *Node_Identifier;
+        implicit_type:    *Type_Info;
+    }
 }
 
 /*
@@ -267,7 +270,6 @@ alloc_node :: (script: *Script, $T_Node: Type, parent_node: *Node = null, source
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
 } {
-    print("%\n",script.allocator);
     node := New(T_Node,, script.allocator);
     node.node_type = T_Node;
     node.parent    = ifx parent_node else script.current_parent_node;
@@ -277,9 +279,15 @@ alloc_node :: (script: *Script, $T_Node: Type, parent_node: *Node = null, source
     return node;
 }
 
+// TODO: maybe we can make node replacement nice by just making the parent node be the actual direct ancestor in cases where that is relevant
+//       and that can actually just be a parameter given to the replace_node function methinks
+//       we may not even really need 'parent' stored on nodes at all, since we could honestly just pass what block we are in for scope resolution based on some parameter pass the call stack
+//       only blocks really need to store their parent block then, since for all other nodes we can just figure it out situationally
+
+// can't be done properly without also taking in that actual direct parent node, since 'parent' stored on node is actually the parent block that is used for scope resolution
 replace_node :: inline (original: **Node, new: *Node) {
     new.parent = original.*.parent;
     new.next   = original.*.next;
-    new.whitespace_before = original.*.whitespace_before;
+    // new.whitespace_before = original.*.whitespace_before;
     original.* = new;
 }

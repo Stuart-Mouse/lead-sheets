@@ -195,10 +195,12 @@ print_node :: (
       
       case Node_Cast;
         _cast := node.(*Node_Cast);
-        print_node_or_return(script, _cast.left, builder, indent);
-        append(builder, ".(");
-        print_node_or_return(script, _cast.right, builder, indent);
-        append(builder, ")");
+        print_node_or_return(script, _cast.value, builder, indent);
+        if !(_cast.flags & .IMPLICIT) {
+            append(builder, ".(");
+            print_node_or_return(script, _cast.type_identifier, builder, indent);
+            append(builder, ")");
+        }
         return true;
         
         

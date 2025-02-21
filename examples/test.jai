@@ -34,6 +34,7 @@ main :: () {
     register_procedure(*script, "echo", #procedure_of_call echo(Vector2.{}));
     register_procedure(*script, "echo", #procedure_of_call echo(Vector3.{}));
     register_procedure(*script, "echo", #procedure_of_call echo(Fruits.APPLE));
+    register_procedure(*script, "length", #procedure_of_call length(Vector2.{}));
     register_procedure(*script, "print", (value: string) -> string { print("%\n", value); return value; });
     register_procedure(*script, "f32", (value: int) -> float { return xx value; });
     register_procedure(*script, "*", #procedure_of_call operator*(Vector3.{}, 1.0));

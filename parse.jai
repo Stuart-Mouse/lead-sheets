@@ -485,8 +485,8 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
                 }
                 
                 node_cast := alloc_node(script, Node_Cast);
-                node_cast.left  = left;
-                node_cast.right = make_identifier(script, token_identifier.text);
+                node_cast.value = left;
+                node_cast.type_identifier = make_identifier(script, token_identifier.text);
                 return node_cast;
             }
             

@@ -351,35 +351,77 @@ typecheck_node :: (
         dprint("arg_count: %\n", procedure_call.arguments_count);
         
         ti_proc := typecheck_node(script, procedure_call.procedure_expression, .IS_PROCEDURE_EXPRESSION).(*Type_Info_Procedure);
-        
-        if procedure_call.procedure_expression.node_type == Node_Identifier && ti_proc == null {
+
+        if ti_proc == null && procedure_call.procedure_expression.node_type == Node_Identifier {
             identifier := procedure_call.procedure_expression.(*Node_Identifier);
             assert(identifier.identifier_type == .UNRESOLVED);
             
-            argument_types := NewArray(procedure_call.arguments_count, *Type_Info,, temp); // TODO
+            // TODO: we should probably refactor typechecking to return a real error code
+            //       then we can notify caller if failure is due to a missing type hint
+            //       so that we can handle that case more intelligently here when resolving procedure
+            
+            // pre-typecheck arguments without type hinting
+            // if we fail to typecheck a certain node, we ignore it here for now
+            // since it's possible it only failed due to lack of a type hint that we can 
+            // provide later, after we've found an otherwise suitable overload
+            // we also put the arguments in a nice little array view to make things simpler in resolve_procedure_index
+            arguments := NewArray(procedure_call.arguments_count, *Node,, temp);
             for procedure_call.arguments {
-                argument_type := typecheck_node(script, it);
-                if !argument_type  return null;
-                argument_types[it_index] = argument_type;
+                typecheck_node(script, it);
+                arguments[it_index] = it;
             }
             
-            procedure_index := resolve_procedure_index(script, identifier.name, argument_types, node.flags & .OVERLOAD == .OVERLOAD);
-            if procedure_index == -1  return null; // error logged by above
+            procedure_index := resolve_procedure_index(script, identifier.name, arguments, node.flags & .OVERLOAD == .OVERLOAD);
+            if procedure_index == -1  return null; // error message is logged by resolve_procedure_index
             
-            identifier.flags |= .TYPECHECKED;
-            identifier.identifier_type   = .EXTERNAL_PROCEDURE;
+            identifier.identifier_type = .EXTERNAL_PROCEDURE;
             identifier.procedure_index = procedure_index;
-            
+            identifier.flags |= .TYPECHECKED;
             ti_proc, identifier.value_type = procedures[procedure_index].type;
+            
+            // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
+            for arguments {
+                expected_type := ti_proc.argument_types[it_index];
+                if it.value_type == null {
+                    dprint("re-typechecking argument with hint_type %", as_type(expected_type));
+                    type := typecheck_node(script, it, hint_type = expected_type);
+                    if type != expected_type {
+                        log("Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.");
+                        log("\tProcedure identifier: '%'", identifier.name);
+                        log("\tArgument expression: '%'", sprint_node(script, it,, temp));
+                        log("\tExpected type '%', got '%'.", expected_type, type);
+                        return null;
+                    }
+                } else {
+                    ok, replacement := try_implicit_cast(script, it, expected_type);
+                    if !ok {
+                        log("Error: failed while trying to implicitly cast a procedure argument.");
+                        log("\tProcedure identifier: '%'", identifier.name);
+                        log("\tArgument expression: '%'", sprint_node(script, it,, temp));
+                        log("\tExpected type '%', got '%'.", expected_type, it.value_type);
+                        return null;
+                    }
+                    if replacement {
+                        // TODO: we need a better means of replacing nodes all throughout typechecking, because it's very hacky right now.
+                        replacement.parent = it.parent;
+                        replacement.next   = it.next;
+                        if it_index == 0
+                            then procedure_call.arguments   = replacement;
+                            else arguments[it_index-1].next = replacement;
+                    }
+                }
+            }
+            
             node.value_type = ifx ti_proc.return_types 
                 then ti_proc.return_types[0] 
                 else type_info(void);
         }
+        // procedure was the result of some larger expression, so it already has a strict type
         else {
             if ti_proc == null {
                 log("Error: failed to typecheck procedure_expression.");
                 return null;
-            } 
+            }
             if ti_proc.type != .PROCEDURE {
                 log("Error: attempt to call a non-procedure type as if it were a procedure.");
                 return null;
@@ -389,8 +431,7 @@ typecheck_node :: (
                 return null;
             }
             
-            // typecheck arguments. we know what they must be, so we just straightforwardly match. can also easily add logic to coerce/cast
-            // TODO: coerce/up-cast arguments
+            // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
             if ti_proc.argument_types.count != procedure_call.arguments_count {
                 log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, procedure_call.arguments_count);
                 return null;
@@ -418,16 +459,15 @@ typecheck_node :: (
         
       case Node_Cast;
         node_cast := node.(*Node_Cast);
-        left_type := typecheck_node(script, node_cast.left);
-        if left_type == null  return null;
+        value_type := typecheck_node(script, node_cast.value);
+        if value_type == null  return null;
         
-        type_identifier := node_cast.right;
+        type_identifier := node_cast.type_identifier;
         type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
         if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
             log("Error: Type expression in RHS of cast did not resolve to a Type.");
             return null;
         }
-        right_type := type_identifier.type_info_pointer;
         
         // TODO: check if we can actually perform the cast here
         //       for now, we won't precheck this since we will just use remap_data
@@ -735,7 +775,7 @@ find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need
     return null;
 }
 
-
+// TODO: maybe remove this if we don't use evaluate_2.jai
 // extracted out primarily so that I can use this in evaluate_node
 // I could just call typecheck_node on the identifier but I guess this makes me feel beetter somehow?
 resolve_identifier :: (
@@ -830,4 +870,63 @@ resolve_identifier :: (
         dprint("Error: Unable to resolve identifier '%'.\n", identifier.name);
     }
     return null;
+}
+
+try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
+    if node.value_type == type  return true, null;
+    
+    if node.node_type == Node_Literal {
+        return coerce_literal_type(xx node, type), null;
+    }
+    
+    if is_numeric_type(type) 
+    && is_numeric_type(node.value_type) {
+        // check if both are the same type of type
+        // if so, we can do a runtime coercion to widen the type, and mark that coercion distance accordingly
+        if type.type == node.value_type.type {
+            if type.type == {
+              case .FLOAT;
+                if type.runtime_size >= node.value_type.runtime_size {
+                    _cast := alloc_node(script, Node_Cast);
+                    _cast.flags |= .IMPLICIT;
+                    _cast.implicit_type = type;
+                    _cast.value = node;
+                    return true, _cast;
+                }
+                
+              case .INTEGER;
+                expected_size := type.runtime_size + type.(*Type_Info_Integer).signed.(int);
+                value_size    := node.value_type.runtime_size + node.value_type.(*Type_Info_Integer).signed.(int);
+                if expected_size >= value_size {
+                    _cast := alloc_node(script, Node_Cast);
+                    _cast.flags |= .IMPLICIT;
+                    _cast.implicit_type = type;
+                    _cast.value = node;
+                    return true, _cast;
+                }
+            }
+        }
+    }
+    
+    log("Error: unable to implicitly cast type '%' to '%'", as_type(node.value_type), as_type(type));
+    return false, null;
+}
+
+// we just reach into the literal and re-type it in place
+coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
+    if literal.value_type == type  return true;
+    if literal.literal_type == {
+      case .NUMBER;
+        if !is_numeric_type(type)  return false;
+        new_number := Small_Any.{ type, null };
+        remap_data(to_any(new_number), to_any(literal.number));
+        literal.number = new_number;
+        return true;
+    }
+    log("Error: unable to coerce % literal of type '%' to '%'", literal.literal_type, as_type(literal.value_type), as_type(type));
+    return false;
+}
+
+get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
+    return ifx _cast.flags & .IMPLICIT then _cast.implicit_type else _cast.type_identifier.type_info_pointer;
 }

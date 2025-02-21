@@ -48,124 +48,202 @@ register_directive :: (script: *Script, name: string, procedure: Any, data: *voi
 }
 
 
-resolve_procedure_index :: (script: *Script, name: string, argument_types: [] *Type_Info, is_operator := false) -> (index: int, swap_args: bool) {
-    // for error reporting purposes, collect all procedures whose names match, and reason for type mismatch
-    // maybe we will put this behind some debug flag later
-    Procedure_Resolution_Error :: struct {
-        proc: *External_Procedure;
-        error_type: enum { NONE; ARG_COUNT; ARG_TYPE; };
-        details: union {
-            arg_count : struct { expected: int; provided: int; };
-            arg_type  : struct { index: int; expected: *Type_Info; provided: *Type_Info; };
-        };
-    }
-    
-    failing_overloads: [..] Procedure_Resolution_Error;
-    defer array_free(failing_overloads);
-    
+Procedure_Overload :: struct {
+    proc_index:         int;
+    coercion_distance:  int;                                    // a score assigned based on how 'far' we have to coerce arguments in order to make the candidate procedure match
+    swap_args:          bool;
+    reject_reason:         enum { NONE; ARG_COUNT; ARG_TYPE; };    // if .NONE, then candidate is still in the running
+    reject_details: union {
+        arg_count:  struct { expected: int; provided: int; };
+        arg_type:   struct { index: int; expected_type: *Type_Info; argument: *Node; };
+    };
+}
+
+
+get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overload {
+    overloads: [..] Procedure_Overload;
+    for *script.procedures  
+        if it.name == name  
+            array_add(*overloads, .{ proc_index = it_index });
+    return overloads;
+}
+
+
+resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, is_operator := false) -> (index: int, swap_args: bool) {
     if is_operator {
-        assert(argument_types.count == 2, "argument_types.count was %", argument_types.count);
+        assert(arguments.count == 2, "arguments.count was %", arguments.count);
     }
     
-    proc_list := script.procedures;
-    for *proc, proc_index: proc_list {
-        if proc.name != name  continue proc;
+    overloads := get_procedure_overloads(script, name);
+    if !overloads {
+        print("Unable to resolve procedure '%'\n", name);
+        print("No procedure found with the given identifier.\n");
+    }
+    
+    // typecheck overloads and determine best choice
+    best_overload_index     := -1; // indexes overloads, not script.procedures
+    best_overload_distance  := S64_MAX; 
+    tied_for_best           := 0;
+    
+    for *overloads {
+        proc    := *script.procedures[it.proc_index];
         ti_proc := proc.type.(*Type_Info_Procedure);
         
         // typecheck arguments
-        if ti_proc.argument_types.count != argument_types.count {
-            error := Procedure_Resolution_Error.{ proc = proc, error_type = .ARG_COUNT };
-            error.details.arg_count = .{ 
+        if ti_proc.argument_types.count != arguments.count {
+            it.reject_reason = .ARG_COUNT;
+            it.reject_details.arg_count = .{ 
                 expected = ti_proc.argument_types.count, 
-                provided = argument_types.count 
+                provided = arguments.count 
             };
-            array_add(*failing_overloads, error);
-            
-            continue proc;
+            continue;
         }
         
-        typecheck_arguments :: (script_proc: *External_Procedure, expected_list: [] *Type_Info, provided_list: [] *Type_Info) -> (Procedure_Resolution_Error, bool) {
-            for expected: expected_list {
-                provided := provided_list[it_index];
-                if expected != provided {
-                    error := Procedure_Resolution_Error.{ proc = script_proc, error_type = .ARG_TYPE };
-                    error.details.arg_type = .{ 
-                        index    = it_index + 1,
-                        expected = expected, 
-                        provided = provided
-                    };
-                    return error, false;
+        // returns the coercion distance, else -1 if arguments cannot be made to match through implicit coercions alone
+        typecheck_arguments :: (overload: *Procedure_Overload, expected_types: [] *Type_Info, arguments: [] *Node) -> bool {
+            // the overall idea on the control flow here is just to `continue` if we are good, else we use the common reject case 
+            for expected_type: expected_types {
+                argument      := arguments[it_index];
+                argument_type := argument.value_type;
+                
+                if expected_type == argument_type  continue; // ezpz match
+                
+                if argument_type == null {
+                    // we allow arguments to fail typechecking on the first pass so that 
+                    // if they are implicitly typed structs, they can still be resolved after overload resolution
+                    if expected_type.type == .STRUCT  continue;
+                } else {
+                    if is_numeric_type(expected_type) 
+                    && is_numeric_type(argument_type) {
+                        if argument.node_type == Node_Literal
+                        && argument.(*Node_Literal).literal_type == .NUMBER 
+                            then continue;
+                        
+                        // check if both are the same type of type
+                        // if so, we can do a runtime coercion to widen the type, and mark that coercion distance accordingly
+                        if expected_type.type == argument_type.type {
+                            if expected_type.type == {
+                              case .FLOAT;  
+                                if expected_type.runtime_size >= argument_type.runtime_size {
+                                    overload.coercion_distance += expected_type.runtime_size - argument_type.runtime_size;
+                                    continue;
+                                }
+                                
+                              case .INTEGER;
+                                // factor signedness into size
+                                // TODO: maybe we should actually weight signedness changes higher than size changes?
+                                //       maybe float up-casting should be weighed more than int upcasting?
+                                //       currently, s8 -> u16 would rate as less distance than u8 -> u16, which seems really wrong
+                                expected_size := expected_type.runtime_size + expected_type.(*Type_Info_Integer).signed.(int);
+                                argument_size := argument_type.runtime_size + argument_type.(*Type_Info_Integer).signed.(int);
+                                if expected_size >= argument_size {
+                                    overload.coercion_distance += expected_size - argument_size;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
                 }
+                
+                // else argument absolutely does not match expected type
+                overload.reject_reason = .ARG_TYPE;
+                overload.reject_details.arg_type = .{ 
+                    index         = it_index + 1,
+                    expected_type = expected_type, 
+                    argument      = argument
+                };
+                return false;
             }
-            return .{}, true;
+            
+            return true;
         }
         
-        swap_args := false;
-        error, ok := typecheck_arguments(proc, ti_proc.argument_types, argument_types);
+        ok := typecheck_arguments(it, ti_proc.argument_types, arguments);
         
         // fallback case to try reordering args for symmetric case
-        if !ok && is_operator {
-            if (ti_proc.procedure_flags & .IS_SYMMETRIC) {
-                assert(ti_proc.argument_types.count == 2);
-                assert(argument_types.count == 2);
-                
-                swap_args = true;
-                error, ok = typecheck_arguments(proc, ti_proc.argument_types, .[ argument_types[1], argument_types[0] ]);
-            }
+        if !ok && is_operator && (ti_proc.procedure_flags & .IS_SYMMETRIC) {
+            assert(ti_proc.argument_types.count == 2);
+            assert(arguments.count == 2);
+            it.swap_args = true;
+            ok = typecheck_arguments(it, ti_proc.argument_types, .[ arguments[1], arguments[0] ]);
         }
+        if !ok  continue;
         
-        if !ok {
-            array_add(*failing_overloads, error);
-            continue proc;
+        if it.coercion_distance < best_overload_distance {
+            best_overload_index    = it_index;
+            best_overload_distance = it.coercion_distance;
+            tied_for_best          = 0;
         }
-        
-        return proc_index, swap_args;
+        else if it.coercion_distance == best_overload_distance {
+            tied_for_best += 1;
+        }
+    }
+    
+    if !tied_for_best && best_overload_index >= 0 {
+        chosen_overload := overloads[best_overload_index];
+        return chosen_overload.proc_index, chosen_overload.swap_args;
     }
     
     print("Unable to resolve procedure '%'\n", name);
-    if failing_overloads {
-        print("% failing overload(s):\n\n", failing_overloads.count);
-        
-        for failing_overloads {
-            ti_proc := it.proc.type.(*Type_Info_Procedure);
+    
+    if tied_for_best {
+        print("Could not decide between % matching overloads:\n\n", tied_for_best);
+        for overloads {
+            if it.reject_reason != .NONE 
+            || it.coercion_distance != best_overload_distance 
+                then continue;
+                
+            print("%(", name);
+            proc := script.procedures[it.proc_index];
+            ti_proc := proc.type.(*Type_Info_Procedure);
+            for ti_proc.argument_types {
+                if it_index != 0  print(", ");
+                print("%", as_type(it));
+            }
+            print(")\n");
+        }
+    }
+    
+    if overloads.count > tied_for_best {
+        print("% failing overload(s):\n\n", overloads.count);
+        for overloads {
+            if it.reject_reason == .NONE  continue;
             
             print("%(", name);
+            proc := script.procedures[it.proc_index];
+            ti_proc := proc.type.(*Type_Info_Procedure);
             for ti_proc.argument_types {
                 if it_index != 0  print(", ");
                 print("%", as_type(it));
             }
             print(")\n");
             
-            if it.error_type == {
+            if it.reject_reason == {
               case .ARG_COUNT;
                 print(
                     "Mismatch on argument count: expected %, got %\n\n", 
-                    it.details.arg_count.expected, 
-                    it.details.arg_count.provided
+                    it.reject_details.arg_count.expected, 
+                    it.reject_details.arg_count.provided
                 );
                 
               case .ARG_TYPE;
                 print(
                     "Type mismatch on argument %: expected %, got %\n\n", 
-                    it.details.arg_type.index, 
-                    as_type(it.details.arg_type.expected), 
-                    as_type(it.details.arg_type.provided)
+                    it.reject_details.arg_type.index, 
+                    as_type(it.reject_details.arg_type.expected_type), 
+                    as_type(it.reject_details.arg_type.argument.value_type)
                 );
             }
         }
-    } else {
-        print("No procedure found with the given identifier.\n");
     }
     
     print("Argument types were: ");
-    for argument_types {
+    for arguments {
         if it_index != 0  print(", ");
-        print("%", as_type(it));
+        print("%", as_type(it.value_type));
     }
     print("\n");
     
     return -1, false;
 }
-
-
 

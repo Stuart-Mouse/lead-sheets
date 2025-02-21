@@ -178,8 +178,7 @@ evaluate_node :: (
         node_cast := node.(*Node_Cast);
         
         ret := make_return_value();
-        
-        left_any, ok := evaluate_node(script, node_cast.left);
+        left_any, ok := evaluate_node(script, node_cast.value);
         if !remap_data(ret, left_any)  return null, false;
         
         return ret, true;
