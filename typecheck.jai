@@ -287,8 +287,16 @@ typecheck_node :: (
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
             if left_type != right_type {
-                log("Error: left and right types must match in a simple assignment statement!");
-                return null;
+                ok, replacement := try_implicit_cast(script, operation.right, left_type); 
+                if !ok {
+                    log("Error: left and right types must match in a simple assignment statement!");
+                    return null;
+                }
+                if replacement {
+                    replacement.parent = operation.right.parent;
+                    replacement.next   = operation.right.next;
+                    operation.right    = replacement;
+                }
             }
             operation.value_type = left_type;
             return operation.value_type;
@@ -797,6 +805,8 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
                     _cast.flags |= .IMPLICIT;
                     _cast.implicit_type = type;
                     _cast.value = node;
+                    _cast.value_type = type;
+                    _cast.flags |= .TYPECHECKED;
                     return true, _cast;
                 }
                 
@@ -808,6 +818,8 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
                     _cast.flags |= .IMPLICIT;
                     _cast.implicit_type = type;
                     _cast.value = node;
+                    _cast.value_type = type;
+                    _cast.flags |= .TYPECHECKED;
                     return true, _cast;
                 }
             }
