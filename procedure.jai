@@ -113,31 +113,7 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
                     // if they are implicitly typed structs, they can still be resolved after overload resolution
                     if expected_type.type == .STRUCT  continue;
                 } else {
-                    if is_numeric_type(expected_type) 
-                    && is_numeric_type(argument_type) {
-                        if argument.node_type == Node_Literal
-                        && argument.(*Node_Literal).literal_type == .NUMBER 
-                            then continue;
-                        
-                        // check if both are the same type of type
-                        // if so, we can do a runtime coercion to widen the type, and mark that coercion distance accordingly
-                        if expected_type.type == argument_type.type {
-                            if expected_type.type == {
-                              case .FLOAT;
-                                if expected_type.runtime_size >= argument_type.runtime_size {
-                                    overload.coercion_distance += expected_type.runtime_size - argument_type.runtime_size;
-                                    continue;
-                                }
-                                
-                              case .INTEGER;
-                                distance := get_integer_coercion_distance(xx argument_type, xx expected_type);
-                                if distance >= 0 {
-                                    overload.coercion_distance += distance;
-                                    continue;
-                                }
-                            }
-                        }
-                    }
+                    if get_implicit_cast_distance(argument, expected_type) >= 0  continue;
                 }
                 
                 // else argument absolutely does not match expected type

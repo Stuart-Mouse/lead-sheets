@@ -786,6 +786,27 @@ find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need
     return null;
 }
 
+
+
+/*
+    Coercions and implicit casts
+    
+    coercion here refers to altering the value_type of a Node_Literal in-place.
+    an implicit cast is just an extra cast node that is inserted in to the AST, and the cast still has to be executed at runtime.
+    these two things are different, but also really similar and we usually want to just do the correct thing for the givne node, whehter it be a literal or not
+
+    I woud like to make these procedures nicer to use, 
+    but there's two different uses I need to keep in sync
+        1. checking if an implicit cast or coercion can be done (and getting the 'distance' of that cast)
+            this needs to *not* modify the AST
+        2. actually doing the implict cast or coercion, which will modify the AST
+    These two functions could be separate, but it's less likely that we'll get bugs if the actual doing of the cast 
+        just calls the pre-checking function instead of duplicating logic
+    but, I still can't avoid duplicating some of the most high-level logic which is the selection between a cast or coercion
+    
+*/
+
+
 make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node {
     _cast := alloc_node(script, Node_Cast);
     _cast.flags |= .IMPLICIT | .TYPECHECKED;
@@ -798,7 +819,7 @@ make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node 
     return _cast;
 }
 
-get_integer_coercion_distance :: (from: *Type_Info_Integer, to: *Type_Info_Integer) -> int {
+get_integer_cast_distance :: (from: *Type_Info_Integer, to: *Type_Info_Integer) -> int {
     if (from.signed && !to.signed) 
     || (from.runtime_size > to.runtime_size)
     || (!from.signed && to.signed && to.runtime_size == from.runtime_size)
@@ -810,6 +831,30 @@ get_integer_coercion_distance :: (from: *Type_Info_Integer, to: *Type_Info_Integ
     return to_size - from_size;
 }
 
+get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
+    from := node.value_type;
+    if to == from return 0; 
+    
+    if is_numeric_type(from) && is_numeric_type(to) {
+        if node.node_type == Node_Literal
+        && node.(*Node_Literal).literal_type == .NUMBER {
+            return 0;
+        }
+        if to.type == from.type {
+            if to.type == {
+              case .FLOAT;
+                distance := to.runtime_size - from.runtime_size;
+                return distance;
+                
+              case .INTEGER;
+                distance := get_integer_cast_distance(xx from, xx to);
+                return distance;
+            }
+        }
+    }
+    
+    return -1;
+}
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
@@ -818,24 +863,8 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
         return coerce_literal_type(xx node, type), null;
     }
     
-    if is_numeric_type(type) 
-    && is_numeric_type(node.value_type) {
-        // check if both are the same type of type
-        // if so, we can do a runtime coercion to widen the type, and mark that coercion distance accordingly
-        if type.type == node.value_type.type {
-            if type.type == {
-              case .FLOAT;
-                if type.runtime_size >= node.value_type.runtime_size {
-                    return true, make_implicit_cast(script, node, type);
-                }
-                
-              case .INTEGER;
-                distance := get_integer_coercion_distance(xx node.value_type, xx type);
-                if distance >= 0 {
-                    return true, make_implicit_cast(script, node, type);
-                }
-            }
-        }
+    if get_implicit_cast_distance(node, type) >= 0 {
+        return true, make_implicit_cast(script, node, type);
     }
     
     log("Error: unable to implicitly cast type '%' to '%'", as_type(node.value_type), as_type(type));
