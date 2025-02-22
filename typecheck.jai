@@ -37,10 +37,18 @@ typecheck_node :: (
     }
     
     // Extra checks to run on exit, make sure we are doing things right
-    // TODO: can't break from a case, but maybe we should refactor this procedure so that we don't need to defer here...
     defer if node.value_type {
-        // if an lvalue is expected, then ensure the node's typechecking acknowledged this fact
-        if check_flags & .EXPECT_LVALUE then assert(node.flags & .IS_LVALUE == .IS_LVALUE);
+        if check_flags & .EXPECT_LVALUE {
+            ok, message := is_valid_lvalue(node);
+            if !ok {
+                log(message);
+                if node.node_type == .IDENTIFIER {
+                    log("Identifier was '%'", node.(*Node_Identifier).name);
+                }
+                return null;
+            }
+            node.flags |= .IS_LVALUE;
+        }
         node.flags |= .TYPECHECKED;
     }
     
@@ -66,14 +74,6 @@ typecheck_node :: (
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if check_flags & .EXPECT_LVALUE {
-            if !(literal.flags & .IS_MALLEABLE) && literal.literal_type != .ANY {
-                log("Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.");
-                return null;
-            }
-            literal.flags |= .IS_LVALUE;
-        }
-        
         if literal.literal_type == {
           case .ANY;
             literal.value_type = literal.any.type;
@@ -111,10 +111,6 @@ typecheck_node :: (
             ti_enum := hint_type.(*Type_Info_Enum);
             if ti_enum.type != .ENUM {
                 log("Error: type hint provided to unary dot enum was not an enum type.");
-                return null;
-            }
-            if check_flags & .EXPECT_LVALUE {
-                log("Error: an enum literal cannot be used as an lvalue.");
                 return null;
             }
             value, found := enum_name_to_value(ti_enum, literal._enum.identifier);
@@ -192,13 +188,6 @@ typecheck_node :: (
                         identifier.identifier_type = .DECLARATION;
                         identifier.declaration = declaration;
                         identifier.value_type = declaration.value_type;
-                        if check_flags & .EXPECT_LVALUE {
-                            if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
-                                log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
-                                return null;                                
-                            }
-                            identifier.flags |= .IS_LVALUE;
-                        }
                         return identifier.value_type;
                     }
                     
@@ -209,13 +198,6 @@ typecheck_node :: (
                         identifier.identifier_type = .DECLARATION;
                         identifier.declaration   = declaration;
                         identifier.value_type    = declaration.value_type;
-                        if check_flags & .EXPECT_LVALUE {
-                            if (declaration.flags & .IS_CONSTANT) && !declaration_is_malleable_literal(declaration) {
-                                log("Error: Attempting to use identifier '%' as an lvalue, but this identifier refers to a constant declaration which is not malleable.", identifier.name);
-                                return null;                                
-                            }
-                            identifier.flags |= .IS_LVALUE;
-                        }
                         return identifier.value_type;
                     }
                 }
@@ -227,9 +209,6 @@ typecheck_node :: (
         {
             variable_index := resolve_variable(script, identifier.name);
             if variable_index != -1 {
-                if check_flags & .EXPECT_LVALUE {
-                    identifier.flags |= .IS_LVALUE;
-                }
                 identifier.identifier_type  = .EXTERNAL_VARIABLE;
                 identifier.variable_index = variable_index;
                 identifier.value_type     = variables[variable_index].binding.type;
@@ -241,11 +220,6 @@ typecheck_node :: (
         {
             for script.type_table {
                 if it.name == identifier.name {
-                    if check_flags & .EXPECT_LVALUE {
-                        log("Error: a type cannot be used as an lvalue.");
-                        return null;
-                    }
-                    
                     identifier.identifier_type = .TYPE;
                     identifier.type_info_pointer = it.type;
                     identifier.value_type = type_info(Type);
@@ -263,7 +237,6 @@ typecheck_node :: (
         
         
       case Node_Operation;
-        if check_flags & .EXPECT_LVALUE  return null;
         operation := node.(*Node_Operation);
         dprint("Operation is % '%'\n", operation.operator_type, operation.name);
         
@@ -352,7 +325,6 @@ typecheck_node :: (
         
         
       case Node_Procedure_Call;
-        if check_flags & .EXPECT_LVALUE  return null;
         procedure_call := node.(*Node_Procedure_Call);
         
         dprint("typechecking arguments...\n");
@@ -512,7 +484,6 @@ typecheck_node :: (
             dot.value_type    = member_ti.type;
             dot.member_offset = member_offset;
             
-            if check_flags & .EXPECT_LVALUE then dot.flags |= .IS_LVALUE;
             return dot.value_type;
             
           case .TYPE;   // TODO: maybe we want to allow anything here that can act as a namespace?
@@ -528,10 +499,6 @@ typecheck_node :: (
                 return null;
             }
             
-            if check_flags & .EXPECT_LVALUE {
-                log("Error: an enum literal cannot be used as an lvalue.");
-                return null;
-            }
             member_identifier := dot.right.(*Node_Identifier);
             value, found := enum_name_to_value(ti_enum, member_identifier.name);
             if !found {
@@ -567,17 +534,10 @@ typecheck_node :: (
         }
         
         subscript.value_type = base_type.element_type;
-        if check_flags & .EXPECT_LVALUE then subscript.flags |= .IS_LVALUE;
         return subscript.value_type;
         
         
       case Node_Declaration;
-        // declaration node cannot be an lvalue itself, but may be ok to use as a left value
-        // instead of marking this node with .IS_LVALUE, which would affect all instances where this declaration is used,
-        //      we will instead mark the individual identifier nodes which refer to a declaration
-        //      in execute proc, these identifiers will just reach into resolved declaration directly to get value pointer (if that is legal)
-        if check_flags & .EXPECT_LVALUE  return null;
-        
         // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
         //       this is different from how other statements are done, which all return void instead.
         //       may have to change this if it creates issues, I suppose.
@@ -621,7 +581,6 @@ typecheck_node :: (
         
         
       case Node_Block;
-        if check_flags & .EXPECT_LVALUE  return null;
         block := node.(*Node_Block);
         
         for block.statements {
@@ -633,7 +592,6 @@ typecheck_node :: (
         
         
       case Node_If_Statement;
-        if check_flags & .EXPECT_LVALUE  return null;
         if_statement := node.(*Node_If_Statement);
         
         if !typecheck_node(script, if_statement.condition)  return null; // TODO: must be bool or coercible to bool
@@ -644,7 +602,6 @@ typecheck_node :: (
         
         
       case Node_While_Loop;
-        if check_flags & .EXPECT_LVALUE  return null;
         while_loop := node.(*Node_While_Loop);
         
         if !typecheck_node(script, while_loop.condition)  return null; // TODO: must be bool or coercible to bool
@@ -655,7 +612,6 @@ typecheck_node :: (
         
         
       case Node_For_Loop;
-        if check_flags & .EXPECT_LVALUE  return null;
         for_loop := node.(*Node_For_Loop);
         
         // value_pointer for it and it_index decls get set later when actually iterating for loop
@@ -858,6 +814,7 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
+    if try_implicit_derefence(script, node, type)  return true, null;  
     
     if node.node_type == Node_Literal {
         return coerce_literal_type(xx node, type), null;
@@ -888,4 +845,83 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
 
 get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
     return ifx _cast.flags & .IMPLICIT then _cast.implicit_type else _cast.type_identifier.type_info_pointer;
+}
+
+can_do_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
+    ti_ptr := expected_type.(*Type_Info_Pointer);
+    if ti_ptr.type != .POINTER || ti_ptr.pointer_to != argument_type  return false;
+    
+    // TODO: put more logic in here to allow implicit dereference one using #as members?
+    return true;
+}
+
+
+// just flags the node as an lvalue if successful
+try_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
+    if !can_do_implicit_derefence(node, type)  return false;
+    // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
+    node.flags |= .IS_LVALUE;
+    return true;
+}
+
+// second return value is an error string. In order to prevent spamming temp storage, I'm not using tprint to actually make the error message here more specific/situational.
+// so the caller (probably just typecheck_node) may want to follow up with some additional information such as the identifier name.
+// maybe we could come up with some standard system for inserting info from a node so that we can return a format string here...
+is_valid_lvalue :: (node: *Node) -> bool, string {
+    if node.node_type == {
+      case .Node_Literal;
+        if (literal.flags & .IS_MALLEABLE) || literal.literal_type == .ANY {
+            return true, "";
+        }
+        return false, "Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.";
+        
+      case .Node_Identifier;
+        identifier := node.(*Node_Identifier);
+        if #complete identifier.identifier_type == {
+          case .UNRESOLVED;         return false, "Error: an unresolved identifier cannot be used as an lvalue.";
+          case .TYPE;               return false, "Error: a type identifier cannot be used as an lvalue.";
+          case .ENUM_VALUE;         return false, "Error: using an enum literal as an lvalue is not currently supported.";
+          case .EXTERNAL_VARIABLE;  return true,  "";
+          case .EXTERNAL_PROCEDURE; return false, "Error: an external procedure cannot be used as an lvalue.";
+          case .STRUCT_MEMBER;      return true,  "";
+          case .DECLARATION;
+            if (identifier.declaration.flags & .IS_CONSTANT) 
+            && !declaration_is_malleable_literal(identifier.declaration) {
+                return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
+            }
+            return true, "";
+        }
+        
+      case .Node_Dot;
+        if left_type.type == {
+          case .STRUCT;     return true,  "";
+          case .TYPE;       return false, "Error: an enum literal cannot be used as an lvalue.";
+        }
+        
+      case .Node_Subscript; return true,  "";
+      
+      // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
+      case .Node_Operation;         return false, "Error: using the result of an operation as an lvalue is not currently supported";
+      case .Node_Procedure_Call;    return false, "Error: using the result of a procedure call as an lvalue is not currently supported";
+      case .Node_Cast;              return false, "Error: using the result of a cast as an lvalue is not currently supported";
+      
+      // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
+      case .Node_Declaration;       return false, "Error: a declaration cannot be used as an lvalue;";
+      case .Node_Block;             return false, "Error: a block cannot be used as an lvalue;";
+      case .Node_If_Statement;      return false, "Error: an if statement cannot be used as an lvalue;";
+      case .Node_While_Loop;        return false, "Error: a while loop cannot be used as an lvalue;";
+      case .Node_For_Loop;          return false, "Error: a for loop cannot be used as an lvalue;";
+    }
+    
+    assert(false, "Invalid node type '%' in is_valid_lvalue.", node.node_type);
+    return false, "";
+}
+
+// we use this for getting the proper type to hint to procedure arguments
+get_base_if_type_is_pointer :: (type: *Type_Info) -> *Type_Info {
+    if type.type == .POINTER {
+        // TODO: do something about multiple indirections case?
+        return type.(*Type_Info_Pointer).pointer_to;
+    }
+    return type;
 }
