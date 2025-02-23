@@ -38,8 +38,8 @@ echo(e);
 echo(length(.{ 1, 2 } + .{ 2, 2 }));
 echo(f32(5));
 {
-    a : int = 5;
-    b : u8 = 3;
+    a: int = 5;
+    b: u8 = 3;
     echo(a);
     echo(b);
     a = b;
@@ -52,7 +52,7 @@ echo(v2);
     a := 5;
     b := 96;
     c := -8;
-    for   {
-        echo(it);    
-}
+    foreach (a, b, c)  {
+        echo(it);
+    }
 }

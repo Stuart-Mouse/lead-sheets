@@ -486,6 +486,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                     return false;
                 }
             }
+            return true;
         }
         
         return false;

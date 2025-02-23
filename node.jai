@@ -15,6 +15,7 @@ Node :: struct {
         MUST_BE_STATEMENT_ROOT;
         TYPECHECKED;
         IMPLICIT;
+        PARENTHESIZED; // explicitly 
     };
 }
 

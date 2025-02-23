@@ -66,6 +66,11 @@ print_node :: (
         return false;
     }
     
+    // wrap expression in parenthesized if explicitly flagged as such
+    if       node.flags & .PARENTHESIZED  append(builder, "(");
+    defer if node.flags & .PARENTHESIZED  append(builder, ")");
+    
+    
     if node.node_type == {
       case Node_Directive;
         directive := node.(*Node_Directive);
@@ -158,15 +163,17 @@ print_node :: (
             return true;
         }
         
+        // we only prenthesize expressions implicitly here if the precedence requires it
+        // and the subexpressions weren't already explicitly flagged as parenthesized
         node_prec := get_operator_precedence(operation.name);
         do_parenthesize_left, do_parenthesize_right := false;
         if operation.left.node_type == Node_Operation {
             left_prec := get_operator_precedence(operation.left.(*Node_Operation).name);
-            do_parenthesize_left = left_prec < node_prec;
+            do_parenthesize_left = left_prec < node_prec && !(operation.left.flags & .PARENTHESIZED);
         }
         if operation.right.node_type == Node_Operation {
             right_prec := get_operator_precedence(operation.right.(*Node_Operation).name);
-            do_parenthesize_right = right_prec < node_prec;
+            do_parenthesize_right = right_prec < node_prec && !(operation.right.flags & .PARENTHESIZED);
         }
         
         if do_parenthesize_left  append(builder, "(");
@@ -187,7 +194,7 @@ print_node :: (
         append(builder, "(");
         for procedure_call.arguments {
             print_node_or_return(script, it, builder, indent);
-            if it_index != procedure_call.arguments_count-1  append(builder, ", ");
+            if it.next  append(builder, ", ");
         }
         append(builder, ")");
         return true;
@@ -250,7 +257,7 @@ print_node :: (
         append(builder, declaration.name);
         if do_backtick  append(builder, "`");
         
-        if declaration.init_expression  append(builder, " ");
+        if !declaration.type_expression  append(builder, " ");
         append(builder, ":");
         if declaration.type_expression {
             append(builder, " ");
@@ -284,8 +291,9 @@ print_node :: (
             }
         }
         indent -= INDENT_SIZE;
+        append(builder, "\n");
         append_spaces(builder, indent);
-        append(builder, "\n}");
+        append(builder, "}");
         return true;
         
         
@@ -309,15 +317,25 @@ print_node :: (
         
       case Node_For_Loop;
         for_loop := node.(*Node_For_Loop);
-        append(builder, "for ");
         if for_loop.control_type == {
           case .RANGE;
+            append(builder, "for ");
             print_node_or_return(script, for_loop.range.lower, builder, indent);
             append(builder, "..");
             print_node_or_return(script, for_loop.range.upper, builder, indent);
             
           case .ARRAY;
+            append(builder, "for ");
             print_node_or_return(script, for_loop.array_expression, builder, indent);
+            
+          case .LIST;
+            append(builder, "foreach ");
+            append(builder, "(");
+            for for_loop.list {
+                print_node_or_return(script, it, builder, indent);
+                if it.next  append(builder, ", ");
+            }
+            append(builder, ")");
         }
         append(builder, "  ");
         print_node_or_return(script, for_loop.statement, builder, indent);

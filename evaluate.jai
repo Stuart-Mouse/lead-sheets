@@ -375,6 +375,21 @@ evaluate_node :: (
                 }
             }
             return null, true;
+            
+          case .LIST;
+            _it_index: int;
+            for_loop.it_index_decl.value_pointer = *_it_index;
+            for for_loop.list {
+                _it_index = it_index;
+                it_any, ok := evaluate_node(script, it);
+                if !ok  return null, false;
+                for_loop.it_decl.value_pointer = it_any.value_pointer;
+                _, ok = evaluate_node(script, for_loop.statement);
+                if !ok {
+                    dprint("failed to evaluate for loop statement!\n");
+                    return null, false;
+                }
+            }
         }
         
         return null, false;

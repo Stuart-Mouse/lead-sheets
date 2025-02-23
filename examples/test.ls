@@ -104,7 +104,7 @@ echo(v2);
    a := 5;
    b := 96;
    c := -8;
-   for a, b, c {
+   foreach (a, b, c) {
       echo(it);
    }
 }

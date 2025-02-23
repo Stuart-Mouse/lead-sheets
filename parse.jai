@@ -91,19 +91,36 @@ parse_statement :: (using script: *Script) -> *Node {
             for_loop.range.lower  = expr;
             for_loop.range.upper  = parse_expression(script, 0);
             if !for_loop.range.upper  return null;
-        } else if expect_token_type(*lexer, .COMMA) {
-            dprint("CONTROL TYPE IS LIST\n");
-            for_loop.control_type = .LIST;
-            for_loop.list = expr;
-            expressions, _, ok := parse_comma_separated_expressions(script, .OPEN_BRACE, do_consume_expected_end_token = false);
-            if !ok  return null; // expressions can be null, meaning the for loop will only iterate once. maybe that syntax will look weird, but I think this is the best compromise
-            expr.next = expressions;
         } else {
             dprint("CONTROL TYPE IS ARRAY\n");
             for_loop.control_type = .ARRAY;
             for_loop.array_expression = expr;
             if for_loop.array_expression == null  return null;
         }
+        
+        dprint("STATEMENT\n");
+        for_loop.statement = parse_statement(script);
+        if for_loop.statement == null  return null;
+        
+        current_parent_node = for_loop.parent; 
+        return for_loop;
+        
+      case .FOREACH;
+        dprint("FOREACH LOOP\n"); dprint_push_indent();
+        get_token(*lexer);
+        for_loop := alloc_node(script, Node_For_Loop);
+        current_parent_node = for_loop; 
+        
+        dprint("ITERATOR LIST\n");
+        if !expect_token_type(*lexer, .OPEN_PAREN) {
+            log("Error: an open paren is required to begin a foreach iterator list.");
+            return null;
+        }
+        expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_PAREN);
+        if !ok  return null;
+        
+        for_loop.control_type = .LIST;
+        for_loop.list = expressions;
         
         dprint("STATEMENT\n");
         for_loop.statement = parse_statement(script);
@@ -283,6 +300,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         node = parse_expression(script, 0);
         if node == null  return null;
+        node.flags |= .PARENTHESIZED;
         
         token = get_token_or_return(*lexer, null);
         if token.type != .CLOSE_PAREN {
@@ -413,37 +431,31 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 }
 
 // needs to also return bool since node can be null validly if there were no arguments
-parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type, do_consume_expected_end_token := true) -> (*Node, int, bool) {
+parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type) -> (*Node, int, bool) {
     first: *Node;
     count: int;
     
-    if do_consume_expected_end_token {
-        if expect_token_type(*lexer, expected_end_token) {
-            return first, count, true;
-        }
-    }
-    
-    first = parse_expression(script, 0);
-    if first == null  return null, 0, false;
-    count = 1;
-    
-    prev := first;
-    while expect_token_type(*lexer, .COMMA) {
-        next := parse_expression(script, 0);
-        if next == null  return null, 0, false;
+    if !expect_token_type(*lexer, expected_end_token) {
+        first = parse_expression(script, 0);
+        if first == null  return null, 0, false;
+        count = 1;
         
-        prev.next = next;
-        prev = next;
-        count += 1;
-    }
-    
-    if do_consume_expected_end_token {
+        prev := first;
+        while expect_token_type(*lexer, .COMMA) {
+            next := parse_expression(script, 0);
+            if next == null  return null, 0, false;
+            
+            prev.next = next;
+            prev = next;
+            count += 1;
+        }
+        
         if !expect_token_type(*lexer, expected_end_token) {
             log("Error, expected a % token at the end of comma separated expressions!\n", expected_end_token);
             return null, 0, false;
         }
     }
-
+    
     return first, count, true;
 }
 

@@ -76,6 +76,7 @@ Token_Type :: enum {
     IF;
     WHILE;
     FOR;
+    FOREACH;
 }
 
 
@@ -207,9 +208,10 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         if was_parsed {
             // replace type if identifier is a reserved word
             if ident.text == {
-              case "if";    ident.type = .IF;
-              case "for";   ident.type = .FOR;
-              case "while"; ident.type = .WHILE;
+              case "if";        ident.type = .IF;
+              case "for";       ident.type = .FOR;
+              case "foreach";   ident.type = .FOREACH;
+              case "while";     ident.type = .WHILE;
             }
             ident.whitespace_before = whitespace;
             return ident;
