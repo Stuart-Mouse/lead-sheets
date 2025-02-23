@@ -74,7 +74,7 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
         assert(arguments.count == 2, "arguments.count was %", arguments.count);
     }
     
-    overloads := get_procedure_overloads(script, name);
+    overloads := get_procedure_overloads(script, name,, temp);
     if !overloads {
         print("Unable to resolve procedure '%'\n", name);
         print("No procedure found with the given identifier.\n");

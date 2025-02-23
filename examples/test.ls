@@ -100,12 +100,10 @@ scale(v2, 3);
 echo(v2);
 
 // comma separated lists for iteration 
+// this is sort of a cope for not having array literals
 {
    a := 5;
    b := 96;
    c := -8;
-   foreach (a, b, c) {
-      echo(it);
-   }
+   foreach (a, b, c)  echo(it);
 }
-
