@@ -814,7 +814,10 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
-    if try_implicit_dereference(node, type)  return true, null;  
+    if try_implicit_reference(node, type) {
+        dprint("took implicit reference to node with value_type '%'\n", as_type(node.value_type));
+        return true, null;  
+    }
     
     if node.node_type == Node_Literal {
         return coerce_literal_type(xx node, type), null;
@@ -847,7 +850,7 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
     return ifx _cast.flags & .IMPLICIT then _cast.implicit_type else _cast.type_identifier.type_info_pointer;
 }
 
-can_do_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
+can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     ti_ptr := type.(*Type_Info_Pointer);
     if ti_ptr.type != .POINTER || ti_ptr.pointer_to != node.value_type  return false;
     
@@ -857,8 +860,8 @@ can_do_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
 
 
 // just flags the node as an lvalue if successful
-try_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
-    if !can_do_implicit_dereference(node, type)  return false;
+try_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
+    if !can_do_implicit_reference(node, type)  return false;
     // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
     node.flags |= .IS_LVALUE;
     return true;

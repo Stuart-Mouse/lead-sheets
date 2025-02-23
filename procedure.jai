@@ -114,7 +114,7 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
                     if expected_type.type == .STRUCT  continue;
                 } else {
                     if get_implicit_cast_distance(argument, expected_type) >= 0  continue;
-                    if can_do_implicit_dereference(argument, expected_type)  continue;
+                    if can_do_implicit_reference(argument, expected_type)  continue;
                 }
                 
                 // else argument absolutely does not match expected type

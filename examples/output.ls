@@ -45,3 +45,6 @@ echo(f32(5));
     a = b;
     echo(a);
 }
+v2 := Vector2.{ 1, 2 };
+scale(v2, 3);
+echo(v2);

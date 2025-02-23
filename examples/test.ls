@@ -92,3 +92,9 @@ echo(f32(5)); // stupid and confusing example
    a = b;
    echo(a);
 }
+
+// test of implicit reference semantics for procedure arguments
+// v2 is taken by reference in call to 'scale'
+v2 := Vector2.{ 1, 2 };
+scale(v2, 3);
+echo(v2);

@@ -38,6 +38,7 @@ main :: () {
     register_procedure(*script, "print", (value: string) -> string { print("%\n", value); return value; });
     register_procedure(*script, "f32", (value: int) -> float { return xx value; });
     register_procedure(*script, "*", #procedure_of_call operator*(Vector3.{}, 1.0));
+    register_procedure(*script, "scale", (vec: *Vector2, scale: float) { vec.* *= scale; });
     
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;
