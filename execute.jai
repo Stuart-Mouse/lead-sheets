@@ -246,7 +246,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 arg_ptr += size_of(*void);
             }
             
-            dcArgPointer(script.dyncall_vm, return_ptr);
+            if return_type != type_info(void) {
+                dcArgPointer(script.dyncall_vm, return_ptr);
+            }
             dcCallVoid(script.dyncall_vm, xx proc_ptr);
         }
         

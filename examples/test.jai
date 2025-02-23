@@ -144,15 +144,28 @@ main :: () {
     
     
     print("\nEVAL TEST\n");
-    // TODO: we need to set up a whole array of expressions and their expected output so that we have a sort of test suite for evaluation
-    
-    _, ok = evaluate_expression(*script, "x = 3");
-    
-    value:, ok = evaluate_expression(*script, "x + 5");
-    if !ok  return;
-    
-    print("value: %\n", value);
-    
+    {
+        expressions_to_test := struct { expr: string; result: Any; }.[
+            .{ "x = 3", Any.{} },
+            .{ "x + 5", 8.0 },
+            .{ "Vector2.{ 1, 2 } * 3", Vector2.{ 1, 2 } * 3 },
+            .{ "(1 + 2) * pow(2, sin(3.14159/2) + 2)", (1 + 2) * pow(2, sin(3.14159/2) + 2) }
+        ];
+        
+        for expressions_to_test {
+            log("Evaluating expression: '%'", it.expr);
+            value, ok := evaluate_expression(*script, it.expr);
+            if !ok {
+                log("\tFailed to evaluate expression.");
+                continue;
+            };
+            if !compare_any(value, it.result) {
+                log("\tValue did not match expected result!");
+            }
+            log("\tvalue:    (%) %", as_type(value.type), value);
+            log("\texpected: (%) %", as_type(it.result.type), it.result);
+        }
+    }
     
     
     print("\nTEST NAMED BLOCKS\n");
@@ -161,3 +174,11 @@ main :: () {
     if !ok  log("failed to execute %", "test_block");
 }
 
+compare_any :: (a: Any, b: Any) -> bool {
+    if a.type != b.type  return false;
+    return a.type == null || !memcmp(a.value_pointer, b.value_pointer, a.type.runtime_size);
+}
+
+as_type :: inline (ti: *Type_Info) -> Type {
+    return (*ti).(*Type).*;
+}
