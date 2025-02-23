@@ -205,16 +205,8 @@ typecheck_node :: (
             }
         }
         
-        // try to resolve identifier as an external variable here
-        {
-            variable_index := resolve_variable(script, identifier.name);
-            if variable_index != -1 {
-                identifier.identifier_type  = .EXTERNAL_VARIABLE;
-                identifier.variable_index = variable_index;
-                identifier.value_type     = variables[variable_index].binding.type;
-                return identifier.value_type;
-            }
-        }
+        // TODO: maybe we should add some checks to make sure that all externally inserted identifiers don't conflict across categories
+        //       for example, we should not have a type identifier which conflicts with an external variable or procedure
         
         // try to resolve identifier as a type here
         {
@@ -225,6 +217,17 @@ typecheck_node :: (
                     identifier.value_type = type_info(Type);
                     return identifier.value_type;
                 }
+            }
+        }
+        
+        // try to resolve identifier as an external variable here
+        {
+            variable_index := resolve_variable(script, identifier.name);
+            if variable_index != -1 {
+                identifier.identifier_type  = .EXTERNAL_VARIABLE;
+                identifier.variable_index = variable_index;
+                identifier.value_type     = variables[variable_index].binding.type;
+                return identifier.value_type;
             }
         }
         

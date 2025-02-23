@@ -158,14 +158,37 @@ parse_statement :: (using script: *Script) -> *Node {
     if left == null  return null;
     
     if expect_token_type(*lexer, .COLON) {
-        dprint("DECLARATION\n"); dprint_push_indent();
-    
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/source_location to a declaration node 
         if left.node_type != Node_Identifier {
             log("Error: left hand side of a declaration must be an identifier.");
             return null;
         }
+        
+        // colon followed by open brace is a named block, not a standard declaration
+        // maybe we should make a named block a type of declaration so that we can resolve it by identifier in the standard way? idk yet...
+        // also, for now we will require that all named blocks are top-level, since we will actually just push these blocks into a special array
+        if peek_token(*lexer).type == .OPEN_BRACE {
+            dprint("NAMED BLOCK (%)\n", left.(*Node_Identifier).name); dprint_push_indent();
+            if script.current_parent_node != script.ast_root {
+                log("Error: named blocks can only be declared at the top-level scope.");
+                return null;
+            }
+            
+            block := parse_statement(script).(*Node_Block);
+            if block == null  return null;
+            if block.node_type != Node_Block {
+                log("Error: expected a Node_Block, got a %.", block.node_type);
+                return null;
+            }
+            block.name = left.(*Node_Identifier).name;
+            
+            array_add(*script.named_blocks, block);
+            return block;
+        }
+        
+        
+        dprint("DECLARATION\n"); dprint_push_indent();
         
         declaration := alloc_node(script, Node_Declaration);
         declaration.name = left.(*Node_Identifier).name;

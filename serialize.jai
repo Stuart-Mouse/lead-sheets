@@ -15,11 +15,12 @@
 */
 
 
-// SPACES_STRING :: "                " // 16 characters long
+SPACES_STRING :: "                "; // 16 characters long
 INDENT_SIZE :: 4;
 
 append_spaces :: (builder: *String_Builder, spaces: int) {
-    for 1..spaces append(builder, " ");
+    for 1..spaces/SPACES_STRING.count append(builder, SPACES_STRING);
+    append(builder, slice(SPACES_STRING, 0, spaces%SPACES_STRING.count));
 }
 
 print_script :: (
@@ -278,6 +279,9 @@ print_node :: (
         
       case Node_Block;
         block := node.(*Node_Block);
+        if block.name {
+            print_to_builder(builder, "%: ", block.name);
+        }
         append(builder, "{\n");
         indent += INDENT_SIZE;
         for block.statements {

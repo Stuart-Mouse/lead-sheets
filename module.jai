@@ -36,6 +36,7 @@ Script :: struct {
     variables:              [..] External_Variable;
     procedures:             [..] External_Procedure;
     directives:             [..] Directive;
+    named_blocks:           [..] *Node_Block;
     type_table:             [..] struct { name: string; type: *Type_Info; };
     
     pool:                   Flat_Pool;
@@ -59,6 +60,8 @@ Script :: struct {
         TYPECHECKED;
     }
 }
+
+
 
 free_script :: (using script: *Script) {
     array_free(variables);
@@ -109,6 +112,13 @@ register_type :: (script: *Script, name: string, type: *Type_Info) {
         }
     }
     array_add(*script.type_table, .{ name, type });
+}
+
+get_named_block :: (script: *Script, name: string) -> *Node_Block {
+    for script.named_blocks
+        if it.name == name
+            return it;
+    return null;
 }
 
 

@@ -46,8 +46,11 @@ execute_script :: (script: *Script) -> bool {
         type-specific rules about additional indirections automatically.
     When moving to bytecode though, we should be just use stack_push and stack_pop, 
         which are probably slightly faster and don't require passing type info.
+        
+    The explicit_call param is now required for signalling that we are indeed wanting to run a named block.
+    Maybe this is sort of a back hack though...
 */
-execute_node :: (script: *Script, node: *Node) -> bool {
+execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     dprint("executing node %: %\n", node, node.node_type);
     dprint_push_indent();
     
@@ -358,6 +361,8 @@ execute_node :: (script: *Script, node: *Node) -> bool {
         
       case Node_Block;
         block := node.(*Node_Block);
+        if block.name && !explicit_call  return true; // we don't execute named blocks unless explicitly called
+        
         for block.statements {
             dprint("executing statement #%\n", it_index);
             if !execute_node(script, it)  return false;

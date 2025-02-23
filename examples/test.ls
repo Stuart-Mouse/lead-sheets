@@ -107,3 +107,10 @@ echo(v2);
    c := -8;
    foreach (a, b, c)  echo(it);
 }
+
+
+// named blocks
+test_block: {
+   print("Running test block.");
+}
+

@@ -22,7 +22,8 @@ evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
 evaluate_node :: (
     script:         *Script, 
     node:           *Node,
-    hint_storage:   *void    = null
+    hint_storage:   *void    = null,
+    explicit_call := false
 ) -> Any, bool {
     dprint("evaluating node %: %\n", node, node.node_type);
     dprint_push_indent();
@@ -257,6 +258,8 @@ evaluate_node :: (
         
       case Node_Block;
         block := node.(*Node_Block);
+        if block.name && !explicit_call  return null, true;
+        
         for block.statements {
             dprint("executing statement #%\n", it_index);
             _, ok := evaluate_node(script, it);

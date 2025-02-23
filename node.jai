@@ -16,11 +16,13 @@ Node :: struct {
         TYPECHECKED;
         IMPLICIT;
         PARENTHESIZED; // explicitly 
+        IS_RUNTIME_DIRECTIVE;
     };
 }
 
 Node_Block :: struct {
     using #as node_base:    Node;
+    name:                   string;
     statements:             *Node; 
 }
 
@@ -86,7 +88,7 @@ Node_Declaration :: struct {
     name:                   string;
     value_pointer:          *void;
     type_expression:        *Node_Identifier; // must resolve to a type declaration
-    init_expression:        *Node;    
+    init_expression:        *Node;
 }
 
 Node_Procedure_Call :: struct {

@@ -144,6 +144,7 @@ main :: () {
     
     
     print("\nEVAL TEST\n");
+    // TODO: we need to set up a whole array of expressions and their expected output so that we have a sort of test suite for evaluation
     
     _, ok = evaluate_expression(*script, "x = 3");
     
@@ -151,5 +152,12 @@ main :: () {
     if !ok  return;
     
     print("value: %\n", value);
+    
+    
+    
+    print("\nTEST NAMED BLOCKS\n");
+    block := get_named_block(*script, "test_block");
+    ok = execute_node(*script, block, explicit_call = true);
+    if !ok  log("failed to execute %", "test_block");
 }
 

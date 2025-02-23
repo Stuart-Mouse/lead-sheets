@@ -49,8 +49,11 @@ v2 := Vector2.{ 1, 2 };
 scale(v2, 3);
 echo(v2);
 {
-    a: int = 5;
-    b: int = 96;
-    c: int = -8;
+    a := 5;
+    b := 96;
+    c := -8;
     foreach (a, b, c)  echo(it);
+}
+test_block: {
+    print("Running test block.");
 }
