@@ -19,15 +19,15 @@ evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
     return value, true;
 }
 
-// evaluate_statement :: (script: *Script, expr: string) -> (Any, bool) {
-//     root := parse_statement(script, expr);
-//     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
+evaluate_statement :: (script: *Script, expr: string) -> (Any, bool) {
+    root := parse_statement(script, expr);
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
     
-//     value, ok := evaluate_node(script, root);
-//     if !ok  return Any.{}, false;
+    value, ok := evaluate_node(script, root);
+    if !ok  return Any.{}, false;
     
-//     return value, true;
-// }
+    return value, true;
+}
 
 evaluate_node :: (
     script:         *Script, 

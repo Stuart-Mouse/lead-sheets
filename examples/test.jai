@@ -154,7 +154,7 @@ main :: () {
         
         for expressions_to_test {
             log("Evaluating expression: '%'", it.expr);
-            value, ok := evaluate_expression(*script, it.expr);
+            value, ok := evaluate_statement(*script, it.expr);
             if !ok {
                 log("\tFailed to evaluate expression.");
                 continue;
