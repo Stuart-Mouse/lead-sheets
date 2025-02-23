@@ -42,7 +42,7 @@ typecheck_node :: (
             ok, message := is_valid_lvalue(node);
             if !ok {
                 log(message);
-                if node.node_type == .IDENTIFIER {
+                if node.node_type == Node_Identifier {
                     log("Identifier was '%'", node.(*Node_Identifier).name);
                 }
                 return null;
@@ -618,7 +618,7 @@ typecheck_node :: (
         for_loop.it_index_decl = .{
             name       = "it_index",
             value_type = type_info(int),
-        };        
+        };
         
         if #complete for_loop.control_type == {
           case .RANGE;
@@ -814,7 +814,7 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
-    if try_implicit_derefence(script, node, type)  return true, null;  
+    if try_implicit_dereference(node, type)  return true, null;  
     
     if node.node_type == Node_Literal {
         return coerce_literal_type(xx node, type), null;
@@ -848,8 +848,8 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
 }
 
 can_do_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
-    ti_ptr := expected_type.(*Type_Info_Pointer);
-    if ti_ptr.type != .POINTER || ti_ptr.pointer_to != argument_type  return false;
+    ti_ptr := type.(*Type_Info_Pointer);
+    if ti_ptr.type != .POINTER || ti_ptr.pointer_to != node.value_type  return false;
     
     // TODO: put more logic in here to allow implicit dereference one using #as members?
     return true;
@@ -858,7 +858,7 @@ can_do_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
 
 // just flags the node as an lvalue if successful
 try_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
-    if !can_do_implicit_derefence(node, type)  return false;
+    if !can_do_implicit_dereference(node, type)  return false;
     // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
     node.flags |= .IS_LVALUE;
     return true;
@@ -869,13 +869,14 @@ try_implicit_dereference :: (node: *Node, type: *Type_Info) -> bool {
 // maybe we could come up with some standard system for inserting info from a node so that we can return a format string here...
 is_valid_lvalue :: (node: *Node) -> bool, string {
     if node.node_type == {
-      case .Node_Literal;
+      case Node_Literal;
+        literal := node.(*Node_Literal);
         if (literal.flags & .IS_MALLEABLE) || literal.literal_type == .ANY {
             return true, "";
         }
         return false, "Error: a literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.";
         
-      case .Node_Identifier;
+      case Node_Identifier;
         identifier := node.(*Node_Identifier);
         if #complete identifier.identifier_type == {
           case .UNRESOLVED;         return false, "Error: an unresolved identifier cannot be used as an lvalue.";
@@ -892,25 +893,25 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
             return true, "";
         }
         
-      case .Node_Dot;
-        if left_type.type == {
+      case Node_Dot;
+        if node.(*Node_Dot).left.value_type.type == {
           case .STRUCT;     return true,  "";
           case .TYPE;       return false, "Error: an enum literal cannot be used as an lvalue.";
         }
         
-      case .Node_Subscript; return true,  "";
+      case Node_Subscript; return true,  "";
       
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
-      case .Node_Operation;         return false, "Error: using the result of an operation as an lvalue is not currently supported";
-      case .Node_Procedure_Call;    return false, "Error: using the result of a procedure call as an lvalue is not currently supported";
-      case .Node_Cast;              return false, "Error: using the result of a cast as an lvalue is not currently supported";
+      case Node_Operation;         return false, "Error: using the result of an operation as an lvalue is not currently supported";
+      case Node_Procedure_Call;    return false, "Error: using the result of a procedure call as an lvalue is not currently supported";
+      case Node_Cast;              return false, "Error: using the result of a cast as an lvalue is not currently supported";
       
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
-      case .Node_Declaration;       return false, "Error: a declaration cannot be used as an lvalue;";
-      case .Node_Block;             return false, "Error: a block cannot be used as an lvalue;";
-      case .Node_If_Statement;      return false, "Error: an if statement cannot be used as an lvalue;";
-      case .Node_While_Loop;        return false, "Error: a while loop cannot be used as an lvalue;";
-      case .Node_For_Loop;          return false, "Error: a for loop cannot be used as an lvalue;";
+      case Node_Declaration;       return false, "Error: a declaration cannot be used as an lvalue;";
+      case Node_Block;             return false, "Error: a block cannot be used as an lvalue;";
+      case Node_If_Statement;      return false, "Error: an if statement cannot be used as an lvalue;";
+      case Node_While_Loop;        return false, "Error: a while loop cannot be used as an lvalue;";
+      case Node_For_Loop;          return false, "Error: a for loop cannot be used as an lvalue;";
     }
     
     assert(false, "Invalid node type '%' in is_valid_lvalue.", node.node_type);
