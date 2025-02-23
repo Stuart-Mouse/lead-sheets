@@ -21,8 +21,8 @@ local_str := "this is yet another string";
 print(local_str);
 str = local_str;
 #declare("named_1");
-echo(named_1);
 named_1 = 7;
+echo(named_1);
 vec3 := Vector3.{ 1, 2, 3 } * 7;
 echo(vec3);
 const :: 7?;
@@ -48,3 +48,11 @@ echo(f32(5));
 v2 := Vector2.{ 1, 2 };
 scale(v2, 3);
 echo(v2);
+{
+    a := 5;
+    b := 96;
+    c := -8;
+    for   {
+        echo(it);    
+}
+}

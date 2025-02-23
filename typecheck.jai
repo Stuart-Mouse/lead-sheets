@@ -651,6 +651,21 @@ typecheck_node :: (
                 name       = "it",
                 value_type = ti_array.element_type,
             };
+            
+          case .LIST;
+            first_type := typecheck_node(script, for_loop.list, check_flags = .EXPECT_LVALUE);
+            if first_type == null  return null;
+            for for_loop.list.next {
+                type := typecheck_node(script, it, check_flags = .EXPECT_LVALUE);
+                if type != first_type {
+                    log("Error: all expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it_index + 2, as_type(type));
+                    return null;
+                }
+            }
+            for_loop.it_decl = .{
+                name       = "it",
+                value_type = first_type,
+            };
         }
         
         

@@ -210,10 +210,11 @@ Node_While_Loop :: struct {
 
 Node_For_Loop :: struct {
     using #as node_base: Node;
-    control_type: enum { RANGE; ARRAY; };
+    control_type: enum { RANGE; ARRAY; LIST; };
     union {
-        array_expression:  *Node;
-        range:  struct { lower, upper: *Node; };
+        array_expression:   *Node;
+        range:              struct { lower, upper: *Node; };
+        list:               *Node;
     }
     statement:  *Node;
     

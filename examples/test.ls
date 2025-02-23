@@ -43,8 +43,8 @@ str = local_str;
 // #declare will call add_named_value in test.jai, which will add a new Named_Value to the array and add that value as a variable in the script.
 // This allows the script to use 'named_1' as a simple variable although its storage is managed externally.
 #declare("named_1");
-echo(named_1);
 named_1 = 7;
+echo(named_1);
 
 
 // struct literal and operator overload test
@@ -98,3 +98,14 @@ echo(f32(5)); // stupid and confusing example
 v2 := Vector2.{ 1, 2 };
 scale(v2, 3);
 echo(v2);
+
+// comma separated lists for iteration 
+{
+   a := 5;
+   b := 96;
+   c := -8;
+   for a, b, c {
+      echo(it);
+   }
+}
+

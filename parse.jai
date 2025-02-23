@@ -91,6 +91,13 @@ parse_statement :: (using script: *Script) -> *Node {
             for_loop.range.lower  = expr;
             for_loop.range.upper  = parse_expression(script, 0);
             if !for_loop.range.upper  return null;
+        } else if expect_token_type(*lexer, .COMMA) {
+            dprint("CONTROL TYPE IS LIST\n");
+            for_loop.control_type = .LIST;
+            for_loop.list = expr;
+            expressions, _, ok := parse_comma_separated_expressions(script, .OPEN_BRACE, do_consume_expected_end_token = false);
+            if !ok  return null; // expressions can be null, meaning the for loop will only iterate once. maybe that syntax will look weird, but I think this is the best compromise
+            expr.next = expressions;
         } else {
             dprint("CONTROL TYPE IS ARRAY\n");
             for_loop.control_type = .ARRAY;
@@ -406,31 +413,37 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 }
 
 // needs to also return bool since node can be null validly if there were no arguments
-parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type) -> (*Node, int, bool) {
+parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type, do_consume_expected_end_token := true) -> (*Node, int, bool) {
     first: *Node;
     count: int;
     
-    if !expect_token_type(*lexer, expected_end_token) {
-        first = parse_expression(script, 0);
-        if first == null  return null, 0, false;
-        count = 1;
-        
-        prev := first;
-        while expect_token_type(*lexer, .COMMA) {
-            next := parse_expression(script, 0);
-            if next == null  return null, 0, false;
-            
-            prev.next = next;
-            prev = next;
-            count += 1;
+    if do_consume_expected_end_token {
+        if expect_token_type(*lexer, expected_end_token) {
+            return first, count, true;
         }
+    }
+    
+    first = parse_expression(script, 0);
+    if first == null  return null, 0, false;
+    count = 1;
+    
+    prev := first;
+    while expect_token_type(*lexer, .COMMA) {
+        next := parse_expression(script, 0);
+        if next == null  return null, 0, false;
         
+        prev.next = next;
+        prev = next;
+        count += 1;
+    }
+    
+    if do_consume_expected_end_token {
         if !expect_token_type(*lexer, expected_end_token) {
             log("Error, expected a % token at the end of comma separated expressions!\n", expected_end_token);
             return null, 0, false;
         }
     }
-    
+
     return first, count, true;
 }
 

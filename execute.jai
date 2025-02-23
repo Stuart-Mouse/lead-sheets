@@ -435,7 +435,7 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                 }
                 
                 if !execute_node(script, for_loop.statement) {
-                    dprint("failed to evaluate left side of assignment statement!\n");
+                    dprint("failed to evaluate for loop statement!\n");
                     return false;
                 }
             }
@@ -468,11 +468,24 @@ execute_node :: (script: *Script, node: *Node) -> bool {
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
                 if !execute_node(script, for_loop.statement) {
-                    dprint("failed to evaluate left side of assignment statement!\n");
+                    dprint("failed to evaluate for loop statement!\n");
                     return false;
                 }
             }
             return true;
+            
+          case .LIST;
+            _it_index: int;
+            for_loop.it_index_decl.value_pointer = *_it_index;
+            for for_loop.list {
+                _it_index = it_index;
+                if !execute_node(script, it)  return false;
+                for_loop.it_decl.value_pointer = stack_pop_any(script, for_loop.it_decl.value_type, true).value_pointer;
+                if !execute_node(script, for_loop.statement) {
+                    dprint("failed to evaluate for loop statement!\n");
+                    return false;
+                }
+            }
         }
         
         return false;
