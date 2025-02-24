@@ -228,28 +228,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return declaration;
     }
     
-    // check if expression can be used as a statement
     if expect_token_type(*lexer, .SEMICOLON) || !expect_semicolon {
-        // if left.node_type == {
-        //   case Node_Procedure_Call;
-        //     left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
-        //     return left;
-            
-        //   case Node_Operation;
-        //     operation := left.(*Node_Operation);
-        //     if operation.operator_type == .ASSIGNMENT {
-        //         return left;
-        //     }
-        //     log("Error: operator of type % cannot be used as a statement. Only assignment operators can be used in this way.", operation.operator_type);
-        //     return null;
-            
-        //   case Node_Directive;
-        //     return left;
-        // }
-        
-        // return null;
-        
-        left.flags |= .DISCARD_VALUE; // do not allocate space for result if its an aggregate type and do not push anythign to stack when executing
+        // do not allocate space for result if its an aggregate type and do not push anything to stack when executing
+        left.flags |= .DISCARD_VALUE; 
         return left;
     }
     
@@ -415,8 +396,7 @@ parse_leaf :: (using script: *Script) -> *Node {
 */
 
 
-// TODO: make a similar procedure that instead returns the value of the evaluated expression
-// will parse a single string as an expression, checking that we end on EOF token
+// will parse a single string as a statement, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
 parse_statement :: (script: *Script, statement: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
     // just in case, we will backup current lexer and just attach a temporary one to the script
@@ -435,7 +415,6 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
     return expression, script.lexer.ptr_after_last_token;
 }
 
-// TODO: make a similar procedure that instead returns the value of the evaluated expression
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
 parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
