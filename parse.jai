@@ -223,7 +223,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             if is_constant_declaration then declaration.flags |= .IS_CONSTANT;
         }
         
-        if !expect_token_type(*lexer, .SEMICOLON)  return null;
+        if expect_semicolon && !expect_token_type(*lexer, .SEMICOLON)  return null;
         
         return declaration;
     }
@@ -409,10 +409,10 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
     
     // we have to reinit lexer for every statement
     init_lexer(*script.lexer, statement);
-    expression := parse_statement(script, expect_semicolon = false);
+    node := parse_statement(script, expect_semicolon = false);
     
     if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
-    return expression, script.lexer.ptr_after_last_token;
+    return node, script.lexer.ptr_after_last_token;
 }
 
 // will parse a single string as an expression, checking that we end on EOF token

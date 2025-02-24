@@ -146,17 +146,17 @@ main :: () {
     print("\nEVAL TEST\n");
     {
         expressions_to_test := struct { expr: string; result: Any; }.[
-            .{ "x = 3", Any.{} },
-            .{ "x + 5", 8.0 },
+            .{ "v := 3", Any.{} },
+            .{ "v + 5", 8.0 },
             .{ "Vector2.{ 1, 2 } * 3", Vector2.{ 1, 2 } * 3 },
             .{ "(1 + 2) * pow(2, sin(3.14159/2) + 2)", (1 + 2) * pow(2, sin(3.14159/2) + 2) }
         ];
         
         for expressions_to_test {
-            log("Evaluating expression: '%'", it.expr);
-            value, ok := evaluate_statement(*script, it.expr);
+            log("Evaluating statement: '%'", it.expr);
+            value, ok := evaluate_statement(*script, it.expr, append_to_script_root = true);
             if !ok {
-                log("\tFailed to evaluate expression.");
+                log("\tFailed to evaluate statement.");
                 continue;
             };
             if !compare_any(value, it.result) {

@@ -11,6 +11,8 @@
 
 evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
     root := parse_expression(script, expr);
+    if root == null  return Any.{}, false;
+    
     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
     
     value, ok := evaluate_node(script, root);
@@ -19,12 +21,21 @@ evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
     return value, true;
 }
 
-evaluate_statement :: (script: *Script, expr: string) -> (Any, bool) {
+evaluate_statement :: (script: *Script, expr: string, append_to_script_root := false) -> (Any, bool) {
     root := parse_statement(script, expr);
+    if root == null  return Any.{}, false;
+    
     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
     
     value, ok := evaluate_node(script, root);
     if !ok  return Any.{}, false;
+    
+    // TODO: maybe we remove this. but using it rn for soem testing
+    if append_to_script_root {
+        last := script.ast_root.statements;
+        while last.next  last = last.next;
+        last.next = root;
+    }
     
     return value, true;
 }
