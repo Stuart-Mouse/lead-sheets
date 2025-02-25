@@ -33,8 +33,12 @@ evaluate_statement :: (script: *Script, expr: string, append_to_script_root := f
     // TODO: maybe we remove this. but using it rn for soem testing
     if append_to_script_root {
         last := script.ast_root.statements;
-        while last.next  last = last.next;
-        last.next = root;
+        if !last {
+            script.ast_root.statements = root;
+        } else {
+            while last.next  last = last.next;
+            last.next = root;
+        }
     }
     
     return value, true;

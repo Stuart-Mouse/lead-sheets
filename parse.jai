@@ -7,8 +7,10 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     
     init_lexer(*script.lexer, source);
     
-    script.ast_root = alloc_node(script, Node_Block);
-    script.current_parent_node = script.ast_root;
+    if script.ast_root == null {
+        script.ast_root = alloc_node(script, Node_Block);
+        script.current_parent_node = script.ast_root;
+    }
     
     script.ast_root.statements = parse_statement(script);
     if !script.ast_root.statements  return false;

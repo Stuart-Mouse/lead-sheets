@@ -7,18 +7,19 @@ Node :: struct {
     source_location:        Source_Location;
     
     Flags :: enum_flags { 
+        TYPECHECKED;
         IS_LVALUE;
         IS_MALLEABLE;
         IS_CONSTANT;
         OVERLOAD;
         DISCARD_VALUE;
         MUST_BE_STATEMENT_ROOT;
-        TYPECHECKED;
-        IMPLICIT;
-        PARENTHESIZED; // explicitly 
-        IS_RUNTIME_DIRECTIVE;
+        IMPLICIT;       // used for casts
+        PARENTHESIZED;  // explicitly 
+        // IS_RUNTIME_DIRECTIVE;
     };
 }
+
 
 Node_Block :: struct {
     using #as node_base:    Node;

@@ -89,6 +89,9 @@ init_script :: (script: *Script, stack_size := 1024) {
     dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
     dcReset(script.dyncall_vm);
     
+    script.ast_root = alloc_node(script, Node_Block);
+    script.current_parent_node = script.ast_root;
+    
     script.flags |= .INITIALIZED;
 }
 

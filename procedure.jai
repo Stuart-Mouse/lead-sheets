@@ -25,7 +25,7 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
 Directive :: struct {
     using #as proc: External_Procedure;
     data: *void;
-    flags:  enum_flags { IS_RUNTIME_DIRECTIVE; }
+    // flags:  enum_flags { IS_RUNTIME_DIRECTIVE; }
 }
 
 register_directive :: (script: *Script, name: string, procedure: Any, data: *void) {

@@ -297,6 +297,7 @@ typechecking on procedure arguments should look at the nodes themselves for the 
 
 
 
+        
 
 TODO: 
     better typechecking on procedure arguments
@@ -554,3 +555,33 @@ default procedure parameters
 
 
 
+
+TODO: need to slim down our base node a bit if possible
+parent (scope) can probably become implicit, being passed as param in parsing and typechecking procedures
+then we only need to store the parent block on any other nodes which introduce scope
+    which, we should probably factor out to a common node type like Code_Scope and simplify resolution of declarations
+    or maybe we just do that with a procedure?
+
+maybe we don't need source location on base node, especially if we hold on to source tokens and link back to those for the purposes of whitespace/comments preservation
+    those tokens will probably use a Source_Code_Range instead of location
+
+but, we do want to be able to attach a source code location to some jai code call site for nodes that are added to an AST programatically or from user input
+    and we will need a flag on node to signify that node was inserted outside the context of parsing a larger file
+
+also, storing next node is still somewhat questionable. It would be better if we had a real array of *Node, or maybe a real doubly-linked list structure for nodes
+main issue is that we want to be able to replace nodes more easily
+and the place wehere that is hard to do is in lists of nodes
+because when we are iterating over the list we can't easily get a **Node, which is what we need to replace
+
+step 1
+    remove parent *Node from bade Node, move to a Node_Scope?
+    fix up identifier resolution
+OR  don't remove parent
+    use proper doubly linked list for connecting nodes
+    make it easy to replace nodes
+    
+step 2
+    remove source location
+    lex all tokens into one big array
+    save tokens and refer back to them from nodes
+    
