@@ -52,7 +52,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if if_statement.condition == null  return null;
         
         dprint("STATEMENT\n"); dprint_push_indent();
-        if_statement.statement = parse_statement(script);
+        if_statement.statement = parse_statement(script, expect_semicolon);
         if if_statement.statement == null  return null;
         
         current_parent_node = if_statement.parent; 
@@ -69,7 +69,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if while_loop.condition == null  return null;
         
         dprint("STATEMENT\n");
-        while_loop.statement = parse_statement(script);
+        while_loop.statement = parse_statement(script, expect_semicolon);
         if while_loop.statement == null  return null;
         
         current_parent_node = while_loop.parent; 
@@ -101,7 +101,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         dprint("STATEMENT\n");
-        for_loop.statement = parse_statement(script);
+        for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
         current_parent_node = for_loop.parent; 
@@ -125,7 +125,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.list = expressions;
         
         dprint("STATEMENT\n");
-        for_loop.statement = parse_statement(script);
+        for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
         current_parent_node = for_loop.parent; 

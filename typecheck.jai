@@ -172,37 +172,16 @@ typecheck_node :: (
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
         
-        // try to resolve to internal declaration
-        {
-            parent_block := identifier.parent;
-            while parent_block {
-                if parent_block.node_type == {
-                  case Node_Block;
-                    declaration := find_declaration_in_block(xx parent_block, identifier.name);
-                    if declaration {
-                        // TODO: this is dumb, we should actually compare source location, and report both in error message.
-                        if declaration.(*void) > identifier.(*void) {
-                            log("Error: identifier % used before its declaration.", identifier.name);
-                            return null;
-                        }
-                        identifier.identifier_type = .DECLARATION;
-                        identifier.declaration = declaration;
-                        identifier.value_type = declaration.value_type;
-                        return identifier.value_type;
-                    }
-                    
-                  case Node_For_Loop;
-                    dprint("checking for iterator with identifier '%'\n", identifier.name);
-                    declaration := find_iterator_declaration(xx parent_block, identifier.name, check_flags & .EXPECT_LVALUE != 0);
-                    if declaration {
-                        identifier.identifier_type = .DECLARATION;
-                        identifier.declaration   = declaration;
-                        identifier.value_type    = declaration.value_type;
-                        return identifier.value_type;
-                    }
-                }
-                parent_block = parent_block.parent;
+        declaration := resolve_declaration_by_identifier(identifier.name, identifier.parent, check_flags & .EXPECT_LVALUE != 0);
+        if declaration {
+            if declaration.(*void) > identifier.(*void) {
+                log("Error: identifier % used before its declaration.", identifier.name);
+                return null;
             }
+            identifier.identifier_type = .DECLARATION;
+            identifier.declaration     = declaration;
+            identifier.value_type      = declaration.value_type;
+            return identifier.value_type;
         }
         
         // TODO: maybe we should add some checks to make sure that all externally inserted identifiers don't conflict across categories
@@ -546,6 +525,16 @@ typecheck_node :: (
         //       may have to change this if it creates issues, I suppose.
         declaration := node.(*Node_Declaration);
         
+        // TODO: I am dumb! we are not actually checking for redeclarations right now at all!
+        // since declarations don't use an identifier node for the identifier, we actually will want to factor out identifier resolution so that it just takes a string and not a node
+        
+        other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.parent);
+        if other_declaration {
+            log("Error: redeclaration of identifier '%'.", declaration.name);
+            return null;
+        }
+        
+        
         explicit_type: *Type_Info;
         if declaration.type_expression {
             assert(declaration.type_expression.node_type == Node_Identifier);
@@ -692,6 +681,24 @@ typecheck_script :: (script: *Script) -> bool {
     
     script.flags |= .TYPECHECKED;
     return true;
+}
+
+resolve_declaration_by_identifier :: (identifier: string, parent_block: *Node, need_lvalue := false) -> *Node_Declaration {
+    scope := parent_block;
+    while scope {
+        if scope.node_type == {
+          case Node_Block;
+            declaration := find_declaration_in_block(xx scope, identifier);
+            if declaration  return declaration;
+            
+          case Node_For_Loop;
+            // dprint("checking for iterator with identifier '%'\n", identifier);
+            declaration := find_iterator_declaration(xx scope, identifier, need_lvalue);
+            if declaration  return declaration;
+        }
+        scope = scope.parent;
+    }
+    return null;
 }
 
 identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {

@@ -1,9 +1,9 @@
 
 // TODO: optionally pass *Context to callback?
 InputTextDynamicCallbackUserData :: struct {
-    buf                   : *[..] u8;
-    ChainCallback         : ImGui.InputTextCallback;
-    ChainCallbackUserData : *void;
+    buf:                    *[..] u8;
+    ChainCallback:          ImGui.InputTextCallback;
+    ChainCallbackUserData:  *void;
 }
 
 InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCallbackData) -> s32 #c_call {
@@ -12,11 +12,12 @@ InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCall
         user_data := cast(*InputTextDynamicCallbackUserData) data.UserData;
         if data.EventFlag == .CallbackResize {
             new_len := cast(u32) data.BufTextLen;
-            new_cap := max(8, user_data.buf.allocated, next_power_of_2(new_len+1));
-            print("resizing buffer from % to %", user_data.buf.allocated, new_cap);
-            array_reserve(user_data.buf, new_cap);
+            if new_len+1 >= user_data.buf.allocated {
+                new_cap := max(8, user_data.buf.allocated, next_power_of_2(new_len+1));
+                array_reserve(user_data.buf, new_cap);
+                data.Buf = user_data.buf.data;
+            }
             user_data.buf.count = new_len;
-            data.Buf = user_data.buf.data;
             return 0;
         }
         if user_data.ChainCallback != null {
@@ -176,35 +177,32 @@ TreeNodeAny :: (
       case .STRUCT;
         if ImGui.TreeNodeEx(label, flags) {
             ti_struct := cast(*Type_Info_Struct) value.type;
+            last_member_offset := -1;
             for ti_struct.members {
                 if it.flags & .CONSTANT  continue;
+                if it.offset_in_bytes <= last_member_offset  continue;
+                last_member_offset = it.offset_in_bytes;
                 TreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
             }
             ImGui.TreePop();
+        } else {
+            ImGui.SameLine();
+            ImGui.Text("%", value);
         }
         
       case .ARRAY;
         if ImGui.TreeNodeEx(label, flags) {
             ti_array := cast(*Type_Info_Array) value.type;
-            
-            data       : *void = ---;
-            elem_count : int   = ---;
-                    
-            if ti_array.array_type == .FIXED {
-                data       = value.value_pointer;
-                elem_count = ti_array.array_count;
-            } else {
-                raw_array := cast(*Resizable_Array) value.value_pointer;
-                data       = raw_array.data;
-                elem_count = raw_array.count;
-            }
-            
+            count, data := get_array_count_and_data(value.value_pointer, xx value.type);
             member_any := Any.{ ti_array.element_type, data };
-            for 0..elem_count-1 {
+            for 0..count-1 {
                 TreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
             }
             ImGui.TreePop();
+        } else {
+            ImGui.SameLine();
+            ImGui.Text("%", value);
         }
         
       case .ENUM;
@@ -237,6 +235,101 @@ TreeNodeAny :: (
         ImGui.BulletText("%: \"%\"", label, value);
         return;
 
+    }
+}
+
+// NOTE: assumes we are already in a table 3 columns: Name, Value, Type
+TableTreeNodeAny :: (
+    label: *u8,
+    value: Any,
+    flags: ImGui.TreeNodeFlags = .None
+) {
+    name_column :: inline (label: *u8, flags: ImGui.TreeNodeFlags) {  
+        ImGui.TreeNodeEx(label, flags);
+    }
+    type_column :: inline (value: Any) {  
+        ImGui.TableNextColumn();
+        ImGui.Text("%", (*value.type).(*Type).*);
+    }
+    
+    ImGui.TableNextRow(); ImGui.TableNextColumn();
+    if value.type.type == {
+      case .STRUCT;
+        is_open := ImGui.TreeNodeEx(label, flags | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        if !is_open  ImGui.Text("%", value);
+        type_column(value);
+        if is_open {
+            ti_struct := value.type.(*Type_Info_Struct);
+            last_member_offset := -1;
+            for ti_struct.members {
+                if it.flags & .CONSTANT  continue;
+                if it.offset_in_bytes <= last_member_offset  continue;
+                last_member_offset = it.offset_in_bytes;
+                TableTreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
+            }
+            ImGui.TreePop();
+        }
+        
+      case .ARRAY;
+        is_open := ImGui.TreeNodeEx(label, flags | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        if !is_open  ImGui.Text("%", value);
+        type_column(value);
+        if is_open {
+            ti_array := value.type.(*Type_Info_Array);
+            count, data := get_array_count_and_data(value.value_pointer, xx value.type);
+            member_any := Any.{ ti_array.element_type, data };
+            for 0..count-1 {
+                TableTreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
+                member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
+            }
+            ImGui.TreePop();
+        }
+        
+      case .ENUM;
+        name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        imgui.SetNextItemWidth(-FLOAT32_MIN);
+        ComboEnumDynamic(label, value);
+        type_column(value);
+        
+      case .INTEGER;
+        name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        s32_value: s32;
+        dynamic_int_cast(s32_value, value);
+        imgui.SetNextItemWidth(-FLOAT32_MIN);
+        ImGui.InputInt(label, *s32_value);
+        dynamic_int_cast(value, s32_value);
+        type_column(value);
+        
+      case .FLOAT;
+        name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        f32_value: float32;
+        dynamic_float_cast(f32_value, value);
+        imgui.SetNextItemWidth(-FLOAT32_MIN);
+        ImGui.InputFloat(label, *f32_value);
+        dynamic_float_cast(value, f32_value);
+        type_column(value);
+        
+      case .BOOL;
+        name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        bool_value: bool;
+        dynamic_int_cast(bool_value, value);
+        if (ImGui.RadioButton(label, bool_value)) {
+            bool_value = !bool_value;
+        } 
+        dynamic_int_cast(value, bool_value);
+        type_column(value);
+        
+      case;
+        name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
+        ImGui.TableNextColumn();
+        ImGui.Text("%", value);
+        type_column(value);
     }
 }
 
@@ -341,33 +434,33 @@ dynamic_int_cast :: (dst: Any, src: Any, enforce_size: bool = false) -> bool {
         case .INTEGER;
         case .ENUM;
         case .BOOL;
-             
+        
         case; return false;
     }
     if dst.type.type == {
         case .INTEGER;
         case .ENUM;
         case .BOOL;
-             
+        
         case; return false;
     }
     
     s64_value: s64;
-  
+    
     if src.type.runtime_size == {
-        case  1; s64_value = xx (cast(*s8 )src.value_pointer).*;
-        case  2; s64_value = xx (cast(*s16)src.value_pointer).*;
-        case  4; s64_value = xx (cast(*s32)src.value_pointer).*;
-        case  8; s64_value = xx (cast(*s64)src.value_pointer).*;
+        case 1; s64_value = src.value_pointer.(*s8 ).*;
+        case 2; s64_value = src.value_pointer.(*s16).*;
+        case 4; s64_value = src.value_pointer.(*s32).*;
+        case 8; s64_value = src.value_pointer.(*s64).*;
     }
-  
+    
     if dst.type.runtime_size == {
-        case  1; (cast(*s8 )dst.value_pointer).* = xx s64_value;
-        case  2; (cast(*s16)dst.value_pointer).* = xx s64_value;
-        case  4; (cast(*s32)dst.value_pointer).* = xx s64_value;
-        case  8; (cast(*s64)dst.value_pointer).* = xx s64_value;
+        case 1; dst.value_pointer.(*s8 ).* = s64_value.(s8 );
+        case 2; dst.value_pointer.(*s16).* = s64_value.(s16);
+        case 4; dst.value_pointer.(*s32).* = s64_value.(s32);
+        case 8; dst.value_pointer.(*s64).* = s64_value.(s64);
     }
-  
+    
     return true;
 }
 
@@ -379,27 +472,26 @@ dynamic_float_cast :: (dst: Any, src: Any) -> bool {
     if src.type.type == {
         case .FLOAT;
             if src.type.runtime_size == {
-                // case 2; f64_value = xx (cast(*f16)src.value_pointer).*;
-                case 4; f64_value = xx (cast(*float32)src.value_pointer).*;
-                case 8; f64_value = xx (cast(*float64)src.value_pointer).*;
+                case 4; f64_value = src.value_pointer.(*float32).*.(float64);
+                case 8; f64_value = src.value_pointer.(*float64).*.(float64);
             }
         case .INTEGER;
             if src.type.runtime_size == {
-                case  1; f64_value = xx (cast(*s8  )src.value_pointer).*;
-                case  2; f64_value = xx (cast(*s16 )src.value_pointer).*;
-                case  4; f64_value = xx (cast(*s32 )src.value_pointer).*;
-                case  8; f64_value = xx (cast(*s64 )src.value_pointer).*;
-                // case 16; f64_value = xx (cast(*s128)src.value_pointer).*;
+                case 1; f64_value = src.value_pointer.(*s8 ).*.(float64);
+                case 2; f64_value = src.value_pointer.(*s16).*.(float64);
+                case 4; f64_value = src.value_pointer.(*s32).*.(float64);
+                case 8; f64_value = src.value_pointer.(*s64).*.(float64);
             }
         case;
             return false;
     }
     
     if dst.type.runtime_size == {
-        // case 2; (cast(*f16)dst.data).* = xx f64_value;
-        case 4; (cast(*float32)dst.value_pointer).* = xx f64_value;
-        case 8; (cast(*float64)dst.value_pointer).* = xx f64_value;
+        case 4; dst.value_pointer.(*float32).* = f64_value.(float32);
+        case 8; dst.value_pointer.(*float64).* = f64_value.(float64);
     }
     
     return true;
 }
+
+#import "Reflection";

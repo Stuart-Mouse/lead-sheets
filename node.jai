@@ -69,10 +69,12 @@ Node_Cast :: struct {
         But I don't really care to do malleable enum literals at this time so I'm not gonna pursue this quite yet.
         
 */
+Identifier_Type :: enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+
 Node_Identifier :: struct {
     using #as node_base:    Node;
     name:                   string;
-    identifier_type:        enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+    identifier_type:        Identifier_Type;
     union {
         variable_index:     int; // external variable
         procedure_index:    int; // external procedure
