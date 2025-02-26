@@ -20,7 +20,6 @@ main :: () {
     register_common_types(*script);
     register_type(*script, "Vector2", type_info(Vector2));
     register_type(*script, "Vector3", type_info(Vector3));
-    register_type(*script, "Vector3", type_info(Vector3));
     register_type(*script, "Fruits",  type_info(Fruits));
     
     echo :: (value: $T) -> T { print("%\n", value); return value; };

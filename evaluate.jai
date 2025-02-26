@@ -150,7 +150,7 @@ evaluate_node :: (
         if operation.name == "=" {
             assert(operation.left.flags & .IS_LVALUE != 0);
             memcpy(left_any.value_pointer, right_any.value_pointer, right_any.type.runtime_size);
-            return Any.{}, true;
+            return left_any, true;
         }
         
         ret := make_return_value();
@@ -265,6 +265,7 @@ evaluate_node :: (
         // }
         
         // TODO: we need to check that the identifier does not refer to a previously declared variable
+        l_value: Any;
         if declaration.init_expression {
             r_value, ok := evaluate_node(script, declaration.init_expression);
             if !ok {
@@ -272,7 +273,7 @@ evaluate_node :: (
                 return Any.{}, false;
             }
             
-            l_value := Any.{ declaration.value_type, declaration.value_pointer };
+            l_value = Any.{ declaration.value_type, declaration.value_pointer };
             
             dprint("l_value.value_pointer: %\n", l_value.value_pointer);
             dprint("r_value.value_pointer: %\n", r_value.value_pointer);
@@ -282,10 +283,10 @@ evaluate_node :: (
             
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
-            l_value := Any.{ declaration.value_type, declaration.value_pointer };
+            l_value = Any.{ declaration.value_type, declaration.value_pointer };
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
-        return Any.{}, true;
+        return l_value, true;
         
         
       case Node_Block;
@@ -425,6 +426,7 @@ evaluate_node :: (
                     return Any.{}, false;
                 }
             }
+            return Any.{}, true;
         }
         
         return Any.{}, false;

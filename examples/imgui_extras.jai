@@ -10,9 +10,10 @@ InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCall
     new_context: #Context;
     push_context new_context {
         user_data := cast(*InputTextDynamicCallbackUserData) data.UserData;
-        if data.EventFlag & .CallbackResize {
+        if data.EventFlag == .CallbackResize {
             new_len := cast(u32) data.BufTextLen;
-            new_cap := max(8, user_data.buf.allocated, next_power_of_2(new_len));
+            new_cap := max(8, user_data.buf.allocated, next_power_of_2(new_len+1));
+            print("resizing buffer from % to %", user_data.buf.allocated, new_cap);
             array_reserve(user_data.buf, new_cap);
             user_data.buf.count = new_len;
             data.Buf = user_data.buf.data;
@@ -27,22 +28,22 @@ InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCall
 }
 
 InputTextDynamic :: (
-    label     : *u8, 
-    buf       : *[..] u8, 
-    flags     : ImGui.InputTextFlags    = xx 0, 
-    callback  : ImGui.InputTextCallback = null, 
-    user_data : *void                   = null
+    label:      *u8, 
+    buf:        *[..] u8, 
+    flags:      ImGui.InputTextFlags    = .None, 
+    callback:   ImGui.InputTextCallback = null, 
+    user_data:  *void                   = null
 ) -> bool {
-    if !buf.data {
+    if !buf.data || !buf.count {
         array_reserve(buf, 8);
         buf.data[0] = 0;
     }
-    cb_user_data : InputTextDynamicCallbackUserData = .{
+    cb_user_data: InputTextDynamicCallbackUserData = .{
         buf                   = buf,
         ChainCallback         = callback,
         ChainCallbackUserData = user_data,
     };
-    return ImGui.InputText(label, buf.data, cast(u64) buf.allocated, flags | .CallbackResize, InputTextDynamicCallback, *cb_user_data);
+    return ImGui.InputText(label, buf.data, buf.allocated.(u64), flags | .CallbackResize, InputTextDynamicCallback, *cb_user_data);
 }
 
 // InputTextWithHintDynamic :: (
@@ -142,12 +143,7 @@ ComboEnumDynamic :: (
     ti_enum := cast(*Type_Info_Enum) value.type;
     
     s64_value: s64;
-    if ti_enum.runtime_size == {
-        case 1; s64_value = xx,no_check (cast(*u8 )(value.value_pointer)).*;
-        case 2; s64_value = xx,no_check (cast(*u16)(value.value_pointer)).*;
-        case 4; s64_value = xx,no_check (cast(*u32)(value.value_pointer)).*;
-        case 8; s64_value = xx,no_check (cast(*u64)(value.value_pointer)).*;
-    }
+    dynamic_int_cast(s64_value, value);
     
     found, current_value_index := array_find(ti_enum.values, s64_value);
     if !found then current_value_index = 0;
@@ -167,19 +163,14 @@ ComboEnumDynamic :: (
         ImGui.EndCombo();
     }
     
-    if ti_enum.runtime_size == {
-        case 1; s64_value = xx,no_check (cast(*u8 )(value.value_pointer)).*;
-        case 2; s64_value = xx,no_check (cast(*u16)(value.value_pointer)).*;
-        case 4; s64_value = xx,no_check (cast(*u32)(value.value_pointer)).*;
-        case 8; s64_value = xx,no_check (cast(*u64)(value.value_pointer)).*;
-    }
+    dynamic_int_cast(value, s64_value);
 }
 
 
 TreeNodeAny :: (
-    label : *u8,
-    value : Any,
-    flags : ImGui.TreeNodeFlags = .None
+    label: *u8,
+    value: Any,
+    flags: ImGui.TreeNodeFlags = .None
 ) {
     if value.type.type == {
       case .STRUCT;
@@ -228,9 +219,9 @@ TreeNodeAny :: (
         
       case .FLOAT;
         f32_value: float32;
-        dynamic_int_cast(f32_value, value);
+        dynamic_float_cast(f32_value, value);
         ImGui.InputFloat(label, *f32_value);
-        dynamic_int_cast(value, f32_value);
+        dynamic_float_cast(value, f32_value);
         return;
         
       case .BOOL;
@@ -364,19 +355,17 @@ dynamic_int_cast :: (dst: Any, src: Any, enforce_size: bool = false) -> bool {
     s64_value: s64;
   
     if src.type.runtime_size == {
-        case  1; s64_value = xx (cast(*s8  )src.value_pointer).*;
-        case  2; s64_value = xx (cast(*s16 )src.value_pointer).*;
-        case  4; s64_value = xx (cast(*s32 )src.value_pointer).*;
-        case  8; s64_value = xx (cast(*s64 )src.value_pointer).*;
-        // case 16; s64_value = xx (cast(*i128)src.data).*;
+        case  1; s64_value = xx (cast(*s8 )src.value_pointer).*;
+        case  2; s64_value = xx (cast(*s16)src.value_pointer).*;
+        case  4; s64_value = xx (cast(*s32)src.value_pointer).*;
+        case  8; s64_value = xx (cast(*s64)src.value_pointer).*;
     }
   
     if dst.type.runtime_size == {
-        case  1; (cast(*s8  )dst.value_pointer).* = xx s64_value;
-        case  2; (cast(*s16 )dst.value_pointer).* = xx s64_value;
-        case  4; (cast(*s32 )dst.value_pointer).* = xx s64_value;
-        case  8; (cast(*s64 )dst.value_pointer).* = xx s64_value;
-        // case 16; (cast(*i128)dst.data).* = xx s64_value;
+        case  1; (cast(*s8 )dst.value_pointer).* = xx s64_value;
+        case  2; (cast(*s16)dst.value_pointer).* = xx s64_value;
+        case  4; (cast(*s32)dst.value_pointer).* = xx s64_value;
+        case  8; (cast(*s64)dst.value_pointer).* = xx s64_value;
     }
   
     return true;

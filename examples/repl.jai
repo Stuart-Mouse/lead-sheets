@@ -9,14 +9,19 @@ script: LS.Script;
 
 input_buffer: [..] u8;
 
-// prev_commands:          [..] struct { statement: string, result: string };
-prev_commands:          [..] string;
+// IMPORTANT NOTE: right now this also serves as the owner for 'source strings' that are referenced by the script!
+prev_commands:          [..] struct { statement: string; result: string; }; 
 prev_commands_index:    int;
 
+enable_modifying_declarations := false; // badly named. not modifying the decl, just its current value
+
 main :: () {
+    UA :: #import "Unmapping_Allocator";
+    context.allocator = UA.get_unmapping_allocator();
+    
     SDL_Init(SDL_INIT_VIDEO);
 
-    window := SDL_CreateWindow("imgui SDL2+OpenGL example", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
+    window := SDL_CreateWindow("Lead Sheets ImGui Example", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
 
     // Check that the window was successfully created
     if window == null {
@@ -53,12 +58,33 @@ main :: () {
     show_demo_window := true;
     show_another_window := false;
     clear_color := Vector4.{0.45, 0.55, 0.60, 1.00};
-
-    f: float = 0.0;
-
+    
+    array_reserve(*input_buffer, 8);
+    
     LS.init_script(*script);
     defer LS.free_script(*script);
+    
+    LS.register_common_types(*script);
+    LS.register_type(*script, "Vector2", type_info(Vector2));
+    
+    LS.register_procedure(*script, "pow", pow);
+    LS.register_procedure(*script, "sin", sin);
+    LS.register_procedure(*script, "cos", cos);
+    
+    echo :: (value: $T) -> T { print("%\n", value); return value; };
+    LS.register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
+    LS.register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
+    LS.register_procedure(*script, "echo", #procedure_of_call echo(Vector2.{}));
+    
+    LS.register_procedure(*script, "length", #procedure_of_call length(Vector2.{}));
+    LS.register_procedure(*script, "scale", (vec: *Vector2, scale: float) { vec.* *= scale; });
+    LS.register_procedure(*script, "print", (value: string) { print("%\n", value); });
 
+    a := 3;
+    b := 5;
+    LS.set_variable(*script, "a", a);
+    LS.set_variable(*script, "b", b);
+    
     // Main loop
     done := false;
     while !done {
@@ -81,6 +107,8 @@ main :: () {
         wvp := imgui.GetWindowViewport();
         imgui.DockSpaceOverViewport(wvp, .PassthruCentralNode);
         
+        imgui.ShowDemoWindow();
+        
         /* 
             TODO: 
             
@@ -90,26 +118,110 @@ main :: () {
             make input textbox size up to fit input?
             allow user to hit up to get previous executed statement
             probably reference the example console from imgui demo
-            
-            figure out why dockspace is not happening
         */
         
-        imgui.Begin("Lead Sheets Console", *show_another_window);
+        imgui.Begin("Console", *show_another_window);
         for prev_commands {
-            imgui.Text(it);
+            imgui.Text(it.statement);
+            imgui.TextColored(.{0.5, 0.5, 0.5, 1.0}, "-> %", it.result);
         }
-        InputTextDynamic("input statement or expression", *input_buffer);
-        if imgui.Button("execute") {
-            statement := to_string(input_buffer.data);
-            value, ok := LS.evaluate_statement(*script, statement, append_to_script_root = true);
-            if !ok {
-                log("\tFailed to evaluate statement.");
-            } else {
-                array_add(*prev_commands, sprint("% -> %", statement, value));
+        // do_execute := imgui.Button("execute");
+        // imgui.SameLine();
+        imgui.SetNextItemWidth(-FLOAT32_MIN);
+        do_execute := InputTextDynamic("input", *input_buffer, .EnterReturnsTrue);
+        if do_execute {
+            str := to_string(input_buffer.data);
+            if str {
+                // NOTE: string must be copied here because LS uses view onto source file...
+                //       we should probably have some flag that make LS copy the strings it needs from tokens into its pool!
+                str = copy_string(str);
+                value, ok := LS.evaluate_statement(*script, str, append_to_script_root = true);
+                if !ok {
+                    log("\tFailed to evaluate statement.");
+                } else {
+                    result: string;
+                    if value.value_pointer  result = sprint("%", value);
+                    array_add(*prev_commands, .{ str, result });
+                    array_reset_keeping_memory(*input_buffer);
+                }
             }
         }
         imgui.End();
-
+        
+        if imgui.Begin("Declarations") {
+            imgui.Checkbox("Modify", *enable_modifying_declarations);
+            
+            if enable_modifying_declarations {
+                // TODO: this is probably slow because we walk the entire ast to show the declarations instead of storing them in some array.
+                //       but not really worried about that at the moment since scripts are intended to be small anyhow.
+                walk_proc :: (script: *LS.Script, node: *LS.Node, data: *void) -> (bool, *LS.Node) {
+                    if node.node_type == LS.Node_Declaration {
+                        decl := node.(*LS.Node_Declaration);
+                        decl_value := Any.{ decl.value_type, decl.value_pointer };
+                        TreeNodeAny(temp_c_string(decl.name), decl_value);
+                    }
+                    return true, null;
+                }
+                LS.walk_nodes(*script, xx *script.ast_root, walk_proc, null);
+            } else {
+                table_flags := imgui.TableFlags.SizingFixedFit | .BordersV | .BordersOuterH | .RowBg;
+                if imgui.BeginTable("###Declarations", 3, .BordersV | .BordersOuterH | .RowBg) {
+                    imgui.TableSetupColumn("Name",  .NoHide);
+                    imgui.TableSetupColumn("Value", .NoHide);
+                    imgui.TableSetupColumn("Type",  .NoHide);
+                    // TODO: maybe flags to show if constant / malleable?
+                    imgui.TableHeadersRow();
+                    
+                    // TODO: this is probably slow because we walk the entire ast to show the declarations instead of storing them in some array.
+                    //       but not really worried about that at the moment since scripts are intended to be small anyhow.
+                    walk_proc :: (script: *LS.Script, node: *LS.Node, data: *void) -> (bool, *LS.Node) {
+                        if node.node_type == LS.Node_Declaration {
+                            decl := node.(*LS.Node_Declaration);
+                            decl_value := Any.{ decl.value_type, decl.value_pointer };
+                            
+                            imgui.TableNextRow(); imgui.TableNextColumn();
+                            imgui.Text(decl.name);
+                            if !decl.name  print("{% %} %", decl.name.data, decl.name.count, string.{ 1, decl.name.data });
+                            
+                            imgui.TableNextColumn();
+                            imgui.Text("%", decl_value);
+                            
+                            imgui.TableNextColumn();
+                            imgui.Text("%", (*node.value_type).(*Type).*);
+                        }
+                        return true, null;
+                    }
+                    LS.walk_nodes(*script, xx *script.ast_root, walk_proc, null);
+                    
+                    imgui.EndTable();
+                }
+            }
+        }
+        imgui.End();
+        
+        if imgui.Begin("External Variables") {
+            table_flags := imgui.TableFlags.SizingFixedFit | .BordersV | .BordersOuterH | .RowBg;
+            if imgui.BeginTable("###Variables", 3, .BordersV | .BordersOuterH | .RowBg) {
+                imgui.TableSetupColumn("Name",  .NoHide);
+                imgui.TableSetupColumn("Value", .NoHide);
+                imgui.TableSetupColumn("Type",  .NoHide);
+                imgui.TableHeadersRow();
+                
+                for script.variables {
+                    imgui.TableNextRow(); imgui.TableNextColumn();
+                    imgui.Text(it.name);
+                    
+                    imgui.TableNextColumn();
+                    imgui.Text("%", it.binding);
+                    
+                    imgui.TableNextColumn();
+                    imgui.Text("%", (*it.binding.type).(*Type).*);
+                }
+                imgui.EndTable();
+            }
+        }
+        imgui.End();
+        
         if imgui.GetMouseCursor() == {
             case .Arrow;         SDL_SetCursor(cursor_arrow);
             case .TextInput;     SDL_SetCursor(cursor_text_input);
