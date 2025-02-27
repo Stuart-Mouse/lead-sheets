@@ -187,31 +187,27 @@ typecheck_node :: (
         // TODO: maybe we should add some checks to make sure that all externally inserted identifiers don't conflict across categories
         //       for example, we should not have a type identifier which conflicts with an external variable or procedure
         
-        // try to resolve identifier as a type here
-        {
-            for script.type_table {
-                if it.name == identifier.name {
-                    identifier.identifier_type = .TYPE;
-                    identifier.type_info_pointer = it.type;
-                    identifier.value_type = type_info(Type);
-                    return identifier.value_type;
-                }
-            }
-        }
-        
-        // try to resolve identifier as an external variable here
-        {
-            variable_index := resolve_variable(script, identifier.name);
-            if variable_index != -1 {
-                identifier.identifier_type  = .EXTERNAL_VARIABLE;
-                identifier.variable_index = variable_index;
-                identifier.value_type     = variables[variable_index].binding.type;
+        for script.type_table {
+            if it.name == identifier.name {
+                identifier.identifier_type   = .TYPE;
+                identifier.type_info_pointer = it.type;
+                identifier.value_type        = type_info(Type);
                 return identifier.value_type;
             }
         }
         
-        // if the identifier is referring to an external procedure, that will have to be handled in PROCEDURE_CALL case, 
-        //     since we need the additional context for overlaod resolution.
+        for script.variables {
+            if it.name == identifier.name {
+                identifier.identifier_type = .EXTERNAL_VARIABLE;
+                identifier.variable_index  = variable_index;
+                identifier.value_type      = variables[variable_index].binding.type;
+                return identifier.value_type;
+            }
+        }
+        
+        // if the identifier is referring to an external procedure, 
+        //     then that will have to be handled in PROCEDURE_CALL case, 
+        //     since we need the additional context for overload resolution.
         if !(check_flags & .IS_PROCEDURE_EXPRESSION) {
             dprint("Error: Unable to resolve identifier '%'.\n", identifier.name);
         }

@@ -506,7 +506,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
 
 
 
-
+// TODO: reomve this probably, and only use evaluate for directives
 execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     procedure := script.directives[directive.directive_index];
     ti_proc   := procedure.type;

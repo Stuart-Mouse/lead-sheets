@@ -12,11 +12,10 @@ Node :: struct {
         IS_MALLEABLE;
         IS_CONSTANT;
         OVERLOAD;
+        IMPLICIT;               // used for casts
+        PARENTHESIZED;          // explicitly 
         DISCARD_VALUE;
         MUST_BE_STATEMENT_ROOT;
-        IMPLICIT;       // used for casts
-        PARENTHESIZED;  // explicitly 
-        // IS_RUNTIME_DIRECTIVE;
     };
 }
 
@@ -29,16 +28,6 @@ Node_Block :: struct {
 
 // TODO: before continuing with whitespace/comments issue, refactor node creation so that we are passing in source token wherever possible.
 //       then we can copy certain attributes from the token automatically, which will make it easier to try different methods of resolving whitespace issue, will improve debug abilities as well
-
-// TOOD: storing comments on AST will be tricky, since they may be be in the middle of statements, not just between statements
-//       also need to consider this with whitespace, where there may be newlines in between AST subexpressions
-//       in the short term I may just make a rule that all comments will get hoisted up a line or to end of line when they're in the middle of an expression/statement
-// maybe we could just hack it so that comments are considered as part of the whitespace before a node, and we just hold a string the the whitespace before each node and paste it back on serialize
-// Node_Comment :: struct {
-//     using #as node_base:    Node;
-//     comment:                string; 
-//     comment_type:           enum { LINE; BLOCK; }
-// }
 
 Node_Cast :: struct {
     using #as base:     Node;
@@ -56,6 +45,11 @@ Node_Cast :: struct {
         creating and maintaining declaration nodes for the external variables and procedures.
     The external variables in particular add complication because they can be subbed out, 
         so we need an additional indirection in accessing them from scripts.
+    We could still make it work this way by holding apointer to the corresponding declaration and then using that to update the declaration's value_pointer when the external variable is updated
+    BUT this means we NEED to have these declaration nodes in order to even use the external variables in expressions
+    and maybe we don't want that if we want the user to be able to purely use the script as a way of evaluating expressions whose nodes are just allocated in temp
+    and that use case would be completely broken, becuase we'd be absolutely forcing the use of the pool allocator...
+        but maybe we should just do that if it allows us to greatly simplify the identifier resolution code?
         
     TODO: identifiers as literals
         Enum values are currently sort of hacked in, and maybe it would be better 
@@ -67,6 +61,8 @@ Node_Cast :: struct {
         Another thing to consider is how having literal values be stored on identifier nodes
             will play with the question mark operator for malleable literals.
         But I don't really care to do malleable enum literals at this time so I'm not gonna pursue this quite yet.
+        if we could properly replace nodes, the ideal thing here would be to just replace the identifier for an enum value with a literal and flag the node as using a unary dot
+        
         
 */
 Identifier_Type :: enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
