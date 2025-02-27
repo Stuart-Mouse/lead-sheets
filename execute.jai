@@ -64,6 +64,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     if !node.flags & .TYPECHECKED {
         // TODO: file/line or content of node please?
         log("Error: cannot execute a node that has not been typechecked!");
+        log("\tNode type was %", node.node_type);
+        log("\tNode expression was %", sprint_node(script, node));
         return false;
     }
     
@@ -77,7 +79,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         literal := node.(*Node_Literal);
         if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         
-        if literal.literal_type == {
+        if #complete literal.literal_type == {
           case .ANY;
             if !stack_push_any(script, literal.any, literal.flags & .IS_LVALUE != 0)  return false;
             dprint("returning literal with value %\n", literal.any);
@@ -93,12 +95,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("returning literal with value %\n", to_any(literal.number));
             return true;
             
-          case .ENUM;
-            ret := Any.{ literal.value_type, *literal._enum.value };
-            if !stack_push_any(script, ret, literal.flags & .IS_LVALUE != 0)  return false;
-            dprint("returning literal with value %\n", ret);
-            return true;
-            
           case .STRUCT;
             if !stack_push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .IS_LVALUE != 0)  return false;
             write_ptr := literal.aggr.value_pointer;
@@ -112,9 +108,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 write_ptr += it.value_type.runtime_size;
             }
             return true;
-            
-          case .ARRAY;
-            log("Error: array literals not yet implemented.");
         }
         return false;
         
@@ -130,21 +123,24 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return true;
             
           case .EXTERNAL_VARIABLE;
-            variable := *script.variables[identifier.variable_index];
+            variable := *script.variables[identifier.index];
             dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
             if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_PROCEDURE;
-            procedure := *script.procedures[identifier.procedure_index];
+            procedure := *script.procedures[identifier.index];
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
             if !stack_push_any(script, procedure.ptr)  return false;
             return true;
             
-          case .ENUM_VALUE; // TODO: rename to literal value or something...
-            if !stack_push_any(script, Any.{ identifier.value_type, *identifier.enum_value })  return false;
-            return true;
+          case .LITERAL;
+            return execute_node(script, identifier.literal);
+            
+          case; 
+            log("Error: unhandled case in execute_node for identifier type: %", identifier.identifier_type);
+            return false;
         }
         return false;
 
@@ -284,7 +280,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;  
             struct_any := stack_pop_any(script, dot.left.value_type, true);
-            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
             dprint("struct value ptr: %\n", struct_any.value_pointer);
             dprint("member value ptr: %\n", member_any.value_pointer);

@@ -75,22 +75,62 @@ Node_Cast :: struct {
         the practical use case for this is something like being able to change the identifier of an external variable, e.g. a tilemap in the editor and have the be reflected in the script
         this is not like a must have but it would be nice and honestly it may be a good reason to spur on some refactoring of identifiers and declarations
         
+        
+    NOTES:
+        identifier.name is now only valid when unresolved
+        after the identifier is resolved, the name must be retrieved indirectly, depending on the resolved type
+        we would like to simplify this by removing resolved types
+            the easiest to remove my be the enum_value type, if we can just replace the identifier node with a literal 
+        
+        external variables, procedures, and types all now use the same index member in the union
+        
+        
+    TODO: NAMESPACE and LITERAL identifiers
+        node_dot 
+            typechecking 
+            execution 
+            serialization
+        node_identifier 
+            typechecking 
+            execution 
+            serialization
+    
+        whether some expression can be used as a namespace does not actually depend on th enode_type, but on the value_type
+        so I've removed the NAMESPACE identifier type 
+        but the 
+    
 */
-Identifier_Type :: enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
 
 Node_Identifier :: struct {
     using #as node_base:    Node;
-    name:                   string;
     identifier_type:        Identifier_Type;
     union {
-        variable_index:     int; // external variable
-        procedure_index:    int; // external procedure
-        declaration:        *Node_Declaration;
-        member_type:        *Type_Info_Struct_Member;
-        type_info_pointer:  *Type_Info;
-        // literal:            *void;
-        enum_value:         int;
+        name:           string;
+        index:          int;    // external variable, procedure, or type
+        declaration:    *Node_Declaration;
+        member:         *Type_Info_Struct_Member;
+        literal:        *Node_Literal;
     }
+}
+
+get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string {
+    if #complete identifier.identifier_type == {
+      case .UNRESOLVED;         return identifier.name;
+      case .TYPE;               return script.type_table[identifier.index].name;
+      case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
+      case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
+      case .STRUCT_MEMBER;      return identifier.member.name;
+      case .DECLARATION;        return identifier.declaration.name;
+      case .LITERAL;            
+        // ahh fuck. I can't figure how we would implement this for struct members yet but I'm gonn apress on anyhow and only do the enum case
+        if identifier.literal.value_type.type == .ENUM {
+            return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.value_pointer.(s64));   // @HACK we really need to make enum values be literals...
+        }
+        log("Warning: we aren't yet able to get the identifier name back for non-enum literals. This definitely needs to be fixed but for now it is what it is. Literal value type was: '%'.", as_type(identifier.literal.value_type));
+        return "";
+    }
+    assert(false, "unreachable");
 }
 
 Node_Declaration :: struct {
@@ -118,49 +158,50 @@ Node_Directive :: struct {
     runtime_node:           *Node;  // returned from directive as a replacement node. We still keep the directive itself around for re-serialization, though.
 }
 
-// NOTE: may need something like the Many_Any for doing array literals in the future
-//       this is because we can't construct a type info for an array literal
-//       due to this and other reasons, we probably need our own internal version of a type_info
-//       theoretically we could just construct type_infos for the array literals dynamically, but not sure if that's a great idea
-//       also we could do some kind of modified Any which also captures the semantics we need around additional indirections to value_pointers
+// TODO: with the refactoring going on in Dot node, maybe we do actually move the aggr type identifier back out 
+//       then we can get rid of the parsing hack we were doing for struct literals...?
+// TODO: check if we actually need the .ANY literal type here now that we have make_literal
+//       we do for arrays I guess? idk. woul dbe nice to find another way....
 Node_Literal :: struct {
     using #as node_base: Node;
-    literal_type: enum { STRING; NUMBER; STRUCT; ARRAY; ENUM; ANY; };
-    using value_union: union { // determined by literal_type
-        number:  Small_Any; // Q: couldn't we just use value_type? A: only issue is that if value_type is preset, that node will skip typechecking...
+    literal_type: enum { STRING; NUMBER; STRUCT; ANY; };
+    union {
+        number:  Small_Any;
         text:    string;
         aggr: struct {
             type_identifier:    *Node_Identifier;   // can we refactor identifier resolution so that this can just be a string?
             value_pointer:      *void;              // once type is resolved, we store pointer to allocated value here
-            expressions:        *Node; // expressions to init struct members or array values by. later maybe also accepting statements
-        }
-        _enum: struct {
-            value:      s64;
-            identifier: string;
+            expressions:        *Node;              // expressions to init struct members by. later maybe also accepting statements
         }
         any: Any;
     }
 }
 
+// TODO: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
+//       so this will only work for basically numbers, strings, and enums
+make_literal :: (script: *Script, value: Any) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal);
+    if value.type.type == .STRING {
+        literal.literal_type = .STRING;
+        literal.text = value.value_pointer.(*string).*;
+    }
+    else if value.type.type == .ENUM || is_numeric_type(value.type) {
+        literal.literal_type = .NUMBER;
+        literal.number = Small_Any.{ value.type, value.value_pointer.(**void).* };
+    }
+    literal.value_type = value.type;
+    return literal;
+}
+
 get_literal_value_as_any :: (literal: Node_Literal) -> Any {
     assert(literal.value_type != null);
-    if literal.literal_type == {
-      case .STRING;
-        return Any.{ type_info(string), *literal.text };
-        
-      case .NUMBER;
-        return to_any(literal.number);
-        
-      case .STRUCT;
-        return Any.{ literal.value_type, literal.aggr.value_pointer };
-        
-      case .ARRAY;
-        log("Error: array literals are not yet implemented in get_value_pointer_and_size().");
-        return Any.{};
+    if #complete literal.literal_type == {
+      case .STRING; return Any.{ type_info(string), *literal.text };
+      case .NUMBER; return to_any(literal.number);
+      case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
+      case .ANY;    return literal.any;
     }
-    
-    assert(false);
-    return Any.{};
+    assert(false, "unreachable");
 }
 
 /*
@@ -190,17 +231,23 @@ Node_Operation :: struct {
         operator_index:     int;
         overload_procedure: *Node_Procedure_Call;
     }
-    left, right:            *Node;      // only left is used if .UNARY
+    left, right:            *Node;      // only left is used if .UNARY flag is present
     return_ptr:             *Node;      // only if return type is aggregate
 }
 
-// TODO: maybe rename
+// we don't really need to store the member offset on this node, since we can just get it from the right side identifier
+// this is doubling as struct member access and enum literal namespacing
+// really in both these case we should be able to simplify a chain of dots down to a single operation
+//      either add all member offsets and just store a single offset
+//      or for namespaces we jsut eventually have the final resolved declaration
+//      so maybe for Node_Identifier, we have an option for compound identifier that just has a pointer to first dot node
+//      and then for struct member access, we just make a new node for that which likewise has a pointer to the dot node and the total offset to member
+// TODO: maybe we can shortcut evaluatation of certain dot nodes when they're chained but only the last bit is relevant
+//       if I'm thinkning of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
+//       need to verify this, but if this is the case then we actually get the last dot node first in tree walking order, so we can easily short-circuit evaluate it if left side is some constant expression
 Node_Dot :: struct {
     using #as node_base:    Node;
     left, right:            *Node;
-    union {
-        member_offset:      int;
-    }
 }
 
 Node_Subscript :: struct {

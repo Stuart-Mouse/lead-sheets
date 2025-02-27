@@ -199,7 +199,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
             dprint("WITH EXPLICIT TYPE\n");
-            declaration.type_expression = xx parse_expression(script, 999);
+            declaration.type_expression = xx parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
                 log("Error: type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type);
@@ -296,10 +296,21 @@ parse_leaf :: (using script: *Script) -> *Node {
             node = literal;
         }
         else if token_after_dot.type == .IDENTIFIER {
-            literal := alloc_node(script, Node_Literal);
-            literal.literal_type     = .ENUM;
-            literal._enum.identifier = token_after_dot.text;
-            node = literal;
+            log("Error: unary dot enums are broken rn, thanks for trying tho");
+            return null;
+            
+            // TODO: fix unary dot enums
+            // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
+            // an alternative method here would be to flag the identifier as implicitly namespaced or something
+            // but I can't think baout that right now...
+            // dot := alloc_node(script, Node_Dot);
+            
+            // identifier := alloc_node(script, Node_Identifier);
+            // identifier.name = token_after_dot.text;
+            
+            // dot.right = identifier;
+            
+            // node = dot;
         }
         else log("Error: unexpected DOT token at (%:%)", token_after_dot.source_location.line, token_after_dot.source_location.char);
 
@@ -371,7 +382,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     if unary_op != null {
         unary_op.left = node;
-        node = xx unary_op;
+        node = unary_op;
     }
     
     return node;

@@ -87,7 +87,7 @@ print_node :: (
       case Node_Literal;
         literal := node.(*Node_Literal);
         
-        if literal.literal_type == {
+        if #complete literal.literal_type == {
           case .ANY;
             print_to_builder(builder, "<literal ANY of type %>", as_type(literal.value_type));
         
@@ -97,19 +97,11 @@ print_node :: (
           case .NUMBER;
             print_to_builder(builder, "%", to_any(literal.number));
             
-          case .ENUM;
-            name := enum_value_to_name(xx literal.value_type, literal._enum.value);
-            if name {
-                print_to_builder(builder, ".%", name);
-            } else {
-                print_to_builder(builder, "(%).(%)", literal._enum.value, as_type(literal.value_type)); // for out-of-band values
-            }
-            
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
             if literal.aggr.type_identifier {
                 assert(literal.aggr.type_identifier.identifier_type == .TYPE);
-                print_to_builder(builder, "%.{ ", as_type(literal.aggr.type_identifier.type_info_pointer));
+                print_to_builder(builder, "%.{ ", as_type(script.type_table[literal.aggr.type_identifier.index].type));
             } else {
                 append(builder, ".{ ");
             }
@@ -134,10 +126,6 @@ print_node :: (
             }
             
             append(builder, " }");   
-            
-          case .ARRAY;
-            log("Error: array literals are not yet implemented.");
-            return false;
         }
         
         if literal.flags & .IS_MALLEABLE {
@@ -148,9 +136,10 @@ print_node :: (
         
         
       case Node_Identifier;
-        do_backtick := !is_legal_identifier(node.(*Node_Identifier).name);
+        name := get_identifier_name(script, xx node);
+        do_backtick := !is_legal_identifier(name);
         if do_backtick  append(builder, "`");
-        append(builder, node.(*Node_Identifier).name);
+        append(builder, name);
         if do_backtick  append(builder, "`");
         return true;
         
@@ -253,7 +242,7 @@ print_node :: (
             memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
         }
         
-        do_backtick := !is_legal_identifier(node.(*Node_Identifier).name);
+        do_backtick := !is_legal_identifier(declaration.name);
         if do_backtick  append(builder, "`");
         append(builder, declaration.name);
         if do_backtick  append(builder, "`");

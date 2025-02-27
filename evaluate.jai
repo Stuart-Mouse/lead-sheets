@@ -71,7 +71,7 @@ evaluate_node :: (
         literal := node.(*Node_Literal);
         if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         
-        if literal.literal_type == {
+        if #complete literal.literal_type == {
           case .ANY;
             return literal.any, true;
             
@@ -80,9 +80,6 @@ evaluate_node :: (
             
           case .NUMBER;
             return to_any(literal.number), true;
-            
-          case .ENUM;
-            return Any.{ literal.value_type, *literal._enum.value }, true;
             
           case .STRUCT;
             ret := make_return_value();
@@ -96,16 +93,13 @@ evaluate_node :: (
                 member_ptr += member.type.runtime_size;
             }
             return ret, true;
-            
-          case .ARRAY;
-            log("Error: array literals not yet implemented.");
         }
         return Any.{}, false;
         
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
-        if identifier.identifier_type == {
+        if #complete identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
@@ -113,18 +107,27 @@ evaluate_node :: (
             return variable_any, true;
             
           case .EXTERNAL_VARIABLE;
-            variable := *script.variables[identifier.variable_index];
+            variable := *script.variables[identifier.index];
             dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
             return variable.binding, true;
             
           case .EXTERNAL_PROCEDURE;
-            procedure := *script.procedures[identifier.procedure_index];
+            procedure := *script.procedures[identifier.index];
             dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
             assert(identifier.flags & .IS_LVALUE == 0);
             return Any.{ procedure.type, *procedure.ptr }, true;
             
-          case .ENUM_VALUE;
-            return Any.{ identifier.value_type, *identifier.enum_value }, true;
+          case .LITERAL;
+            ret, ok := evaluate_node(script, identifier.literal);
+            return ret, ok;
+            
+            
+          case .STRUCT_MEMBER; #through; // we don't evaluate this case since the parent Node_Dot will just grab the struct member offset manually.
+          case .UNRESOLVED;
+            assert(false, "invalid case %", identifier.identifier_type);
+          
+          case .TYPE;
+            return script.type_table[identifier.index].type, true;
         }
         return Any.{}, false;
 
@@ -222,7 +225,7 @@ evaluate_node :: (
         
         struct_any, ok := evaluate_node(script, dot.left);
         if !ok  return Any.{}, false;
-        member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.member_offset };
+        member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
         
         dprint("struct value ptr: %\n", struct_any.value_pointer);
         dprint("member value ptr: %\n", member_any.value_pointer);

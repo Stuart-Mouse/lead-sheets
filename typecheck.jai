@@ -11,7 +11,7 @@ Typechecking_Flags :: enum_flags {
     NONE                    :: 0;
     EXPECT_LVALUE           :: 1 << 0;
     IS_STATEMENT_ROOT       :: 1 << 1;
-    IS_PROCEDURE_EXPRESSION :: 1 << 2;
+    IS_PROCEDURE_EXPRESSION :: 1 << 2; // TODO: what are we using this for?
 }
 
 // TODO: after typechecking, we should probably remove references to source text, since the user may want to free the scripts's source after compiling the script
@@ -43,7 +43,7 @@ typecheck_node :: (
             if !ok {
                 log(message);
                 if node.node_type == Node_Identifier {
-                    log("Identifier was '%'", node.(*Node_Identifier).name);
+                    log("Identifier was '%'", get_identifier_name(script, xx node));
                 }
                 return null;
             }
@@ -74,7 +74,7 @@ typecheck_node :: (
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.literal_type == {
+        if #complete literal.literal_type == {
           case .ANY;
             literal.value_type = literal.any.type;
             
@@ -103,23 +103,23 @@ typecheck_node :: (
             }
             literal.value_type = literal.number.type; 
             
-          case .ENUM;
-            if hint_type == null {
-                log("Error: no type hint provided to unary dot enum value.");
-                return null;
-            }
-            ti_enum := hint_type.(*Type_Info_Enum);
-            if ti_enum.type != .ENUM {
-                log("Error: type hint provided to unary dot enum was not an enum type.");
-                return null;
-            }
-            value, found := enum_name_to_value(ti_enum, literal._enum.identifier);
-            if !found {
-                log("Error: invalid enum value name '%' for enum type '%'.", literal._enum.identifier, as_type(ti_enum));
-                return null;
-            }
-            literal._enum.value = value;
-            literal.value_type = ti_enum;
+          // case .ENUM;
+          //   if hint_type == null {
+          //       log("Error: no type hint provided to unary dot enum value.");
+          //       return null;
+          //   }
+          //   ti_enum := hint_type.(*Type_Info_Enum);
+          //   if ti_enum.type != .ENUM {
+          //       log("Error: type hint provided to unary dot enum was not an enum type.");
+          //       return null;
+          //   }
+          //   value, found := enum_name_to_value(ti_enum, literal._enum.identifier);
+          //   if !found {
+          //       log("Error: invalid enum value name '%' for enum type '%'.", literal._enum.identifier, as_type(ti_enum));
+          //       return null;
+          //   }
+          //   literal._enum.value = value;
+          //   literal.value_type = ti_enum;
             
           case .STRUCT;
             // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
@@ -131,7 +131,7 @@ typecheck_node :: (
                     log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
                     return null;
                 }
-                ti_struct = xx literal.aggr.type_identifier.type_info_pointer;
+                ti_struct = xx type_table[literal.aggr.type_identifier.index].type;
             } else {
                 ti_struct = xx hint_type;
             }
@@ -162,15 +162,13 @@ typecheck_node :: (
             literal.value_type = ti_struct;
             literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
             dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
-            
-          case .ARRAY;
-            log("Error: array literals not yet implemented.");
         }
         return literal.value_type;
         
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
+        assert(identifier.identifier_type == .UNRESOLVED);
         
         declaration := resolve_declaration_by_identifier(identifier.name, identifier.parent, check_flags & .EXPECT_LVALUE != 0);
         if declaration {
@@ -187,19 +185,19 @@ typecheck_node :: (
         // TODO: maybe we should add some checks to make sure that all externally inserted identifiers don't conflict across categories
         //       for example, we should not have a type identifier which conflicts with an external variable or procedure
         
-        for script.type_table {
+        for type_table {
             if it.name == identifier.name {
-                identifier.identifier_type   = .TYPE;
-                identifier.type_info_pointer = it.type;
-                identifier.value_type        = type_info(Type);
+                identifier.identifier_type = .TYPE;
+                identifier.index           = it_index;
+                identifier.value_type      = type_info(Type);
                 return identifier.value_type;
             }
         }
         
-        for script.variables {
+        for variables {
             if it.name == identifier.name {
                 identifier.identifier_type = .EXTERNAL_VARIABLE;
-                identifier.variable_index  = it_index;
+                identifier.index           = it_index;
                 identifier.value_type      = variables[it_index].binding.type;
                 return identifier.value_type;
             }
@@ -312,7 +310,7 @@ typecheck_node :: (
 
         if ti_proc == null && procedure_call.procedure_expression.node_type == Node_Identifier {
             identifier := procedure_call.procedure_expression.(*Node_Identifier);
-            assert(identifier.identifier_type == .UNRESOLVED);
+            assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
             
             // TODO: we should probably refactor typechecking to return a real error code
             //       then we can notify caller if failure is due to a missing type hint
@@ -329,12 +327,13 @@ typecheck_node :: (
                 arguments[it_index] = it;
             }
             
-            procedure_index := resolve_procedure_index(script, identifier.name, arguments, node.flags & .OVERLOAD == .OVERLOAD);
+            procedure_name := identifier.name;
+            procedure_index := resolve_procedure_index(script, procedure_name, arguments, node.flags & .OVERLOAD == .OVERLOAD);
             if procedure_index == -1  return null; // error message is logged by resolve_procedure_index
             
             identifier.identifier_type = .EXTERNAL_PROCEDURE;
-            identifier.procedure_index = procedure_index;
-            identifier.flags |= .TYPECHECKED;
+            identifier.index           = procedure_index;
+            identifier.flags          |= .TYPECHECKED;
             ti_proc, identifier.value_type = procedures[procedure_index].type;
             
             // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
@@ -345,7 +344,7 @@ typecheck_node :: (
                     type := typecheck_node(script, it, hint_type = expected_type);
                     if type != expected_type {
                         log("Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.");
-                        log("\tProcedure identifier: '%'", identifier.name);
+                        log("\tProcedure identifier: '%'", procedure_name);
                         log("\tArgument expression: '%'", sprint_node(script, it,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, type);
                         return null;
@@ -354,7 +353,7 @@ typecheck_node :: (
                     ok, replacement := try_implicit_cast(script, it, expected_type);
                     if !ok {
                         log("Error: failed while trying to implicitly cast a procedure argument.");
-                        log("\tProcedure identifier: '%'", identifier.name);
+                        log("\tProcedure identifier: '%'", procedure_name);
                         log("\tArgument expression: '%'", sprint_node(script, it,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, it.value_type);
                         return null;
@@ -429,7 +428,7 @@ typecheck_node :: (
                 log("Error: Type expression in RHS of cast did not resolve to a Type.");
                 return null;
             }
-            node.value_type = type_identifier.type_info_pointer;
+            node.value_type = type_table[type_identifier.index].type;
         }
         
         // TODO: check if we can actually perform the cast here
@@ -440,8 +439,18 @@ typecheck_node :: (
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        left_type := typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
-        if left_type == null  return null;
+        // TODO: come back and figure out the unary dot enum stuff
+        left_type: *Type_Info;
+        // if dot.left == null {
+        //     // only valid case for lef tbeing null right now is unary dot enums
+        //     // in which case we need a hint type to use in place of left_type for identifier resolution
+        //     if hint_type == null || hint_type.type != .ENUM {
+                
+        //     } 
+        // } else {
+            left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
+            if left_type == null  return null;
+        // }
         
         if dot.right.node_type != Node_Identifier {
             log("Error: right side of dot expression must be an identifier.");
@@ -450,48 +459,79 @@ typecheck_node :: (
         
         if left_type.type == {
           case .STRUCT;
-            // TODO: we should check that member offset is non-negative so as to preven tuse of constants until we can properly support those
+            // TODO: we should check that member offset is non-negative so as to prevent use of constants until we can properly support those
             member_identifier := dot.right.(*Node_Identifier);
-            member_ti, member_offset := get_field(xx left_type, member_identifier.name);
+            assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
+            member_name := member_identifier.name;
+            
+            member_ti, member_offset := get_field(xx left_type, member_name);
             if member_ti == null  return null;
             
-            member_identifier.identifier_type = .STRUCT_MEMBER;
-            member_identifier.value_type      = member_ti.type;
+            // tricky case. left may be some complex expression where the result is an instance of a struct type.
+            // so we can't just set the left type to be a namespace.
+            //      but we do still want to do this if left type is an identifier? or no, since it could be a type identifier? which maybe we want to leave as is?
+            if member_ti.flags & .CONSTANT {
+                log("Error: access of constant struct members is not yet allowed.");
+                return null;
+                // member_identifier.identifier_type = .LITERAL;
+                // member_identifier.literal = alloc_node(script, Node_Literal);
+                // TODO: need to be able to call some simple make_literal() proc here and actually init the literal value
+            } else {
+                member_identifier.identifier_type = .STRUCT_MEMBER;
+            }
+            member_identifier.value_type = member_ti.type;
             member_identifier.flags |= .TYPECHECKED;
-            
-            dot.value_type    = member_ti.type;
-            dot.member_offset = member_offset;
-            
+            dot.value_type = member_ti.type;
             return dot.value_type;
             
-          case .TYPE;   // TODO: maybe we want to allow anything here that can act as a namespace?
-            type_identifier := dot.left.(*Node_Identifier);
-            if left_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
-                log("Error: Type expression on left-hand side of enum literal did not resolve to a Type.");
+          // case .ENUM;
+            // TODO: access enum namespace through instance of enum type
+            
+          case .TYPE;
+            // we can't actually know what type it is unless we evaluate this expression
+            // so I guess we just call evaluate_node here and if that fails then obviously the type expression wasn' constant or seomthing
+            // but in theory if it typechecked fine that we should be good to go?
+            // well..... not really. in theory maybe this could be non-constant if a non-constant value of type type was used.
+            // IDK! we need to make this better in the future for sure but for now I'm just going to assume that it's fine to evaluate this node to get the type in question
+            left_any, ok := evaluate_node(script, dot.left);
+            if !ok  return null;
+            ti := left_any.value_pointer.(**Type_Info).*;
+            
+            if ti.type == {
+              case .STRUCT;
+                log("Error: use of struct type as a namespace is not yet implemented!");
+                return null;
+                
+              case .ENUM;
+                ti_enum := ti.(*Type_Info_Enum);
+                if ti_enum.type != .ENUM {
+                    log("Error: type expression on left-hand side of dot must be an enum type.");
+                    return null;
+                }
+                
+                right := dot.right.(*Node_Identifier);
+                assert(right.node_type == Node_Identifier && right.identifier_type == .UNRESOLVED);
+                member_name := right.name;
+                
+                value, found := enum_name_to_value(ti_enum, member_name);
+                if !found {
+                    log("Error: invalid enum value name '%' for enum type '%'.", member_name, as_type(ti_enum));
+                    return null;
+                }
+                
+                right.identifier_type = .LITERAL;
+                right.literal         = make_literal(script, Any.{ ti_enum, *value });
+                right.literal.flags  |= .TYPECHECKED;
+                right.value_type      = ti_enum;
+                right.flags          |= .TYPECHECKED;
+                
+                dot.value_type = ti_enum;
+                return dot.value_type;
+                
+              case;
+                log("Error: a % type cannot be used as a namespace.", ti.type);
                 return null;
             }
-            
-            ti_enum := type_identifier.type_info_pointer.(*Type_Info_Enum);
-            if ti_enum.type != .ENUM {
-                log("Error: type expression on left-hand side of dot must be an enum type.");
-                return null;
-            }
-            
-            member_identifier := dot.right.(*Node_Identifier);
-            value, found := enum_name_to_value(ti_enum, member_identifier.name);
-            if !found {
-                log("Error: invalid enum value name '%' for enum type '%'.", member_identifier.name, as_type(ti_enum));
-                return null;
-            }
-            
-            member_identifier.identifier_type = .ENUM_VALUE;
-            member_identifier.value_type      = ti_enum;
-            member_identifier.enum_value      = value;
-            member_identifier.flags |= .TYPECHECKED;
-            
-            dot.value_type = ti_enum;
-            
-            return dot.value_type;
         }
         
         log("Error: left side of dot expression must be a struct or type.");
@@ -525,7 +565,7 @@ typecheck_node :: (
         // since declarations don't use an identifier node for the identifier, we actually will want to factor out identifier resolution so that it just takes a string and not a node
         
         other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.parent);
-        if declaration != other_declaration {
+        if other_declaration != null && declaration != other_declaration {
             log("Error: redeclaration of identifier '%'.", declaration.name);
             return null;
         }
@@ -540,7 +580,7 @@ typecheck_node :: (
                 log("Error: Type expression in declaration did not resolve to a Type.");
                 return null;
             }
-            explicit_type = type_identifier.type_info_pointer;
+            explicit_type = type_table[type_identifier.index].type;
         }
         
         right_type: *Type_Info;
@@ -696,6 +736,27 @@ resolve_declaration_by_identifier :: (identifier: string, parent_block: *Node, n
         scope = scope.parent;
     }
     return null;
+}
+
+// can_act_as_namespace :: (node: *Node) {
+//     return can_act_as_namespace(node.value_type);
+// }
+
+// can_act_as_namespace :: (any: Any) {
+//     if any.type == {
+//       case .TYPE;   return can_act_as_namespace(type.value_pointer);
+//       case .STRUCT; return true;
+//       case .ENUM;   return true;
+//     }
+//     return false;
+// }
+
+can_act_as_namespace :: (type: *Type_Info) {
+    if type == {
+      case .STRUCT; return true;
+      case .ENUM;   return true;
+    }
+    return false;
 }
 
 identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {
@@ -906,10 +967,14 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
         if #complete identifier.identifier_type == {
           case .UNRESOLVED;         return false, "Error: an unresolved identifier cannot be used as an lvalue.";
           case .TYPE;               return false, "Error: a type identifier cannot be used as an lvalue.";
-          case .ENUM_VALUE;         return false, "Error: using an enum literal as an lvalue is not currently supported.";
           case .EXTERNAL_VARIABLE;  return true,  "";
           case .EXTERNAL_PROCEDURE; return false, "Error: an external procedure cannot be used as an lvalue.";
           case .STRUCT_MEMBER;      return true,  "";
+            
+          case .LITERAL;
+            ok, msg := is_valid_lvalue(identifier.literal);
+            return ok, msg;
+            
           case .DECLARATION;
             if (identifier.declaration.flags & .IS_CONSTANT) 
             && !declaration_is_malleable_literal(identifier.declaration) {
@@ -919,10 +984,13 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
         }
         
       case Node_Dot;
-        if node.(*Node_Dot).left.value_type.type == {
-          case .STRUCT;     return true,  "";
-          case .TYPE;       return false, "Error: an enum literal cannot be used as an lvalue.";
+        dot := node.(*Node_Dot);
+        if dot.left.value_type.type == .STRUCT {
+            ok, msg := is_valid_lvalue(dot.left);
+            return ok, msg;
         }
+        ok, msg := is_valid_lvalue(dot.right);
+        return ok, msg;
         
       case Node_Subscript; return true,  "";
       

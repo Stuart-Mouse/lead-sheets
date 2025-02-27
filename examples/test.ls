@@ -78,8 +78,8 @@ echo(`identifier string`);
 
 e := Fruits.BANANA;
 echo(e);
-e = .PEAR;
-echo(e);
+// e = .PEAR;
+// echo(e);
 
 // test of better procedure overload resolution
 echo(length(.{1, 2} + .{2, 2}));
