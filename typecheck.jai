@@ -199,8 +199,8 @@ typecheck_node :: (
         for script.variables {
             if it.name == identifier.name {
                 identifier.identifier_type = .EXTERNAL_VARIABLE;
-                identifier.variable_index  = variable_index;
-                identifier.value_type      = variables[variable_index].binding.type;
+                identifier.variable_index  = it_index;
+                identifier.value_type      = variables[it_index].binding.type;
                 return identifier.value_type;
             }
         }

@@ -281,7 +281,7 @@ TableTreeNodeAny :: (
             count, data := get_array_count_and_data(value.value_pointer, xx value.type);
             member_any := Any.{ ti_array.element_type, data };
             for 0..count-1 {
-                TableTreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
+                TableTreeNodeAny(tprint("[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
             }
             ImGui.TreePop();
@@ -291,7 +291,7 @@ TableTreeNodeAny :: (
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
         ImGui.TableNextColumn();
         imgui.SetNextItemWidth(-FLOAT32_MIN);
-        ComboEnumDynamic(label, value);
+        ComboEnumDynamic(tprint("%_value\0", label).data, value);
         type_column(value);
         
       case .INTEGER;
@@ -300,7 +300,7 @@ TableTreeNodeAny :: (
         s32_value: s32;
         dynamic_int_cast(s32_value, value);
         imgui.SetNextItemWidth(-FLOAT32_MIN);
-        ImGui.InputInt(label, *s32_value);
+        ImGui.InputInt(tprint("%_value\0", label).data, *s32_value);
         dynamic_int_cast(value, s32_value);
         type_column(value);
         
@@ -310,7 +310,7 @@ TableTreeNodeAny :: (
         f32_value: float32;
         dynamic_float_cast(f32_value, value);
         imgui.SetNextItemWidth(-FLOAT32_MIN);
-        ImGui.InputFloat(label, *f32_value);
+        ImGui.InputFloat(tprint("%_value\0", label).data, *f32_value);
         dynamic_float_cast(value, f32_value);
         type_column(value);
         
@@ -319,7 +319,7 @@ TableTreeNodeAny :: (
         ImGui.TableNextColumn();
         bool_value: bool;
         dynamic_int_cast(bool_value, value);
-        if (ImGui.RadioButton(label, bool_value)) {
+        if (ImGui.RadioButton(tprint("%_value\0", label).data, bool_value)) {
             bool_value = !bool_value;
         } 
         dynamic_int_cast(value, bool_value);
