@@ -50,19 +50,6 @@ Node_Cast :: struct {
     and maybe we don't want that if we want the user to be able to purely use the script as a way of evaluating expressions whose nodes are just allocated in temp
     and that use case would be completely broken, becuase we'd be absolutely forcing the use of the pool allocator...
         but maybe we should just do that if it allows us to greatly simplify the identifier resolution code?
-        
-    TODO: identifiers as literals
-        Enum values are currently sort of hacked in, and maybe it would be better 
-            if we just properly supported any namespaced literals generally,
-            but then we really would want to do some kind of small-value optimization with 
-            the *void so that we don't need to allocate for small values.
-        For now I am just leaving the hacky solution and will come up with something better 
-            when it becomes worthwhile to spend more time on this.
-        Another thing to consider is how having literal values be stored on identifier nodes
-            will play with the question mark operator for malleable literals.
-        But I don't really care to do malleable enum literals at this time so I'm not gonna pursue this quite yet.
-        if we could properly replace nodes, the ideal thing here would be to just replace the identifier for an enum value with a literal and flag the node as using a unary dot
-    
     
     TODO: changing identifiers dynamically
         for external variables, or even other declarations
@@ -84,20 +71,10 @@ Node_Cast :: struct {
         
         external variables, procedures, and types all now use the same index member in the union
         
-        
-    TODO: NAMESPACE and LITERAL identifiers
-        node_dot 
-            typechecking 
-            execution 
-            serialization
-        node_identifier 
-            typechecking 
-            execution 
-            serialization
+        LITERAL has been added as an identifier type, to be used in place of ENUM
+            this will allow us to implement things like use of constant struct members
     
-        whether some expression can be used as a namespace does not actually depend on th enode_type, but on the value_type
-        so I've removed the NAMESPACE identifier type 
-        but the 
+    
     
 */
 Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
@@ -122,7 +99,7 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
       case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
       case .STRUCT_MEMBER;      return identifier.member.name;
       case .DECLARATION;        return identifier.declaration.name;
-      case .LITERAL;            
+      case .LITERAL;
         // ahh fuck. I can't figure how we would implement this for struct members yet but I'm gonn apress on anyhow and only do the enum case
         if identifier.literal.value_type.type == .ENUM {
             return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.value_pointer.(s64));   // @HACK we really need to make enum values be literals...

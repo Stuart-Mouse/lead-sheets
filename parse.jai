@@ -296,21 +296,17 @@ parse_leaf :: (using script: *Script) -> *Node {
             node = literal;
         }
         else if token_after_dot.type == .IDENTIFIER {
-            log("Error: unary dot enums are broken rn, thanks for trying tho");
-            return null;
+            // log("Error: unary dot enums are broken rn, thanks for trying tho");
+            // return null;
             
-            // TODO: fix unary dot enums
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
             // but I can't think baout that right now...
-            // dot := alloc_node(script, Node_Dot);
-            
-            // identifier := alloc_node(script, Node_Identifier);
-            // identifier.name = token_after_dot.text;
-            
-            // dot.right = identifier;
-            
-            // node = dot;
+            identifier := alloc_node(script, Node_Identifier);
+            identifier.name = token_after_dot.text;
+            dot := alloc_node(script, Node_Dot);
+            dot.right = identifier;
+            node = dot;
         }
         else log("Error: unexpected DOT token at (%:%)", token_after_dot.source_location.line, token_after_dot.source_location.char);
 

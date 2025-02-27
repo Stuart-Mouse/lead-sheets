@@ -276,6 +276,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
       case Node_Dot;
         dot := node.(*Node_Dot);
         
+        if dot.left == null {
+            assert(node.value_type.type == .ENUM);
+            return execute_node(script, dot.right);
+        }
+        
         if dot.left.value_type.type == {
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;  
@@ -289,7 +294,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return true;
             
           case .TYPE;
-            assert(node.value_type.type == .ENUM);
             return execute_node(script, dot.right);
         }
         

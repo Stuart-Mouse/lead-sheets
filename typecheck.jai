@@ -439,18 +439,12 @@ typecheck_node :: (
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        // TODO: come back and figure out the unary dot enum stuff
+        // Currently, the only valid case for dot.left being null is for unary dot enums.
+        // Setting left_type to 'Type' gets us into the proper case down below.
         left_type: *Type_Info;
-        // if dot.left == null {
-        //     // only valid case for lef tbeing null right now is unary dot enums
-        //     // in which case we need a hint type to use in place of left_type for identifier resolution
-        //     if hint_type == null || hint_type.type != .ENUM {
-                
-        //     } 
-        // } else {
-            left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
-            if left_type == null  return null;
-        // }
+        if dot.left
+            then left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
+            else left_type = type_info(Type); 
         
         if dot.right.node_type != Node_Identifier {
             log("Error: right side of dot expression must be an identifier.");
@@ -493,17 +487,34 @@ typecheck_node :: (
             // but in theory if it typechecked fine that we should be good to go?
             // well..... not really. in theory maybe this could be non-constant if a non-constant value of type type was used.
             // IDK! we need to make this better in the future for sure but for now I'm just going to assume that it's fine to evaluate this node to get the type in question
-            left_any, ok := evaluate_node(script, dot.left);
-            if !ok  return null;
-            ti := left_any.value_pointer.(**Type_Info).*;
+            namespace: *Type_Info;
+            if dot.left {
+                left_any, ok := evaluate_node(script, dot.left);
+                if !ok  return null;
+                namespace = left_any.value_pointer.(**Type_Info).*;
+            } else {
+                if hint_type == null || hint_type.type != .ENUM {
+                    log("Error: unary dot can only be used for enums, but hint_type was %", hint_type);
+                    return null;
+                }
+                namespace = hint_type;
+            }
             
-            if ti.type == {
+            if namespace.type == {
               case .STRUCT;
+                /*
+                    Do we want to support use of non-constant struct members on a struct type if the eventual result is some constant literal?
+                    for example: `Some_Struct.some_member_thats_an_anonymous_enum.SOME_ENUM_VALUE`
+                    in order to do this kind of thing, we need to pass some flags back up when we return from typecheck node, e.g. IS_CONSTANT
+                    but also, not exactly, since we need to tell the first in chain about the last
+                    so we would need to peek dot.right for constancy, then tell dot.left about that in the flags we pass up to that node
+                    idk, this is all very strange... may just say fuck it and not support this.
+                */
                 log("Error: use of struct type as a namespace is not yet implemented!");
                 return null;
                 
               case .ENUM;
-                ti_enum := ti.(*Type_Info_Enum);
+                ti_enum := namespace.(*Type_Info_Enum);
                 if ti_enum.type != .ENUM {
                     log("Error: type expression on left-hand side of dot must be an enum type.");
                     return null;
@@ -529,7 +540,7 @@ typecheck_node :: (
                 return dot.value_type;
                 
               case;
-                log("Error: a % type cannot be used as a namespace.", ti.type);
+                log("Error: a % type cannot be used as a namespace.", namespace.type);
                 return null;
             }
         }
