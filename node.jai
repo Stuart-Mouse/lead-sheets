@@ -62,7 +62,18 @@ Node_Cast :: struct {
             will play with the question mark operator for malleable literals.
         But I don't really care to do malleable enum literals at this time so I'm not gonna pursue this quite yet.
         if we could properly replace nodes, the ideal thing here would be to just replace the identifier for an enum value with a literal and flag the node as using a unary dot
-        
+    
+    
+    TODO: changing identifiers dynamically
+        for external variables, or even other declarations
+        we can replace the identifier's copy of its name with the string on the external variable and then modify it
+        actually this would require using a pointer to a string, since we need the indirection on the length too
+        which would not be feasible unless we do the thing were we keep tokens around
+        OR we could just ignore the name on the identifier after it's been resolved and instead only get the name from the resolved declaration
+        but like, not all declarations are the same... unless we go through with that refactor
+    
+        the practical use case for this is something like being able to change the identifier of an external variable, e.g. a tilemap in the editor and have the be reflected in the script
+        this is not like a must have but it would be nice and honestly it may be a good reason to spur on some refactoring of identifiers and declarations
         
 */
 Identifier_Type :: enum { UNRESOLVED; TYPE; ENUM_VALUE; /*NAMESPACED_LITERAL;*/ STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 

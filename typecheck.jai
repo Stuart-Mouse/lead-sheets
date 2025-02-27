@@ -525,7 +525,7 @@ typecheck_node :: (
         // since declarations don't use an identifier node for the identifier, we actually will want to factor out identifier resolution so that it just takes a string and not a node
         
         other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.parent);
-        if other_declaration {
+        if declaration != other_declaration {
             log("Error: redeclaration of identifier '%'.", declaration.name);
             return null;
         }
@@ -552,6 +552,7 @@ typecheck_node :: (
             }
         }
         
+        // TODO: constant declarations will be essentially just a passthrough to the init_expression node directly
         // hard-coding this for now, just to get it working, but this is not a good long term thing...
         // for now, only constant assignment we can have is a single literal
         // later, we will do some work to pass info back up the syntax tree about whether an expresion can be constant
