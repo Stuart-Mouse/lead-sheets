@@ -214,7 +214,7 @@ main :: () {
                         log("\tFailed to evaluate statement.");
                     } else {
                         result: string;
-                        if value.value_pointer  result = sprint("%", value);
+                        if value.value_pointer then result = sprint("%", value);
                         array_add(*prev_commands, .{ str, result });
                         array_reset_keeping_memory(*input_buffer);
                     }
@@ -238,7 +238,7 @@ main :: () {
                     if node.node_type == LS.Node_Declaration {
                         decl := node.(*LS.Node_Declaration);
                         decl_value := Any.{ decl.value_type, decl.value_pointer };
-                        TableTreeNodeAny(temp_c_string(decl.name), decl_value);
+                        TableTreeNodeAny(decl.name, decl_value);
                     }
                     return true, null;
                 }
@@ -258,7 +258,7 @@ main :: () {
                 imgui.TableHeadersRow();
                 
                 for script.variables {
-                    TableTreeNodeAny(temp_c_string(it.name), it.binding);
+                    TableTreeNodeAny(it.name, it.binding);
                 }
                 imgui.EndTable();
             }
@@ -290,13 +290,13 @@ main :: () {
         imgui.End();
         
         if imgui.GetMouseCursor() == {
-            case .Arrow;         SDL_SetCursor(cursor_arrow);
-            case .TextInput;     SDL_SetCursor(cursor_text_input);
-            case .Hand;          SDL_SetCursor(cursor_move);
-            case .ResizeNS;      SDL_SetCursor(cursor_resize_ns);
-            case .ResizeEW;      SDL_SetCursor(cursor_resize_ew);
-            case .ResizeNESW;    SDL_SetCursor(cursor_resize_nesw);
-            case .ResizeNWSE;    SDL_SetCursor(cursor_resize_nwse);
+            case .Arrow;       SDL_SetCursor(cursor_arrow);
+            case .TextInput;   SDL_SetCursor(cursor_text_input);
+            case .Hand;        SDL_SetCursor(cursor_move);
+            case .ResizeNS;    SDL_SetCursor(cursor_resize_ns);
+            case .ResizeEW;    SDL_SetCursor(cursor_resize_ew);
+            case .ResizeNESW;  SDL_SetCursor(cursor_resize_nesw);
+            case .ResizeNWSE;  SDL_SetCursor(cursor_resize_nwse);
         }
 
         // Rendering

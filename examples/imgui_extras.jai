@@ -196,7 +196,7 @@ TreeNodeAny :: (
             count, data := get_array_count_and_data(value.value_pointer, xx value.type);
             member_any := Any.{ ti_array.element_type, data };
             for 0..count-1 {
-                TreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
+                TreeNodeAny(tprint("[%]\0", it).data, flags);
                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
             }
             ImGui.TreePop();
@@ -240,12 +240,12 @@ TreeNodeAny :: (
 
 // NOTE: assumes we are already in a table 3 columns: Name, Value, Type
 TableTreeNodeAny :: (
-    label: *u8,
+    label: string,
     value: Any,
     flags: ImGui.TreeNodeFlags = .None
 ) {
-    name_column :: inline (label: *u8, flags: ImGui.TreeNodeFlags) {  
-        ImGui.TreeNodeEx(label, flags);
+    name_column :: inline (label: string, flags: ImGui.TreeNodeFlags) {  
+        ImGui.TreeNodeEx(temp_c_string(label), flags);
     }
     type_column :: inline (value: Any) {  
         ImGui.TableNextColumn();
@@ -255,7 +255,7 @@ TableTreeNodeAny :: (
     ImGui.TableNextRow(); ImGui.TableNextColumn();
     if value.type.type == {
       case .STRUCT;
-        is_open := ImGui.TreeNodeEx(label, flags | .SpanFullWidth);
+        is_open := ImGui.TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
         ImGui.TableNextColumn();
         if !is_open  ImGui.Text("%", value);
         type_column(value);
@@ -266,13 +266,13 @@ TableTreeNodeAny :: (
                 if it.flags & .CONSTANT  continue;
                 if it.offset_in_bytes <= last_member_offset  continue;
                 last_member_offset = it.offset_in_bytes;
-                TableTreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
+                TableTreeNodeAny(it.name, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
             }
             ImGui.TreePop();
         }
         
       case .ARRAY;
-        is_open := ImGui.TreeNodeEx(label, flags | .SpanFullWidth);
+        is_open := ImGui.TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
         ImGui.TableNextColumn();
         if !is_open  ImGui.Text("%", value);
         type_column(value);
@@ -281,7 +281,7 @@ TableTreeNodeAny :: (
             count, data := get_array_count_and_data(value.value_pointer, xx value.type);
             member_any := Any.{ ti_array.element_type, data };
             for 0..count-1 {
-                TableTreeNodeAny(tprint("[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
+                TableTreeNodeAny(tprint("[%]\0", it), flags);
                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
             }
             ImGui.TreePop();
