@@ -68,8 +68,8 @@ typecheck_node :: (
     
     if node.node_type == {
       case Node_Directive;
-        node.flags |= .TYPECHECKED; // @Hack? We are getting an error when trying to execute the directive, saying it was not typechecked?
-        return type_info(void);
+        node.value_type = type_info(void);
+        return node.value_type;
         
         
       case Node_Literal;
@@ -151,6 +151,12 @@ typecheck_node :: (
             literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
             dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
         }
+        
+        // all literals are assumed to be constants except for malleable literals and ANY literals
+        if !(literal.flags & .IS_MALLEABLE) && literal.literal_type != .ANY {
+            literal.flags |= .IS_CONSTANT;
+        }
+        
         return literal.value_type;
         
         
@@ -164,6 +170,9 @@ typecheck_node :: (
                 log("Error: identifier % used before its declaration.", identifier.name);
                 return null;
             }
+            if declaration.flags & .IS_CONSTANT {
+                identifier.flags |= .IS_CONSTANT;
+            }
             identifier.identifier_type = .DECLARATION;
             identifier.declaration     = declaration;
             identifier.value_type      = declaration.value_type;
@@ -175,6 +184,7 @@ typecheck_node :: (
         
         for type_table {
             if it.name == identifier.name {
+                identifier.flags |= .IS_CONSTANT;   // the type table is assumed to be constant during the script's lifetime
                 identifier.identifier_type = .TYPE;
                 identifier.index           = it_index;
                 identifier.value_type      = type_info(Type);
@@ -417,10 +427,10 @@ typecheck_node :: (
                 return null;
             }
             // TODO: make sure that type expression is constant before evaluating it
-            // if !(type_expression.flags & .IS_CONSTANT) {
-            //     log("Error: Type expression in cast must be constant.");
-            //     return null;
-            // }
+            if !(type_expression.flags & .IS_CONSTANT) {
+                log("Error: Type expression in cast must be constant.");
+                return null;
+            }
             type_any, ok := evaluate_node(script, type_expression);
             if !ok  return null;
             node.value_type = type_any.value_pointer.(**Type_Info).*;
@@ -482,10 +492,10 @@ typecheck_node :: (
             namespace: *Type_Info;
             if dot.left {
                 // TODO: make sure that type expression is constant before evaluating it
-                // if !(type_expression.flags & .IS_CONSTANT) {
-                //     log("Error: Type expression in cast must be constant.");
-                //     return null;
-                // }
+                if !(dot.left.flags & .IS_CONSTANT) {
+                    log("Error: Type expression on left-hand side of dot operator must be constant.");
+                    return null;
+                }
                 left_any, ok := evaluate_node(script, dot.left);
                 if !ok  return null;
                 namespace = left_any.value_pointer.(**Type_Info).*;
@@ -592,14 +602,14 @@ typecheck_node :: (
             type_expression := declaration.type_expression;
             type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
             if type_type == null || type_type.type != .TYPE {
-                log("Error: Type expression in cast did not resolve to a Type.");
+                log("Error: Type expression in declaration did not resolve to a Type.");
                 return null;
             }
             // TODO: make sure that type expression is constant before evaluating it
-            // if !(type_expression.flags & .IS_CONSTANT) {
-            //     log("Error: Type expression in cast must be constant.");
-            //     return null;
-            // }
+            if !(type_expression.flags & .IS_CONSTANT) {
+                log("Error: Type expression in declaration must be constant.");
+                return null;
+            }
             type_any, ok := evaluate_node(script, type_expression);
             if !ok  return null;
             explicit_type = type_any.value_pointer.(**Type_Info).*;
@@ -760,27 +770,6 @@ resolve_declaration_by_identifier :: (identifier: string, parent_block: *Node, n
     return null;
 }
 
-// can_act_as_namespace :: (node: *Node) {
-//     return can_act_as_namespace(node.value_type);
-// }
-
-// can_act_as_namespace :: (any: Any) {
-//     if any.type == {
-//       case .TYPE;   return can_act_as_namespace(type.value_pointer);
-//       case .STRUCT; return true;
-//       case .ENUM;   return true;
-//     }
-//     return false;
-// }
-
-can_act_as_namespace :: (type: *Type_Info) {
-    if type == {
-      case .STRUCT; return true;
-      case .ENUM;   return true;
-    }
-    return false;
-}
-
 identifier_refers_to_malleable_literal :: (identifier: Node_Literal) -> bool {
     assert(identifier.identifier_type == .DECLARATION);
     return declaration_is_malleable_literal(identifier.declaration);
@@ -810,15 +799,6 @@ is_aggr :: (ti: *Type_Info) -> bool {
         case .TYPE;      return false;
     }
     return true;
-}
-
-resolve_variable :: (using script: *Script, ident: string) -> int {
-    for variables {
-        if it.name == ident {
-            return it_index;
-        }
-    }
-    return -1;
 }
 
 find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_Declaration {
