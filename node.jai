@@ -33,7 +33,7 @@ Node_Cast :: struct {
     using #as base:     Node;
     value:              *Node;
     union {
-        type_identifier:  *Node_Identifier;
+        type_expression:  *Node;
         implicit_type:    *Type_Info;
     }
 }
@@ -51,30 +51,20 @@ Node_Cast :: struct {
     and that use case would be completely broken, becuase we'd be absolutely forcing the use of the pool allocator...
         but maybe we should just do that if it allows us to greatly simplify the identifier resolution code?
     
-    TODO: changing identifiers dynamically
-        for external variables, or even other declarations
-        we can replace the identifier's copy of its name with the string on the external variable and then modify it
-        actually this would require using a pointer to a string, since we need the indirection on the length too
-        which would not be feasible unless we do the thing were we keep tokens around
-        OR we could just ignore the name on the identifier after it's been resolved and instead only get the name from the resolved declaration
-        but like, not all declarations are the same... unless we go through with that refactor
-    
-        the practical use case for this is something like being able to change the identifier of an external variable, e.g. a tilemap in the editor and have the be reflected in the script
-        this is not like a must have but it would be nice and honestly it may be a good reason to spur on some refactoring of identifiers and declarations
-        
         
     NOTES:
         identifier.name is now only valid when unresolved
         after the identifier is resolved, the name must be retrieved indirectly, depending on the resolved type
-        we would like to simplify this by removing resolved types
-            the easiest to remove my be the enum_value type, if we can just replace the identifier node with a literal 
+        this indireciton means that we can change the identifier more dynamically now while the code is still in AST
+        but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
         
         external variables, procedures, and types all now use the same index member in the union
         
         LITERAL has been added as an identifier type, to be used in place of ENUM
             this will allow us to implement things like use of constant struct members
     
-    
+        left side of node_dot can now be null since we actually go through node_dot now for enums
+        
     
 */
 Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
@@ -87,7 +77,7 @@ Node_Identifier :: struct {
         index:          int;    // external variable, procedure, or type
         declaration:    *Node_Declaration;
         member:         *Type_Info_Struct_Member;
-        literal:        *Node_Literal;
+        literal:        *Node_Literal;  // we may end up needing to also store a name for this, in case the literal was not an enum...
     }
 }
 
@@ -100,12 +90,8 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
       case .STRUCT_MEMBER;      return identifier.member.name;
       case .DECLARATION;        return identifier.declaration.name;
       case .LITERAL;
-        // ahh fuck. I can't figure how we would implement this for struct members yet but I'm gonn apress on anyhow and only do the enum case
-        if identifier.literal.value_type.type == .ENUM {
-            return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.value_pointer.(s64));   // @HACK we really need to make enum values be literals...
-        }
-        log("Warning: we aren't yet able to get the identifier name back for non-enum literals. This definitely needs to be fixed but for now it is what it is. Literal value type was: '%'.", as_type(identifier.literal.value_type));
-        return "";
+        assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));
+        return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.value_pointer.(s64));
     }
     assert(false, "unreachable");
 }
@@ -114,7 +100,7 @@ Node_Declaration :: struct {
     using #as node_base:    Node;
     name:                   string;
     value_pointer:          *void;
-    type_expression:        *Node_Identifier; // must resolve to a type declaration
+    type_expression:        *Node;
     init_expression:        *Node;
 }
 
@@ -146,39 +132,12 @@ Node_Literal :: struct {
         number:  Small_Any;
         text:    string;
         aggr: struct {
-            type_identifier:    *Node_Identifier;   // can we refactor identifier resolution so that this can just be a string?
-            value_pointer:      *void;              // once type is resolved, we store pointer to allocated value here
-            expressions:        *Node;              // expressions to init struct members by. later maybe also accepting statements
+            type_expression:    *Node;   // can we refactor identifier resolution so that this can just be a string?
+            value_pointer:      *void;   // once type is resolved, we store pointer to allocated value here
+            expressions:        *Node;   // expressions to init struct members by. later maybe also accepting statements
         }
         any: Any;
     }
-}
-
-// TODO: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
-//       so this will only work for basically numbers, strings, and enums
-make_literal :: (script: *Script, value: Any) -> *Node_Literal {
-    literal := alloc_node(script, Node_Literal);
-    if value.type.type == .STRING {
-        literal.literal_type = .STRING;
-        literal.text = value.value_pointer.(*string).*;
-    }
-    else if value.type.type == .ENUM || is_numeric_type(value.type) {
-        literal.literal_type = .NUMBER;
-        literal.number = Small_Any.{ value.type, value.value_pointer.(**void).* };
-    }
-    literal.value_type = value.type;
-    return literal;
-}
-
-get_literal_value_as_any :: (literal: Node_Literal) -> Any {
-    assert(literal.value_type != null);
-    if #complete literal.literal_type == {
-      case .STRING; return Any.{ type_info(string), *literal.text };
-      case .NUMBER; return to_any(literal.number);
-      case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
-      case .ANY;    return literal.any;
-    }
-    assert(false, "unreachable");
 }
 
 /*

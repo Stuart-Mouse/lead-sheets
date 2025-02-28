@@ -205,9 +205,6 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
     }
 }
 
-
-
-
 make_number_literal :: (script: *Script, token: Token) -> *Node {
     value, ok := parse_number(token.text);
     if !ok  return null;
@@ -218,6 +215,39 @@ make_number_literal :: (script: *Script, token: Token) -> *Node {
     literal.number = value;
     return literal;
 }
+
+// TODO: need to have some kind of flag on such a node so that we know whether we need to print the fully qualified enum name with type or not
+//       adn that will depend on whether this node is held by a node_identifier/node_dot or not
+//       if this nod eis held by a node_identifier or node_dot, then it actually won't get directly called by print_node anyhow though
+//       since the identifier will just print itself with get_identifier_name. so i guess it's actually just fine to always use the fully qualified enum name if we print an enum literal?
+//       or maybe we use a flag like .IMPLICIT to signify that the enum literal was using a unary dot in the source text.
+// TODO: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
+//       so this will only work for basically numbers, strings, and enums
+make_literal :: (script: *Script, value: Any) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal);
+    if value.type.type == .STRING {
+        literal.literal_type = .STRING;
+        literal.text = value.value_pointer.(*string).*;
+    }
+    else if value.type.type == .ENUM || is_numeric_type(value.type) {
+        literal.literal_type = .NUMBER;
+        literal.number = Small_Any.{ value.type, value.value_pointer.(**void).* };
+    }
+    literal.value_type = value.type;
+    return literal;
+}
+
+get_literal_value_as_any :: (literal: Node_Literal) -> Any {
+    assert(literal.value_type != null);
+    if #complete literal.literal_type == {
+      case .STRING; return Any.{ type_info(string), *literal.text };
+      case .NUMBER; return to_any(literal.number);
+      case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
+      case .ANY;    return literal.any;
+    }
+    assert(false, "unreachable");
+}
+
 
 make_number_literal :: (script: *Script, number: float64) -> *Node {
     literal := alloc_node(script, Node_Literal);
@@ -233,7 +263,6 @@ make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
     node.name = name;
     return node;
 }
-
 
 
 

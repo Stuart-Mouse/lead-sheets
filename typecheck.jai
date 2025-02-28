@@ -125,13 +125,21 @@ typecheck_node :: (
             // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
             // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
             ti_struct: *Type_Info_Struct;
-            if literal.aggr.type_identifier != null {
-                type_identifier_type := typecheck_node(script, literal.aggr.type_identifier);
-                if type_identifier_type == null || type_identifier_type.type != .TYPE || literal.aggr.type_identifier.identifier_type != .TYPE {
-                    log("Error: Type expression on left-hand side of struct literal did not resolve to a Type.");
+            if literal.aggr.type_expression != null {
+                type_expression := literal.aggr.type_expression;
+                type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
+                if type_type == null || type_type.type != .TYPE {
+                    log("Error: Type expression in cast did not resolve to a Type.");
                     return null;
                 }
-                ti_struct = xx type_table[literal.aggr.type_identifier.index].type;
+                // TODO: make sure that type expression is constant before evaluating it
+                // if !(type_expression.flags & .IS_CONSTANT) {
+                //     log("Error: Type expression in cast must be constant.");
+                //     return null;
+                // }
+                type_any, ok := evaluate_node(script, type_expression);
+                if !ok  return null;
+                ti_struct = xx type_any.value_pointer.(**Type_Info).*;
             } else {
                 ti_struct = xx hint_type;
             }
@@ -422,13 +430,20 @@ typecheck_node :: (
         if node_cast.flags & .IMPLICIT {
             node.value_type = node_cast.implicit_type;
         } else {
-            type_identifier := node_cast.type_identifier;
-            type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
-            if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
-                log("Error: Type expression in RHS of cast did not resolve to a Type.");
+            type_expression := node_cast.type_expression;
+            type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
+            if type_type == null || type_type.type != .TYPE {
+                log("Error: Type expression in cast did not resolve to a Type.");
                 return null;
             }
-            node.value_type = type_table[type_identifier.index].type;
+            // TODO: make sure that type expression is constant before evaluating it
+            // if !(type_expression.flags & .IS_CONSTANT) {
+            //     log("Error: Type expression in cast must be constant.");
+            //     return null;
+            // }
+            type_any, ok := evaluate_node(script, type_expression);
+            if !ok  return null;
+            node.value_type = type_any.value_pointer.(**Type_Info).*;
         }
         
         // TODO: check if we can actually perform the cast here
@@ -440,7 +455,7 @@ typecheck_node :: (
         dot := node.(*Node_Dot);
         
         // Currently, the only valid case for dot.left being null is for unary dot enums.
-        // Setting left_type to 'Type' gets us into the proper case down below.
+        // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below.
         left_type: *Type_Info;
         if dot.left
             then left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
@@ -482,13 +497,13 @@ typecheck_node :: (
             // TODO: access enum namespace through instance of enum type
             
           case .TYPE;
-            // we can't actually know what type it is unless we evaluate this expression
-            // so I guess we just call evaluate_node here and if that fails then obviously the type expression wasn' constant or seomthing
-            // but in theory if it typechecked fine that we should be good to go?
-            // well..... not really. in theory maybe this could be non-constant if a non-constant value of type type was used.
-            // IDK! we need to make this better in the future for sure but for now I'm just going to assume that it's fine to evaluate this node to get the type in question
             namespace: *Type_Info;
             if dot.left {
+                // TODO: make sure that type expression is constant before evaluating it
+                // if !(type_expression.flags & .IS_CONSTANT) {
+                //     log("Error: Type expression in cast must be constant.");
+                //     return null;
+                // }
                 left_any, ok := evaluate_node(script, dot.left);
                 if !ok  return null;
                 namespace = left_any.value_pointer.(**Type_Info).*;
@@ -584,14 +599,20 @@ typecheck_node :: (
         
         explicit_type: *Type_Info;
         if declaration.type_expression {
-            assert(declaration.type_expression.node_type == Node_Identifier);
-            type_identifier := declaration.type_expression;
-            type_type := typecheck_node(script, type_identifier, hint_type = type_info(Type));
-            if !type_type || type_type.type != .TYPE || type_identifier.identifier_type != .TYPE {
-                log("Error: Type expression in declaration did not resolve to a Type.");
+            type_expression := declaration.type_expression;
+            type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
+            if type_type == null || type_type.type != .TYPE {
+                log("Error: Type expression in cast did not resolve to a Type.");
                 return null;
             }
-            explicit_type = type_table[type_identifier.index].type;
+            // TODO: make sure that type expression is constant before evaluating it
+            // if !(type_expression.flags & .IS_CONSTANT) {
+            //     log("Error: Type expression in cast must be constant.");
+            //     return null;
+            // }
+            type_any, ok := evaluate_node(script, type_expression);
+            if !ok  return null;
+            explicit_type = type_any.value_pointer.(**Type_Info).*;
         }
         
         right_type: *Type_Info;

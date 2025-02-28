@@ -99,12 +99,10 @@ print_node :: (
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
-            if literal.aggr.type_identifier {
-                assert(literal.aggr.type_identifier.identifier_type == .TYPE);
-                print_to_builder(builder, "%.{ ", as_type(script.type_table[literal.aggr.type_identifier.index].type));
-            } else {
-                append(builder, ".{ ");
+            if literal.aggr.type_expression {
+                print_node(script, literal.aggr.type_expression, builder, indent);
             }
+            append(builder, ".{ ");
             
             if node.flags & .TYPECHECKED {
                 // ignoring #place members. Wish there were a better way to do this.
@@ -195,7 +193,7 @@ print_node :: (
         print_node_or_return(script, _cast.value, builder, indent);
         if !(_cast.flags & .IMPLICIT) {
             append(builder, ".(");
-            print_node_or_return(script, _cast.type_identifier, builder, indent);
+            print_node_or_return(script, _cast.type_expression, builder, indent);
             append(builder, ")");
         }
         return true;

@@ -296,12 +296,8 @@ parse_leaf :: (using script: *Script) -> *Node {
             node = literal;
         }
         else if token_after_dot.type == .IDENTIFIER {
-            // log("Error: unary dot enums are broken rn, thanks for trying tho");
-            // return null;
-            
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
-            // but I can't think baout that right now...
             identifier := alloc_node(script, Node_Identifier);
             identifier.name = token_after_dot.text;
             dot := alloc_node(script, Node_Dot);
@@ -456,7 +452,7 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     // going iteratively, precedence can only decrease
     while true {
         // but going only recursively, precedence will only increase
-        node := parse_increasing_precedence(script, left, min_prec);
+        node := parse_binary(script, left, min_prec);
         if node == null  return null;
         if node == left  break;
         left = node;
@@ -495,7 +491,7 @@ parse_comma_separated_expressions :: (using script: *Script, expected_end_token:
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
+parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     // dprint("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
     // dprint_push_indent();
     
@@ -515,6 +511,7 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
     if token.type == {
       case .OPEN_PAREN;
         get_token(*lexer);
+        dprint("PROCEDURE ARGUMENTS LIST\n");
         
         node := alloc_node(script, Node_Procedure_Call);
         node.procedure_expression = left;
@@ -528,31 +525,25 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
         
       case .DOT;
         get_token(*lexer);
+        dprint("BINARY DOT\n");
         
         token_after_dot := get_token(*lexer);
         if token_after_dot.type == {
           case .OPEN_PAREN;
             dprint("CAST\n");
+            type_expr := parse_expression(script, 0);
             
-            // TODO: in the future maybe we can have more complex type expressions, but that's not really a priority.
-            token_identifier := get_token(*lexer);
-            if token_identifier.type == .IDENTIFIER {
-                // verify that identifier is followed by closing paren
-                token_close_paren := get_token(*lexer);
-                if token_close_paren.type != .CLOSE_PAREN {
-                    log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.source_location.line, token_close_paren.source_location.char);
-                    return null;
-                }
-                
-                node_cast := alloc_node(script, Node_Cast);
-                node_cast.value = left;
-                node_cast.type_identifier = make_identifier(script, token_identifier.text);
-                return node_cast;
+            token_close_paren := get_token(*lexer);
+            if token_close_paren.type != .CLOSE_PAREN {
+                log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.source_location.line, token_close_paren.source_location.char);
+                return null;
             }
             
-            log("Error: unexpected token '%' in cast type expression at (%:%). Expected a type identifier.", token_identifier.type, token_identifier.source_location.line, token_identifier.source_location.char);
-            return null;
-            
+            node_cast := alloc_node(script, Node_Cast);
+            node_cast.value = left;
+            node_cast.type_expression = type_expr;
+            return node_cast;
+
             
           case .IDENTIFIER;
             node := alloc_node(script, Node_Dot);
@@ -562,12 +553,9 @@ parse_increasing_precedence :: (using script: *Script, left: *Node, min_prec: in
             
             
           case .OPEN_BRACE;
-            if left.node_type != Node_Identifier {
-                log("Error: unexpected % node in type slot of struct literal at (%:%)", left.node_type, token.source_location.line, token.source_location.char);
-            }
             node := alloc_node(script, Node_Literal);
             node.literal_type = .STRUCT;
-            node.aggr.type_identifier = xx left;
+            node.aggr.type_expression = left;
             init_expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_BRACE);
             if !ok  return null;
             node.aggr.expressions = init_expressions;
