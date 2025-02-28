@@ -208,21 +208,21 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         do_assignment := false;
-        is_constant_declaration := false;
+        is_macro_declaration := false;
         
         if expect_token_type(*lexer, .ASSIGN_EQUAL) {
             do_assignment = true;
         }
         else if expect_token_type(*lexer, .COLON) {
             do_assignment = true;
-            is_constant_declaration = true;
+            is_macro_declaration = true;
         }
         
         if do_assignment {
             dprint("WITH ASSIGNMENT\n");
             declaration.init_expression = parse_expression(script, 0);
             if declaration.init_expression == null  return null;
-            if is_constant_declaration then declaration.flags |= .IS_CONSTANT;
+            if is_macro_declaration then declaration.flags |= .MACRO;
         }
         
         if expect_semicolon && !expect_token_type(*lexer, .SEMICOLON)  return null;

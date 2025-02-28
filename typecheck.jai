@@ -170,8 +170,20 @@ typecheck_node :: (
                 log("Error: identifier % used before its declaration.", identifier.name);
                 return null;
             }
+            // TODO: we cannot mark the identifier is constant based on the declaration yet, 
+            //       since the declaration may later be referenced by another identifier as an lvalue, making the declaration non-constant
+            //       This is fine since we don't really do any constant evaluation on the AST, but when we lower to bytecode, 
+            //       we will need to consider that a DECLARATION identifier may yet need to be checked for constancy.
+            // TODO: if the declaration is a macro though, and the init_expression of the macro is constant, then we can still go ahead and safely mark the identifier as constant
+            //       this may be a good idea to go ahead and implement sinceit would allow us to use such an identifier in a type expression.
             if declaration.flags & .IS_CONSTANT {
-                identifier.flags |= .IS_CONSTANT;
+                if check_flags & .EXPECT_LVALUE {
+                    dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue\n", declaration.name);
+                    declaration.flags &= ~.IS_CONSTANT;
+                }
+                // if declaration.flags & .MACRO {
+                //     identifier.flags |= .CONSTANT;
+                // }
             }
             identifier.identifier_type = .DECLARATION;
             identifier.declaration     = declaration;
@@ -622,21 +634,16 @@ typecheck_node :: (
                 log("Error: init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type);
                 return null;
             }
-            if declaration.flags & .IS_CONSTANT {
-                if !(declaration.init_expression.flags & .IS_CONSTANT) {
-                    log("Error: init expression of a constant declaration must be constant.");
-                    return null;
-                }
+            // if the init expression of a declaration is marked as constant, then the declaration is also marked as constant
+            // however, if the declaration is later re-assigned to a new value, the declaration will lose this designation
+            if declaration.init_expression.flags & .IS_CONSTANT {
+                declaration.flags |= .IS_CONSTANT;
             }
         }
         
-        // TODO: constant declarations will be essentially just a passthrough to the init_expression node directly
-        // hard-coding this for now, just to get it working, but this is not a good long term thing...
-        // for now, only constant assignment we can have is a single literal
-        // later, we will do some work to pass info back up the syntax tree about whether an expresion can be constant
-        if declaration.flags & .IS_CONSTANT {
+        if declaration.flags & .MACRO {
             if declaration.init_expression.node_type != Node_Literal {
-                log("Error: constant declarations can only be made to simple literals at this time.");
+                log("Error: macro declarations can only be made to simple literals at this time.");
                 return null;
             }
         }
@@ -791,6 +798,7 @@ declaration_is_malleable_literal :: (declaration: Node_Declaration) -> bool {
 // declaration_can_be_used_as_lvalue :: (declaration: Node_Declaration) {
     
 // }
+
 
 is_aggr :: (t: Type) -> bool { return is_aggr(t.(*Type_Info)); }
 
@@ -984,10 +992,11 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
             return ok, msg;
             
           case .DECLARATION;
-            if (identifier.declaration.flags & .IS_CONSTANT) 
-            && !declaration_is_malleable_literal(identifier.declaration) {
-                return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
-            }
+            // TODO: update this logic for the new semantics around constant declarations and macros
+            // if (identifier.declaration.flags & .IS_CONSTANT) 
+            // && !declaration_is_malleable_literal(identifier.declaration) {
+            //     return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
+            // }
             return true, "";
         }
         

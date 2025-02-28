@@ -117,6 +117,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
+            if declaration.flags & .MACRO {
+                // return execute_node(script, declaration.init_expression);
+            }
+            
             variable_any := Any.{ identifier.value_type, declaration.value_pointer };
             dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
             if !stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
@@ -138,7 +142,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
           case .LITERAL;
             return execute_node(script, identifier.literal);
             
-          case; 
+          case;
             log("Error: unhandled case in execute_node for identifier type: %", identifier.identifier_type);
             return false;
         }
@@ -344,7 +348,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         //     return false;
         // }
         
-        // TODO: we need to check that the identifier does not refer to a previously declared variable
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression) {
                 dprint("failed to evaluate init expression of declaration statement!\n");

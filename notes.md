@@ -585,3 +585,33 @@ step 2
     lex all tokens into one big array
     save tokens and refer back to them from nodes
     
+
+
+constants expressions, constant declarations, and malleable literals
+    these three are all sort of intereacting in a not-idela way at the moment
+    one thing I owuld like to be able to do with constant declarations is change them so that they're really just AST node references
+    but we mark these 'constant' declarations with the same flag that we use for saying that an expression is constant
+    and really, we'd like to be able to use this AST reference semantics with non-constant expressions
+    this would especially be useful in the context of a debug console, since we could basically use those 'constant' declarations' identifiers like macros for larger expressions
+    for example `Entities :: get_active_entities(get_active_level());`
+    
+    
+    maybe the solution is just to make a .MACRO flag that is used for declarations instead of the CONSTANT flag
+    that we the two concepts are distinct
+    then maybe we can even do some parameterized macros as a replacement for having procedure declarations in scripts
+    I really don't want to have procedures if you can't tell
+        for simle expressions that you may want to parameterize, we have macros
+        then for organizational purposes we have named blocks, which don't take parameters but can have their own internal state through external variables or malleable literals
+    
+    for constant expressions then, we will be able to pre-evaluate those form thr root-most node and simplify them down into single literals
+        this will be a good step to run before lowering to bytecode
+        
+    
+    another consideration with constants is whether we even want to consider them at all in evaluation context
+    for example, it is kind of neat to be able to just use a non-constant type expression in declaring a variable in the debug console
+    this will probably just be some context flag in the script at a later point when we make certain aspects more configurable
+        along with things like using remap_data for automatic coercions, making LS feel a bit more dynamically-typed while still not actually being so
+            though we could also add some directive that would re-type a node
+    
+    
+
