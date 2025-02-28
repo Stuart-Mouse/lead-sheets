@@ -472,6 +472,7 @@ typecheck_node :: (
             member_identifier := dot.right.(*Node_Identifier);
             assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
             member_name := member_identifier.name;
+            dprint("typechecking struct member identifier at % with name '%'\n", member_identifier, member_name);
             
             member_ti, member_offset := get_field(xx left_type, member_name);
             if member_ti == null  return null;
@@ -487,6 +488,7 @@ typecheck_node :: (
                 // TODO: need to be able to call some simple make_literal() proc here and actually init the literal value
             } else {
                 member_identifier.identifier_type = .STRUCT_MEMBER;
+                member_identifier.member = member_ti;
             }
             member_identifier.value_type = member_ti.type;
             member_identifier.flags |= .TYPECHECKED;

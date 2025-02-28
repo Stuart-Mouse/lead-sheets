@@ -381,7 +381,7 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
         node_cast := node.(*Node_Cast);
         if !walk_nodes(script, xx *node_cast.value, callback, data)  return false;
         if !(node_cast.flags & .IMPLICIT) {
-            if !walk_nodes(script, xx *node_cast.type_identifier, callback, data)  return false;
+            if !walk_nodes(script, xx *node_cast.type_expression, callback, data)  return false;
         }
         
       case Node_Subscript;

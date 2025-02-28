@@ -285,6 +285,12 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;  
             struct_any := stack_pop_any(script, dot.left.value_type, true);
+            print("%\n", as_type(dot.value_type));
+            print("%\n", struct_any.value_pointer);
+            print("%\n", dot.right);
+            print("%\n", dot.right.(*Node_Identifier).*);
+            print("%\n", dot.right.(*Node_Identifier).member.*);
+            print("%\n", dot.right.(*Node_Identifier).member.offset_in_bytes);
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
             dprint("struct value ptr: %\n", struct_any.value_pointer);
