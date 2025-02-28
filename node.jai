@@ -121,10 +121,7 @@ Node_Directive :: struct {
     runtime_node:           *Node;  // returned from directive as a replacement node. We still keep the directive itself around for re-serialization, though.
 }
 
-// TODO: with the refactoring going on in Dot node, maybe we do actually move the aggr type identifier back out 
-//       then we can get rid of the parsing hack we were doing for struct literals...?
-// TODO: check if we actually need the .ANY literal type here now that we have make_literal
-//       we do for arrays I guess? idk. woul dbe nice to find another way....
+// TODO: figure out a better way to implement the ANY literal type
 Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ANY; };
@@ -170,13 +167,6 @@ Node_Operation :: struct {
     return_ptr:             *Node;      // only if return type is aggregate
 }
 
-// we don't really need to store the member offset on this node, since we can just get it from the right side identifier
-// this is doubling as struct member access and enum literal namespacing
-// really in both these case we should be able to simplify a chain of dots down to a single operation
-//      either add all member offsets and just store a single offset
-//      or for namespaces we jsut eventually have the final resolved declaration
-//      so maybe for Node_Identifier, we have an option for compound identifier that just has a pointer to first dot node
-//      and then for struct member access, we just make a new node for that which likewise has a pointer to the dot node and the total offset to member
 // TODO: maybe we can shortcut evaluatation of certain dot nodes when they're chained but only the last bit is relevant
 //       if I'm thinkning of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
 //       need to verify this, but if this is the case then we actually get the last dot node first in tree walking order, so we can easily short-circuit evaluate it if left side is some constant expression

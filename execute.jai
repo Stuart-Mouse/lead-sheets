@@ -300,6 +300,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return true;
             
           case .TYPE;
+            // type expression on left side is evaluated during typechecking
             return execute_node(script, dot.right);
         }
         

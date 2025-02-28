@@ -152,8 +152,8 @@ typecheck_node :: (
             dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
         }
         
-        // all literals are assumed to be constants except for malleable literals and ANY literals
-        if !(literal.flags & .IS_MALLEABLE) && literal.literal_type != .ANY {
+        // all literals are assumed to be constants except for ANY literals, since we want to be able to use those as anonymous lvalues.
+        if literal.literal_type != .ANY {
             literal.flags |= .IS_CONSTANT;
         }
         
@@ -596,7 +596,6 @@ typecheck_node :: (
             return null;
         }
         
-        
         explicit_type: *Type_Info;
         if declaration.type_expression {
             type_expression := declaration.type_expression;
@@ -620,7 +619,14 @@ typecheck_node :: (
             right_type = typecheck_node(script, declaration.init_expression, hint_type = explicit_type);
             if right_type == null  return null;
             if explicit_type && explicit_type != right_type {
-                log("Error: right side of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type);
+                log("Error: init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type);
+                return null;
+            }
+            if declaration.flags & .IS_CONSTANT {
+                if !(declaration.init_expression.flags & .IS_CONSTANT) {
+                    log("Error: init expression of a constant declaration must be constant.");
+                    return null;
+                }
             }
         }
         
