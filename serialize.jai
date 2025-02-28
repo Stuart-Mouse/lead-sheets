@@ -99,9 +99,6 @@ print_node :: (
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
-            if literal.aggr.type_expression {
-                print_node(script, literal.aggr.type_expression, builder, indent);
-            }
             append(builder, ".{ ");
             
             if node.flags & .TYPECHECKED {

@@ -285,7 +285,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     if token.type == {
       case .DOT;
-        dprint("DOT (UNARY)\n");
+        dprint("UNARY DOT\n");
         token_after_dot := get_token(*lexer);
         if token_after_dot.type == .OPEN_BRACE {
             literal := alloc_node(script, Node_Literal);
@@ -293,13 +293,17 @@ parse_leaf :: (using script: *Script) -> *Node {
             ok: bool;
             literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
             if !ok  return null;
-            node = literal;
+            
+            dot := alloc_node(script, Node_Dot);
+            dot.right = literal;
+            node = dot;
         }
         else if token_after_dot.type == .IDENTIFIER {
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
             identifier := alloc_node(script, Node_Identifier);
             identifier.name = token_after_dot.text;
+            
             dot := alloc_node(script, Node_Dot);
             dot.right = identifier;
             node = dot;
@@ -553,13 +557,16 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             
             
           case .OPEN_BRACE;
-            node := alloc_node(script, Node_Literal);
-            node.literal_type = .STRUCT;
-            node.aggr.type_expression = left;
+            literal := alloc_node(script, Node_Literal);
+            literal.literal_type = .STRUCT;
             init_expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_BRACE);
             if !ok  return null;
-            node.aggr.expressions = init_expressions;
-            return node;
+            literal.aggr.expressions = init_expressions;
+            
+            dot := alloc_node(script, Node_Dot);
+            dot.left  = left;
+            dot.right = literal;
+            return dot;
         }
         
         log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.source_location.line, token.source_location.char);

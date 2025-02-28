@@ -132,7 +132,6 @@ Node_Literal :: struct {
         number:  Small_Any;
         text:    string;
         aggr: struct {
-            type_expression:    *Node;   // can we refactor identifier resolution so that this can just be a string?
             value_pointer:      *void;   // once type is resolved, we store pointer to allocated value here
             expressions:        *Node;   // expressions to init struct members by. later maybe also accepting statements
         }

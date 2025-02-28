@@ -277,7 +277,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         dot := node.(*Node_Dot);
         
         if dot.left == null {
-            assert(node.value_type.type == .ENUM);
+            assert(node.value_type.type == .ENUM || node.value_type.type == .STRUCT);
             return execute_node(script, dot.right);
         }
         

@@ -124,27 +124,7 @@ typecheck_node :: (
           case .STRUCT;
             // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
             // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
-            ti_struct: *Type_Info_Struct;
-            if literal.aggr.type_expression != null {
-                type_expression := literal.aggr.type_expression;
-                type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
-                if type_type == null || type_type.type != .TYPE {
-                    log("Error: Type expression in cast did not resolve to a Type.");
-                    return null;
-                }
-                // TODO: make sure that type expression is constant before evaluating it
-                // if !(type_expression.flags & .IS_CONSTANT) {
-                //     log("Error: Type expression in cast must be constant.");
-                //     return null;
-                // }
-                type_any, ok := evaluate_node(script, type_expression);
-                if !ok  return null;
-                ti_struct = xx type_any.value_pointer.(**Type_Info).*;
-            } else {
-                ti_struct = xx hint_type;
-            }
-            
-            if ti_struct == null  return null;
+            ti_struct := hint_type.(*Type_Info_Struct);
             if ti_struct.type != .STRUCT {
                 log("Error: type hint provided to struct literal is not a struct type. (was '%')", as_type(ti_struct));
                 return null;
@@ -461,13 +441,13 @@ typecheck_node :: (
             then left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
             else left_type = type_info(Type); 
         
-        if dot.right.node_type != Node_Identifier {
-            log("Error: right side of dot expression must be an identifier.");
-            return null;
-        }
         
         if left_type.type == {
           case .STRUCT;
+            if dot.right.node_type != Node_Identifier {
+                log("Error: right side of struct member dot dereference expression must be an identifier.");
+                return null;
+            }
             // TODO: we should check that member offset is non-negative so as to prevent use of constants until we can properly support those
             member_identifier := dot.right.(*Node_Identifier);
             assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
@@ -510,8 +490,8 @@ typecheck_node :: (
                 if !ok  return null;
                 namespace = left_any.value_pointer.(**Type_Info).*;
             } else {
-                if hint_type == null || hint_type.type != .ENUM {
-                    log("Error: unary dot can only be used for enums, but hint_type was %", hint_type);
+                if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
+                    log("Error: unary dot can only be used for enums, but hint_type was %", as_type(hint_type));
                     return null;
                 }
                 namespace = hint_type;
@@ -519,6 +499,18 @@ typecheck_node :: (
             
             if namespace.type == {
               case .STRUCT;
+                if dot.right.node_type == {
+                  case Node_Literal;
+                    ti_struct := namespace.(*Type_Info_Struct);
+                    if xx ti_struct != typecheck_node(script, dot.right, hint_type = ti_struct)  return null;
+                    
+                    dot.right.flags |= .TYPECHECKED;
+                    dot.value_type = ti_struct;
+                    return dot.value_type;
+                    
+                  // case .Node_Identifier;
+                }
+                
                 /*
                     Do we want to support use of non-constant struct members on a struct type if the eventual result is some constant literal?
                     for example: `Some_Struct.some_member_thats_an_anonymous_enum.SOME_ENUM_VALUE`
@@ -532,10 +524,6 @@ typecheck_node :: (
                 
               case .ENUM;
                 ti_enum := namespace.(*Type_Info_Enum);
-                if ti_enum.type != .ENUM {
-                    log("Error: type expression on left-hand side of dot must be an enum type.");
-                    return null;
-                }
                 
                 right := dot.right.(*Node_Identifier);
                 assert(right.node_type == Node_Identifier && right.identifier_type == .UNRESOLVED);
