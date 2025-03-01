@@ -198,8 +198,9 @@ print_node :: (
         
       case Node_Dot;
         dot := node.(*Node_Dot);
-        print_node_or_return(script, dot.left, builder, indent);
-        if !(dot.right.node_type == Node_Literal) {// && dot.right.(*Node_Literal).literal_type == .STRUCT) { // @Hack
+        
+        if dot.left  print_node_or_return(script, dot.left, builder, indent);
+        if !(dot.right.node_type == Node_Literal && dot.right.(*Node_Literal).literal_type == .STRUCT) { // @Hack
             append(builder, ".");
         }
         print_node_or_return(script, dot.right, builder, indent);
@@ -251,7 +252,7 @@ print_node :: (
             if declaration.init_expression  append(builder, " ");
         }
         if declaration.init_expression {
-            if declaration.flags & .IS_CONSTANT {
+            if declaration.flags & .MACRO {
                 append(builder, ": ");
             } else {
                 append(builder, "= ");

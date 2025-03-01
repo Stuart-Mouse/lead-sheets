@@ -614,4 +614,44 @@ constants expressions, constant declarations, and malleable literals
             though we could also add some directive that would re-type a node
     
     
+    ok, so the problem with the macros right now is that we don't yet have a deep copy for ast nodes 
+        which we will need, since we actually need to typecheck different instanciations of the macro individually
+        
+    we probably want to change the way macros are parsed so that they can't get a type expression in the same way as normal declarations
+    we want the macros to be a bit more polymorphic i guess, so that means 
+    
+    but maybe copying nodes in the macro way actually breaks the ability to name malleable literals
+        since we would jsu tbe duplicating the literal node
+        and we actually want to point to the same literal node, since that's what has the underlying value we care about...
+    so im not sure if we can have these malleable literals and also macros that actually copy nodes
+    
+    we could make the macros simply be references to the nodes in question, but then they are not polymorphic, just shorthands
+        i guess righ tnow I don't care to make the macros polymorphic and only want them for the shorthand aspect...
+            BUT the problem is we really NEED to retypcheck on macro instanciation because the macro may be used as either an lvalue or rvalue
+            and this is really where the main issue lies...
+            
+    so the only option lef tis the hard option, which is to do some fancy stuff when we clone nodes for a macro
+    for the most part, we can probably just clone nodes as-is, but at least for malleable literals, we need to make sure that all instances share the same value_pointer and value_type
+        which also means that we place some limits on how polymorphic a macro containin a malleable literal can be, since the malleable literal's type needs to stay the same across all instanciations
+        that leaves a tiny bit of wiggle room, but not much 
+        the other question is what to do about type inference on malleble literals? I guess we just have to be explicit about types there, or maybe the type gets dictated based on the 
+        
+    yeah, if we want macros to be polymorphic at all, then we need to take out the type expression and and malleable literals used therein need to be explicitly typed (or default to float or w/e)
+
+    due to all the complexity that this sounds like, I will probably just leave the macro stuff for a later date, after I make some more real progress on the game
+    it owuld be a good time to make sure everything still works properly, fix serialization, and maybe even do the whitepsace stuff first before adding such complex features
+    once we do get the macro thing working though, we can definitely use that to make the foreach more interesting
+    
+    
+    
+    
+    
+directives improvements
+    we really want to just use evaluate_directive and not execute_directive
+    
+    but perhaps better than that we just use the # character to denot that the following expression or statmeent should be run immediately
+        sort of liek a #run in jai
+        but with the added semantics that if the return value is a `*Node`, then that node gets appended in place of the 'directive'
+    then our directives can just be arbitrary expressions or chains of expresisons that transform nodes and and not just procedure calls
+    
 

@@ -33,7 +33,9 @@ echo(const);
 echo(`identifier string`);
 e := Fruits.BANANA;
 echo(e);
-echo(length(.{ 0, 0 } + .{ 0, 0 }));
+e = .PEAR;
+echo(e);
+echo(length(.{ 1, 2 } + .{ 2, 2 }));
 echo(f32(5));
 {
     a: int = 5;
@@ -43,7 +45,7 @@ echo(f32(5));
     a = b;
     echo(a);
 }
-v2 := Vector2.{ 0, 0 };
+v2 := Vector2.{ 1, 2 };
 scale(v2, 3);
 echo(v2);
 {

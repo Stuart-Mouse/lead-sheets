@@ -223,14 +223,27 @@ evaluate_node :: (
       case Node_Dot;
         dot := node.(*Node_Dot);
         
-        struct_any, ok := evaluate_node(script, dot.left);
-        if !ok  return Any.{}, false;
-        member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+        if dot.left == null {
+            assert(node.value_type.type == .ENUM || node.value_type.type == .STRUCT);
+            ret, ok := evaluate_node(script, dot.right);
+            return ret, ok;
+        }
         
-        dprint("struct value ptr: %\n", struct_any.value_pointer);
-        dprint("member value ptr: %\n", member_any.value_pointer);
-        
-        return member_any, true;
+        if dot.left.value_type.type == {
+          case .STRUCT;
+            struct_any, ok := evaluate_node(script, dot.left);
+            if !ok  return Any.{}, false;
+            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+            
+            dprint("struct value ptr: %\n", struct_any.value_pointer);
+            dprint("member value ptr: %\n", member_any.value_pointer);
+            
+            return member_any, true;
+            
+          case .TYPE;
+            ret, ok := evaluate_node(script, dot.right);
+            return ret, ok;
+        }
         
         
       case Node_Subscript;
