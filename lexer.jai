@@ -237,10 +237,17 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         str: string = .{ 1, *file[0] };
         advance(lexer);
         
-        after_dot := false;
+        after_dot    := false;
+        accept_alpha := false;
+        if is_any(file[0], "bhx") {
+            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
+            after_dot = true;   // so that we don't accept a dot in a integer literal
+            accept_alpha = true;
+        }
+        
         while file {
             // we can only allow one decimal point in a number, and it cannot be followed by a second decimal point
-            if !is_digit(file[0]) {
+            if !(is_digit(file[0]) || (accept_alpha && is_alpha(file[0]))) {
                 if file[0] != #char "." || after_dot  break;
                 if file.count > 1 && file[1] == #char "."  break; // cannot have a double dot, that is a spread/range operator
                 after_dot = true;

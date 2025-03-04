@@ -250,9 +250,28 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
 // any number encoded as hexadecimal, octal, binary, etc. will use u64
 // and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
 parse_number :: (s: string) -> Small_Any, bool {
-    // TODO: if number begins with 0b, 0h, 0x, etc..
-    //       this will require changes in the lexer as well
-
+    if !s {
+        log("Empty string in parse_number!");
+        return Any.{}, false;
+    }
+    
+    // if number begins with 0b, 0h, 0x, etc..
+    if s[0] == #char "0" && s.count >= 2 {
+        base: int = -1;
+        if s[1] == {
+          case #char "b"; base = 2;
+          case #char "h"; base = 8;
+          case #char "x"; base = 16;
+        }
+        if base != -1 {
+            str := advance(s, 2);
+            val, ok, remainder := string_to_int(str, base, s64);
+            if !ok || remainder  log("Failed to parse int with base % from '%'.", base, s);
+            return make_small_any(val), ok;
+        }
+    }
+    
+    
     // if we've got a decimal point in there, we will prefer float64
     if contains(s, #char ".") {
         val, ok := string_to_float64(s);
