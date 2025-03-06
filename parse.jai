@@ -266,7 +266,7 @@ parse_number :: (s: string) -> Small_Any, bool {
         if base != -1 {
             str := advance(s, 2);
             val, ok, remainder := string_to_int(str, base, s64);
-            if !ok || remainder  log("Failed to parse int with base % from '%'.", base, s);
+            if !ok || remainder  log("Failed to parse int with base % from '%'.", base, str);
             return make_small_any(val), ok;
         }
     }

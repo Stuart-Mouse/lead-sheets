@@ -240,6 +240,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         after_dot    := false;
         accept_alpha := false;
         if is_any(file[0], "bhx") {
+            str.count += 1;
             if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
             after_dot = true;   // so that we don't accept a dot in a integer literal
             accept_alpha = true;
