@@ -54,6 +54,9 @@ Token_Type :: enum {
     MUL             :: #char "*";
     DIV             :: #char "/";
     
+    DOLLAR          :: #char "$";
+    
+    
     
     IDENTIFIER      :: 256;
     STRING;
@@ -196,9 +199,9 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         }
     }
     
-    
+    // TODO: have some comptime function to generate this single char tokens string based on set values and list of operators?
     // single-character tokens
-    if is_any(file[0], "+-*/(),:;?=.[]{}|&~^<>") {
+    if is_any(file[0], "+-*/(),:;?=.[]{}|&~^<>$") {
         return make_token(xx file[0], 1);
     }
     
@@ -239,7 +242,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         
         after_dot    := false;
         accept_alpha := false;
-        if is_any(file[0], "bhx") {
+        if file && is_any(file[0], "bhx") {
             str.count += 1;
             if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
             after_dot = true;   // so that we don't accept a dot in a integer literal

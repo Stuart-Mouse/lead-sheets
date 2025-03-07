@@ -71,10 +71,15 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
     .{ "/",  .BINARY, 6 },
     
     .{ "-",  .UNARY,  7 },
+    
+    // added for LSD files
+    .{ "&",  .UNARY,  8 },
+    .{ "*",  .UNARY,  8 },
+    .{ "$",  .UNARY,  8 },
 ];
 
 
-Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
+Operator_Type  :: enum { BINARY; UNARY; ASSIGNMENT; };
 
 
 BUILTIN_OPERATIONS :: (

@@ -342,6 +342,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         //     return false;
         // }
         
+        // early return on macro for now so that we don't overwrite value of malleable literal
+        // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
+        if declaration.flags & (.MACRO)  return true;
+        
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression) {
                 dprint("failed to evaluate init expression of declaration statement!\n");

@@ -103,24 +103,6 @@ typecheck_node :: (
             }
             literal.value_type = literal.number.type; 
             
-          // case .ENUM;
-          //   if hint_type == null {
-          //       log("Error: no type hint provided to unary dot enum value.");
-          //       return null;
-          //   }
-          //   ti_enum := hint_type.(*Type_Info_Enum);
-          //   if ti_enum.type != .ENUM {
-          //       log("Error: type hint provided to unary dot enum was not an enum type.");
-          //       return null;
-          //   }
-          //   value, found := enum_name_to_value(ti_enum, literal._enum.identifier);
-          //   if !found {
-          //       log("Error: invalid enum value name '%' for enum type '%'.", literal._enum.identifier, as_type(ti_enum));
-          //       return null;
-          //   }
-          //   literal._enum.value = value;
-          //   literal.value_type = ti_enum;
-            
           case .STRUCT;
             // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
             // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
@@ -641,16 +623,22 @@ typecheck_node :: (
             }
         }
         
+        declaration.value_type    = ifx explicit_type else right_type;
+        declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
+        dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
+        
         if declaration.flags & .MACRO {
             if declaration.init_expression.node_type != Node_Literal {
                 log("Error: macro declarations can only be made to simple literals at this time.");
                 return null;
             }
+            value, ok := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
+            if !ok {
+                log("Error: failed to evaulate init expression of macro declaration. We do this during typechecking at the moment as a hack to make malleable literals work, and I'm not fixing this until we really make macros actually a thing.");
+                return null;
+            }
         }
         
-        declaration.value_type    = ifx explicit_type else right_type;
-        declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
-        dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
         return declaration.value_type;
         
         

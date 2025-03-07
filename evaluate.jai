@@ -73,13 +73,28 @@ evaluate_node :: (
         
         if #complete literal.literal_type == {
           case .ANY;
-            return literal.any, true;
+            ret := literal.any;
+            if hint_storage {
+                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
+                ret.value_pointer = hint_storage;
+            }
+            return ret, true;
             
           case .STRING;
-            return literal.text, true;
+            ret: Any = literal.text;
+            if hint_storage {
+                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
+                ret.value_pointer = hint_storage;
+            }
+            return ret, true;
             
           case .NUMBER;
-            return to_any(literal.number), true;
+            ret := to_any(literal.number);
+            if hint_storage {
+                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
+                ret.value_pointer = hint_storage;
+            }
+            return ret, true;
             
           case .STRUCT;
             ret := make_return_value();
@@ -118,7 +133,7 @@ evaluate_node :: (
             return Any.{ procedure.type, *procedure.ptr }, true;
             
           case .LITERAL;
-            ret, ok := evaluate_node(script, identifier.literal);
+            ret, ok := evaluate_node(script, identifier.literal, hint_storage);
             return ret, ok;
             
             
@@ -136,16 +151,16 @@ evaluate_node :: (
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
-            any, ok := evaluate_node(script, operation.overload_procedure);
+            any, ok := evaluate_node(script, operation.overload_procedure, hint_storage);
             return any, ok;
         }
         
-        left_any, ok := evaluate_node(script, operation.left);
+        left_any, ok := evaluate_node(script, operation.left, hint_storage);
         if !ok  return Any.{}, false;
         
         right_any: Any;
         if operation.operator_type != .UNARY {
-            right_any, ok = evaluate_node(script, operation.right);
+            right_any, ok = evaluate_node(script, operation.right, hint_storage);
             if !ok  return Any.{}, false;
         }
         
@@ -241,7 +256,7 @@ evaluate_node :: (
             return member_any, true;
             
           case .TYPE;
-            ret, ok := evaluate_node(script, dot.right);
+            ret, ok := evaluate_node(script, dot.right, hint_storage);
             return ret, ok;
         }
         
