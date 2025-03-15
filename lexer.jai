@@ -86,12 +86,11 @@ Token_Type :: enum {
 Token :: struct {
     type:               Token_Type;
     text:               string;
-    source_location:    Source_Location;
+    location:           Source_Location;
     whitespace_before:  string;
-    
-    // using source_location;
 }
 
+// TODO: replace usage with Source_Code_Location
 Source_Location :: struct {
     line, char: int;
 }
@@ -105,9 +104,9 @@ Lexer :: struct {
     ptr_after_last_token: *u8; 
 }
 
+// NOTE: need to call consume_token once to init lexer for proper usage
+//       otherwise, first token will appear to be .EOF
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
-    // NOTE: need to call consume_token once to init lexer for proper usage
-    //       otherwise, first token will appear to be .EOF
     lexer.file = file;
     lexer.cursor_location = location;
     get_token(lexer);
@@ -125,8 +124,8 @@ get_token :: inline (using lexer: *Lexer) -> Token {
     if next_token.type == .ERROR {
         dprint("LEXER ERROR: % (line %, char %)\n", 
             next_token.text, 
-            next_token.source_location.line, 
-            next_token.source_location.char
+            next_token.location.line, 
+            next_token.location.char
         );
         return next_token;
     }
@@ -165,7 +164,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     }
     
     // we grab cursor location at top so that it points to start of token
-    source_location := cursor_location;
+    location := cursor_location;
     
     // convenience macro for short tokens
     make_token :: (type: Token_Type, len: int) -> Token #expand {
@@ -173,7 +172,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         return .{
             type              = type,
             text              = slice(file, 0, len),
-            source_location   = source_location,
+            location          = location,
             whitespace_before = whitespace
         };
     }
@@ -231,7 +230,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
                 ident.whitespace_before = whitespace;
                 return ident;
             }
-            return make_error_token(source_location, "Unexpected character encountered while attempting to parse a directive name.");
+            return make_error_token(location, "Unexpected character encountered while attempting to parse a directive name.");
         }
     }
     
@@ -244,28 +243,26 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         accept_alpha := false;
         if file && is_any(file[0], "bhx") {
             str.count += 1;
-            if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing number.");
+            if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing number.");
             after_dot = true;   // so that we don't accept a dot in a integer literal
             accept_alpha = true;
         }
         
         while file {
-            // we can only allow one decimal point in a number, and it cannot be followed by a second decimal point
+            // we can only allow one decimal point in a number, and it cannot be followed consecutively by a second decimal point
             if !(is_digit(file[0]) || (accept_alpha && is_alpha(file[0]))) {
-                if file[0] != #char "." || after_dot  break;
-                if file.count > 1 && file[1] == #char "."  break; // cannot have a double dot, that is a spread/range operator
+                if file[0] != #char "." || after_dot       break;
+                if file.count > 1 && file[1] == #char "."  break;
                 after_dot = true;
             }
-            
             str.count += 1;
             advance(lexer);
         }
         
-        val, ok, rem := string_to_float(str);
         return .{
             type              = .NUMBER,
             text              = str,
-            source_location   = source_location,
+            location          = location,
             whitespace_before = whitespace
         };
     }
@@ -275,62 +272,65 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         quote_char := file[0];
         is_identifier := quote_char == #char "`";
         
-        if !advance(lexer)  return make_error_token(source_location, "Unexpected EOF while parsing string.");
-        string_value: string = ---;
-        string_value.data  = file.data;
-        string_value.count = 0;
+        if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing string.");
+        string_value := string.{ 0, file.data };
         
         while file[0] != quote_char {
             // TODO: handle escape sequences more properly
             adv := 1 + (file[0] == #char "\\").(int); 
             string_value.count += adv;
             if !advance(lexer, adv)  
-                return make_error_token(source_location, "Unexpected EOF while parsing string.");
+                return make_error_token(location, "Unexpected EOF while parsing string.");
         }
         advance(lexer);
         
         return .{ 
             type              = ifx is_identifier then .IDENTIFIER else .STRING, 
             text              = string_value, 
-            source_location   = source_location,
+            location          = location,
             whitespace_before = whitespace
         };
     }
     
-    return make_error_token(source_location, "Unexpected character encountered.");
+    return make_error_token(location, "Unexpected character encountered.");
 }
 
-make_error_token :: (source_location: Source_Location, error_string: string = "") -> Token { 
-    return .{ type = .ERROR, source_location = source_location, text = error_string }; 
+make_error_token :: (location: Source_Location, error_string: string = "") -> Token { 
+    return .{ type = .ERROR, location = location, text = error_string }; 
 }
+
+
+begins_identifier :: (char: u8) -> bool {
+    return is_alpha(char) || char == #char "_";
+}
+
+continues_identifier :: is_alnum;
 
 // returns true if we even start to parse an identifier, not only on success
 try_parse_identifier :: (using lexer: *Lexer) -> (Token, bool) {
-    source_location := cursor_location;
-    if is_alpha(file[0]) || file[0] == #char "_" {
+    location := cursor_location;
+    if begins_identifier(file[0]) {
         str: string = .{ 1, *file[0] };
         advance(lexer);
         
-        while file && is_alnum(file[0]) {
+        while file && continues_identifier(file[0]) {
             str.count += 1;
             advance(lexer);
         }
         
         return .{
-            type    = .IDENTIFIER,
-            text    = str,
-            source_location = source_location
+            type     = .IDENTIFIER,
+            text     = str,
+            location = location
         }, true;
     }
     return .{}, false;
 }
 
-
-// NOTE: this must be kept in accord with try_parse_identifier
 is_legal_identifier :: (str: string) -> bool {
     if !str return false;
-    if !is_alpha(str[0]) && str[0] != #char "_"  return false;
-    for str  if !is_alnum(it)  return false;
+    if !begins_identifier(str[0])  return false;
+    for str  if !continues_identifier(it)  return false;
     return true;
 }
 

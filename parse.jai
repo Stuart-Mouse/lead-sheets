@@ -9,7 +9,7 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     
     if script.ast_root == null {
         script.ast_root = alloc_node(script, Node_Block);
-        script.current_parent_node = script.ast_root;
+        script.current_scope = script.ast_root;
     }
     
     script.ast_root.statements = parse_statement(script);
@@ -24,7 +24,7 @@ parse_source_file :: (script: *Script, source: string) -> bool {
         previous      = node;
     }
     
-    assert(script.current_parent_node == script.ast_root);
+    assert(script.current_scope == script.ast_root);
     
     script.flags |= .PARSED;
     
@@ -38,14 +38,13 @@ parse_source_file :: (script: *Script, source: string) -> bool {
 }
 
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
-    token := peek_token(*lexer); // TODO: probably just get_toke_or_return(), then switch on type.
-    
+    token := peek_token(*lexer);
     if token.type == {
       case .IF; 
         dprint("IF STATEMENT\n"); dprint_push_indent();
         get_token(*lexer);
         if_statement := alloc_node(script, Node_If_Statement);
-        current_parent_node = if_statement; 
+        current_scope = if_statement; 
         
         dprint("CONDITION\n"); dprint_push_indent();
         if_statement.condition = parse_expression(script, 0);
@@ -55,14 +54,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if_statement.statement = parse_statement(script, expect_semicolon);
         if if_statement.statement == null  return null;
         
-        current_parent_node = if_statement.parent; 
+        current_scope = if_statement.parent; 
         return if_statement;
         
       case .WHILE;
         dprint("WHILE LOOP\n"); dprint_push_indent();
         get_token(*lexer);
         while_loop := alloc_node(script, Node_While_Loop);
-        current_parent_node = while_loop; 
+        current_scope = while_loop; 
         
         dprint("CONDITION\n");
         while_loop.condition = parse_expression(script, 0);
@@ -72,14 +71,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         while_loop.statement = parse_statement(script, expect_semicolon);
         if while_loop.statement == null  return null;
         
-        current_parent_node = while_loop.parent; 
+        current_scope = while_loop.parent; 
         return while_loop;
         
       case .FOR;
         dprint("FOR LOOP\n"); dprint_push_indent();
         get_token(*lexer);
         for_loop := alloc_node(script, Node_For_Loop);
-        current_parent_node = for_loop; 
+        current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION\n");
         expr := parse_expression(script, 0);
@@ -104,14 +103,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
-        current_parent_node = for_loop.parent; 
+        current_scope = for_loop.parent; 
         return for_loop;
         
       case .FOREACH;
         dprint("FOREACH LOOP\n"); dprint_push_indent();
         get_token(*lexer);
         for_loop := alloc_node(script, Node_For_Loop);
-        current_parent_node = for_loop; 
+        current_scope = for_loop; 
         
         dprint("ITERATOR LIST\n");
         if !expect_token_type(*lexer, .OPEN_PAREN) {
@@ -128,14 +127,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
-        current_parent_node = for_loop.parent; 
+        current_scope = for_loop.parent; 
         return for_loop;
         
       case .OPEN_BRACE;
         dprint("BLOCK\n"); dprint_push_indent();
         get_token(*lexer);
         block := alloc_node(script, Node_Block);
-        current_parent_node = block; 
+        current_scope = block; 
         
         statement := parse_statement(script);
         if !statement  return null;
@@ -150,9 +149,13 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             previous       = statement;
         }
         
-        current_parent_node = block.parent; 
+        current_scope = block.parent; 
         return block;
     }
+    
+    // TODO: we can improve this section if we beef up the lexer so that we scan a few more tokens ahead, or pre-tokenize the entire file.
+    //       If we could peek 2 tokens ahead we could capture the identifer + colon case before the general expression case.
+    //       which would prevent us from making the identifier node and throwing it away just to stick the name on the declaration or assignment expression
     
     dprint("EXPRESSION...\n");
     
@@ -172,7 +175,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         // also, for now we will require that all named blocks are top-level, since we will actually just push these blocks into a special array
         if peek_token(*lexer).type == .OPEN_BRACE {
             dprint("NAMED BLOCK (%)\n", left.(*Node_Identifier).name); dprint_push_indent();
-            if script.current_parent_node != script.ast_root {
+            if script.current_scope != script.ast_root {
                 log("Error: named blocks can only be declared at the top-level scope.");
                 return null;
             }
@@ -194,7 +197,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         declaration := alloc_node(script, Node_Declaration);
         declaration.name = left.(*Node_Identifier).name;
-        // declaration.source_location = left.source_location;
+        // declaration.location = left.location;
         
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
@@ -240,15 +243,16 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
 }
 
 
-
-// This procedure is kinda incomplete and doesn't do everything yet, but here's the plan...
-// will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
-// we can then recast from this preferred type to 
-// obviously any number with a fractional component will use float64
-// any base 10 number that can fit in an s64 will use an s64
-// if the number is larger than s64 max, then we'll try to use u64 instead
-// any number encoded as hexadecimal, octal, binary, etc. will use u64
-// and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
+/*
+    This procedure is kinda incomplete and doesn't do everything yet, but here's the plan...
+    will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
+    we can then recast from this preferred type to 
+    obviously any number with a fractional component will use float64
+    any base 10 number that can fit in an s64 will use an s64
+    if the number is larger than s64 max, then we'll try to use u64 instead
+    any number encoded as hexadecimal, octal, binary, etc. will use u64
+    and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
+*/
 parse_number :: (s: string) -> Small_Any, bool {
     if !s {
         log("Empty string in parse_number!");
@@ -279,6 +283,7 @@ parse_number :: (s: string) -> Small_Any, bool {
         return make_small_any(val), ok;
     }
     
+    // else we parse and store it as an integer
     val, ok := string_to_int(s, 10, s64);
     if !ok  log("Failed to parse integer from '%'.", s);
     return make_small_any(val), ok;
@@ -287,21 +292,20 @@ parse_number :: (s: string) -> Small_Any, bool {
 parse_leaf :: (using script: *Script) -> *Node {
     // dprint("parse_leaf()\n");
     // dprint_push_indent();
-    
-    node:     *Node;
-    unary_op: *Node_Operation;
-    
     token := get_token_or_return(*lexer, null);
-    is_operator, operator_type := token_is_operator(token, expect_unary = true);
+    
+    is_operator, operator_type, precedence := token_is_operator(token, expect_unary = true);
     if is_operator && operator_type == .UNARY {
         dprint("UNARY OPERATOR (%)\n", token.text);
-        unary_op = alloc_node(script, Node_Operation);
+        unary_op := alloc_node(script, Node_Operation);
         unary_op.name = token.text;
         unary_op.operator_type = .UNARY;
-        // unary_op.left gets set at the bottom, when 'node' actually points to something.
-        token = get_token_or_return(*lexer, null);
+        unary_op.left = parse_expression(script, precedence);
+        if unary_op.left == null  return null;
+        return unary_op;
     }
     
+    node: *Node;
     if token.type == {
       case .DOT;
         dprint("UNARY DOT\n");
@@ -327,11 +331,11 @@ parse_leaf :: (using script: *Script) -> *Node {
             dot.right = identifier;
             node = dot;
         }
-        else log("Error: unexpected DOT token at (%:%)", token_after_dot.source_location.line, token_after_dot.source_location.char);
+        else log("Error: unexpected DOT token at (%:%)", token_after_dot.location.line, token_after_dot.location.char);
 
         
       case .OPEN_PAREN;
-        open_paren_location := token.source_location;
+        open_paren_location := token.location;
         
         node = parse_expression(script, 0);
         if node == null  return null;
@@ -392,12 +396,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         
       case;
-        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.source_location.line, token.source_location.char);
-    }
-    
-    if unary_op != null {
-        unary_op.left = node;
-        node = unary_op;
+        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.location.line, token.location.char);
     }
     
     return node;
@@ -419,8 +418,6 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     parse_increasing_precedence is only relevant when parsing binary operators...?
         if so, maybe we can factor things a bit more intuitively
-        
-    
 */
 
 
@@ -464,13 +461,8 @@ parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null
 }
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {
-    // dprint("parse_expression(min_prec = %)\n", min_prec); 
-    // dprint_push_indent();
-    
     left := parse_leaf(script);
     if left == null  return null;
-    
-    // dprint("parsed a leaf: %\n", sprint_ast_node(script, left));
     
     // going iteratively, precedence can only decrease
     while true {
@@ -558,7 +550,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             
             token_close_paren := get_token(*lexer);
             if token_close_paren.type != .CLOSE_PAREN {
-                log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.source_location.line, token_close_paren.source_location.char);
+                log("Error: unexpected token '%' in cast type expression at (%:%). Expected a closing paren.", token_close_paren.type, token_close_paren.location.line, token_close_paren.location.char);
                 return null;
             }
             
@@ -588,7 +580,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             return dot;
         }
         
-        log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.source_location.line, token.source_location.char);
+        log("Error: unexpected % token '%' after dot at (%:%)", token.type, token.text, token.location.line, token.location.char);
         return null;
         
       case .OPEN_BRACKET;

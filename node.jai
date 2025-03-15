@@ -4,7 +4,7 @@ Node :: struct {
     parent, next:           *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
-    source_location:        Source_Location;
+    source_token:           *Token;
     
     Flags :: enum_flags { 
         TYPECHECKED;
@@ -19,7 +19,6 @@ Node :: struct {
         MUST_BE_STATEMENT_ROOT;
     };
 }
-
 
 Node_Block :: struct {
     using #as node_base:    Node;
@@ -253,16 +252,14 @@ iterate :: (node: **Node, body: Code, reverse := false) #expand {
     }
 }
 
-alloc_node :: (script: *Script, $T_Node: Type, parent_node: *Node = null, source_token := Token.{}, loc := #caller_location) -> *T_Node #expand
+alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null, loc := #caller_location) -> *T_Node #expand
 #modify {
-    return is_subclass_of(T_Node.(*Type_Info_Struct), "Node");
+    return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
     node := New(T_Node,, script.allocator);
-    node.node_type = T_Node;
-    node.parent    = ifx parent_node else script.current_parent_node;
-    // dprint("allocated % at %\n", T_Node, loc);
-    
-    // TODO: copy stuff from given token
+    node.node_type    = T_Node;
+    node.parent       = ifx scope else script.current_scope;
+    node.source_token = source_token;
     return node;
 }
 

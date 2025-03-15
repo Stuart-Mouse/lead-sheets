@@ -455,7 +455,7 @@ script state used during...
         
         lexer
         
-        current_parent_node
+        current_scope
             this can be passed as parameter, but this is cumbersome
     
 

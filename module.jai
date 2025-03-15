@@ -51,7 +51,7 @@ Script :: struct {
     // stuff I brought over from Script Constructor
     // this is parser state, basically
     lexer:                  Lexer;
-    current_parent_node:    *Node;    // perhaps this should be passed on stack, only used during parsing
+    current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
     
 
     Flags :: enum_flags {
@@ -90,7 +90,7 @@ init_script :: (script: *Script, stack_size := 1024) {
     dcReset(script.dyncall_vm);
     
     script.ast_root = alloc_node(script, Node_Block);
-    script.current_parent_node = script.ast_root;
+    script.current_scope = script.ast_root;
     
     script.flags |= .INITIALIZED;
 }
