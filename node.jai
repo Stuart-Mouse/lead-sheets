@@ -252,6 +252,9 @@ iterate :: (node: **Node, body: Code, reverse := false) #expand {
     }
 }
 
+// NOTE: currently allocates space for copy of token in arena instead of pointing at given.
+//       not sure if this is ultimately the best idea, but it does give token locality with node, so maybe that's good?
+//       on the other hand, may be better if we just pre-lex all tokens, since locality of nodes to one another is more importand for execution than locality of nodes with token...
 alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null, loc := #caller_location) -> *T_Node #expand
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
@@ -259,7 +262,10 @@ alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, source_token
     node := New(T_Node,, script.allocator);
     node.node_type    = T_Node;
     node.parent       = ifx scope else script.current_scope;
-    node.source_token = source_token;
+    if source_token {
+        node.source_token   = New(Token,, script.allocator);
+        node.source_token.* = source_token.*;
+    }   
     return node;
 }
 
@@ -272,6 +278,11 @@ alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, source_token
 replace_node :: inline (original: **Node, new: *Node) {
     new.parent = original.*.parent;
     new.next   = original.*.next;
-    // new.whitespace_before = original.*.whitespace_before;
     original.* = new;
 }
+
+get_location :: (node: Node) -> Source_Location {
+    if node.token  return node.token.location;
+    return .{};
+}
+

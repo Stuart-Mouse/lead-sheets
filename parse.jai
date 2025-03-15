@@ -437,7 +437,7 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
     node := parse_statement(script, expect_semicolon = false);
     
     if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
-    return node, script.lexer.ptr_after_last_token;
+    return node, script.lexer.char_after_last_token;
 }
 
 // will parse a single string as an expression, checking that we end on EOF token
@@ -457,7 +457,7 @@ parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null
     expression := parse_expression(script, 0);
     
     if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
-    return expression, script.lexer.ptr_after_last_token;
+    return expression, script.lexer.char_after_last_token;
 }
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {

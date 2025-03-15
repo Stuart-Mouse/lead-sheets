@@ -84,10 +84,13 @@ Token_Type :: enum {
 
 
 Token :: struct {
-    type:               Token_Type;
-    text:               string;
-    location:           Source_Location;
-    whitespace_before:  string;
+    type:       Token_Type;
+    text:       string;
+    location:   Source_Location;
+    trivia:     string;
+    
+    // TODO: we really shouldn't have to store this, but for now it's required
+    char_after: *u8;
 }
 
 // TODO: replace usage with Source_Code_Location
@@ -96,23 +99,35 @@ Source_Location :: struct {
 }
 
 Lexer :: struct {
-    file:               string;
-    next_token:         Token;
-    cursor_location:    Source_Location;
+    file: string;
+    
+    MAX_LOOKAHEAD :: 4;
+    token_buffer: [MAX_LOOKAHEAD] Token; // ring buffer, indexed modulo MAX_LOOKAHEAD
+    next_token_index: int; // next token to consume in token buffer
+    
+    cursor_location: Source_Location;
     
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
-    ptr_after_last_token: *u8; 
+    // always points to the character after then end of the last token consumed
+    char_after_last_token: *u8; 
 }
 
-// NOTE: need to call consume_token once to init lexer for proper usage
-//       otherwise, first token will appear to be .EOF
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
     lexer.file = file;
     lexer.cursor_location = location;
-    get_token(lexer);
+    
+    // lex first few tokens into token buffer
+    for 0..lexer.MAX_LOOKAHEAD-1 {
+        lexer.token_buffer[it] = lex_next_token(lexer);
+        if lexer.token_buffer[it].type == .ERROR
+        || lexer.token_buffer[it].type == .EOF {
+            break;
+        }
+    }
 }
 
 // convenience macro 
+// TODO: reconsider whether we want to keep this around...
 get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
     token := get_token(lexer);
     if token.type == .ERROR  `return #insert code;
@@ -121,24 +136,33 @@ get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
 
 // consumes a token
 get_token :: inline (using lexer: *Lexer) -> Token {
-    if next_token.type == .ERROR {
+    return_token := token_buffer[next_token_index];
+    if return_token.type == .ERROR {
         dprint("LEXER ERROR: % (line %, char %)\n", 
-            next_token.text, 
-            next_token.location.line, 
-            next_token.location.char
+            return_token.text, 
+            return_token.location.line, 
+            return_token.location.char
         );
-        return next_token;
+        char_after_last_token = null;
+        return return_token;
+    }
+    if return_token.type == .EOF {
+        char_after_last_token = null;
+        return return_token;
     }
     
-    current_token := next_token;
-    ptr_after_last_token = file.data;
-    next_token = lex_next_token(lexer);
-    return current_token;
+    token_buffer[next_token_index] = lex_next_token(lexer);
+    next_token_index = (next_token_index + 1) % MAX_LOOKAHEAD;
+    
+    char_after_last_token = return_token.char_after;
+    return return_token;
 }
 
 // peeks next_token, but does not consume it
-peek_token :: inline (using t: *Lexer) -> Token {
-    return next_token;
+peek_token :: inline (using t: *Lexer, peek_index := 0) -> Token {
+    assert(peek_index >= 0 && peek_index < MAX_LOOKAHEAD-1);
+    index := (next_token_index + peek_index) % MAX_LOOKAHEAD;
+    return token_buffer[index];
 }
 
 // consumes token if it was expected type, else it was just peeked
@@ -151,17 +175,11 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
     return false;
 }
 
-// TODO: consider removing some of the 'unexpected EOF' cases, only leaving those that are strictly necessary
-//       main candidates are in number and identifier cases
 lex_next_token :: (using lexer: *Lexer) -> Token {
     whitespace, is_eof, ok := skip_whitespace_and_comments(lexer);
-    if !ok {
-        log("Error: unexpected EOF in the middle of a comment!");
-        return .{ type = .ERROR };
-    }
-    if is_eof {
-        return .{ type = .EOF };
-    }
+    if !ok     return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
+    if is_eof  return .{ type = .EOF };
+    
     
     // we grab cursor location at top so that it points to start of token
     location := cursor_location;
@@ -170,10 +188,11 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     make_token :: (type: Token_Type, len: int) -> Token #expand {
         defer advance(lexer, len);
         return .{
-            type              = type,
-            text              = slice(file, 0, len),
-            location          = location,
-            whitespace_before = whitespace
+            type       = type,
+            text       = slice(file, 0, len),
+            location   = location,
+            trivia     = whitespace, 
+            char_after = file.data + len,
         };
     }
     
@@ -215,7 +234,8 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
               case "foreach";   ident.type = .FOREACH;
               case "while";     ident.type = .WHILE;
             }
-            ident.whitespace_before = whitespace;
+            ident.trivia     = whitespace;
+            ident.char_after = file.data;
             return ident;
         }
     }
@@ -226,8 +246,9 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             advance(lexer);
             ident, was_parsed := try_parse_identifier(lexer);
             if was_parsed {
-                ident.type = .DIRECTIVE;
-                ident.whitespace_before = whitespace;
+                ident.type       = .DIRECTIVE;
+                ident.trivia     = whitespace;
+                ident.char_after = file.data;
                 return ident;
             }
             return make_error_token(location, "Unexpected character encountered while attempting to parse a directive name.");
@@ -235,6 +256,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     }
     
     // parse a number
+    // TODO: maybe reintroduce the little parsing hack to allow `-` before number being part of the number token itself
     if is_digit(file[0]) {//|| file[0] == #char "-" {
         str: string = .{ 1, *file[0] };
         advance(lexer);
@@ -260,10 +282,11 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         }
         
         return .{
-            type              = .NUMBER,
-            text              = str,
-            location          = location,
-            whitespace_before = whitespace
+            type        = .NUMBER,
+            text        = str,
+            location    = location,
+            trivia      = whitespace,
+            char_after  = file.data
         };
     }
     
@@ -285,10 +308,11 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         advance(lexer);
         
         return .{ 
-            type              = ifx is_identifier then .IDENTIFIER else .STRING, 
-            text              = string_value, 
-            location          = location,
-            whitespace_before = whitespace
+            type        = ifx is_identifier then .IDENTIFIER else .STRING, 
+            text        = string_value, 
+            location    = location,
+            trivia      = whitespace,
+            char_after  = file.data
         };
     }
     
