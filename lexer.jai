@@ -98,19 +98,34 @@ Source_Location :: struct {
     line, char: int;
 }
 
+/*
+    Lexer can be used either in a sort of active mode where tokens are only lexed as requested, 
+        or in a pre-lexed mode where all tokens are lexed up front.
+    If input was pre-lexed, then Lexer will return sequential tokens from `tokens`,
+        otherwise, it will use `token_buffer` as a ring buffer for the next few tokens.
+    The interface is exactly the same either way, but we support both so that there's options 
+        about how things get allocated, since you will probably only want to pre-lex an entire 
+        input string if those tokens will be stored in the script's arena.
+    It's sort of like how we have an option to either allocate nodes in the script's arena or 
+        using the temporary allocator, depending on the use case.
+*/
 Lexer :: struct {
-    file: string;
+    file:           string;
+    is_prelexed:    bool;
     
     MAX_LOOKAHEAD :: 4;
-    token_buffer: [MAX_LOOKAHEAD] Token; // ring buffer, indexed modulo MAX_LOOKAHEAD
+    union {
+        token_buffer: [MAX_LOOKAHEAD] Token; // ring buffer, indexed modulo MAX_LOOKAHEAD
+        tokens: [] Token;
+    };
+    
     next_token_index: int; // next token to consume in token buffer
-    
     cursor_location: Source_Location;
-    
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
     // always points to the character after then end of the last token consumed
-    char_after_last_token: *u8; 
+    char_after_last_token: *u8;
 }
+
 
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
     lexer.file = file;
@@ -365,7 +380,7 @@ is_legal_identifier :: (str: string) -> bool {
         I may consider going back to pre-tokenizing the file before constructing the AST.
 */
 tokenize :: (text: string) -> ([..] Token, bool) {
-    lexer := Lexer.{ file = text };
+    lexer   := Lexer.{ file = text };
     success := false;
     tokens: [..] Token;
     
@@ -388,6 +403,8 @@ tokenize :: (text: string) -> ([..] Token, bool) {
     success = true;
     return tokens;
 }
+
+// TODO_THIS_TIME: make version of tokenize to pre-lex file, probably also fix the abov eto init tokenizer correctly
 
 
 // cycles between skipping whitespace and comments until next character is neither

@@ -29,6 +29,11 @@ External_Variable :: struct {
     binding:    Any;
 }
 
+Name_And_Type :: struct {
+    name: string; 
+    type: *Type_Info;
+}
+
 Script :: struct {
     ast_root:               *Node_Block;
     flags:                  Flags;
@@ -37,7 +42,7 @@ Script :: struct {
     procedures:             [..] External_Procedure;
     directives:             [..] Directive;
     named_blocks:           [..] *Node_Block;
-    type_table:             [..] struct { name: string; type: *Type_Info; };
+    type_table:             [..] Name_And_Type;
     
     pool:                   Flat_Pool;
     allocator:              Allocator;
@@ -48,19 +53,16 @@ Script :: struct {
     
     dyncall_vm:             *DCCallVM;
     
-    // stuff I brought over from Script Constructor
-    // this is parser state, basically
     lexer:                  Lexer;
     current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
     
-
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
         TYPECHECKED;
     }
 }
-
 
 
 free_script :: (using script: *Script) {
@@ -582,3 +584,10 @@ dprint_push_indent :: () #expand {
         `defer context.dprint_indent -= 1;
     }
 }
+
+
+// implement is_this_yours for flat pool allocator
+is_this_yours :: (pool: *Flat_Pool, memory: *void) -> bool {
+    return flat_pool_allocator_proc(.IS_THIS_YOURS, 0, 0, memory, pool).(bool);
+}
+
