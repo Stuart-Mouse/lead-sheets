@@ -374,14 +374,10 @@ is_legal_identifier :: (str: string) -> bool {
     return true;
 }
 
-
-/* 
-    For now, we are not pre-tokenizing the file, since it is really simple to just get the tokens lazily.
-    If tokenization later becomes more complicated due to needing more lookahead or something, 
-        I may consider going back to pre-tokenizing the file before constructing the AST.
-*/
-tokenize :: (text: string) -> ([..] Token, bool) {
-    lexer   := Lexer.{ file = text };
+// TODO: test if this can work without needing to move data when we use script's pool allocator
+tokenize :: (file: string) -> ([..] Token, bool) {
+    lexer: Lexer;
+    init_lexer(*lexer, file);
     success := false;
     tokens: [..] Token;
     
@@ -391,21 +387,36 @@ tokenize :: (text: string) -> ([..] Token, bool) {
     }
     
     while lexer.file {
-        token, ok := lex_next_token(*lexer);
-        print(token.text);
-        if !ok  return tokens, false;
-        if token.type != .EOF {
-            array_add(*tokens, token);
-        } else {
-            break;
+        token := lex_next_token(*lexer);
+        array_add(*tokens, token);
+        if token.type == {
+            case .EOF;    break;
+            case .ERROR;  ok = false; break;
         }
     }
     
-    success = true;
-    return tokens;
+    return tokens, success;
 }
 
-// TODO_THIS_TIME: make version of tokenize to pre-lex file, probably also fix the above to init tokenizer correctly
+// // NOTE: you must set context.allocator to the scripts' pool allocator!
+// //       this procedure assumes that all allocated tokens will be contiguous, 
+// //       since it then creates a slice
+// lex_entire_input :: (lexer: *Lexer) -> bool {
+//     success := false;
+    
+//     while lexer.file {
+//         token := lex_next_token(*lexer);
+//         New(Token)
+//         array_add(*tokens, token);
+//         if token.type == {
+//             case .EOF;    break;
+//             case .ERROR;  ok = false; break;
+//         }
+//     }
+    
+//     return tokens, success;
+// }
+
 
 
 // cycles between skipping whitespace and comments until next character is neither

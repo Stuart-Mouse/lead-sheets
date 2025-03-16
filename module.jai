@@ -64,6 +64,9 @@ Script :: struct {
     }
 }
 
+get_pool_allocator :: (script: *Script) -> Allocator {
+    return .{ flat_pool_allocator_proc, *script.pool };
+}
 
 free_script :: (using script: *Script) {
     array_free(variables);
@@ -77,8 +80,7 @@ free_script :: (using script: *Script) {
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
-    script.allocator.proc = flat_pool_allocator_proc;
-    script.allocator.data = *script.pool;
+    script.allocator = get_pool_allocator(script);
     
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));

@@ -655,3 +655,24 @@ directives improvements
     then our directives can just be arbitrary expressions or chains of expresisons that transform nodes and and not just procedure calls
     
 
+
+
+refactoring lexer to allow pre-tokenization of entire file
+will help with attaching token reference to ast nodes, while keeping some semblance of cache locality between nodes
+
+also need to refactor nodes so that they no longer store a next, rather we will actually use a `[] Node` instead of linked-list of nodes
+    maybe consider sticking with existing method IF we can make node replacement work nicely as is
+
+get source location info on nodes and print that information in debug logging
+    we need to just beef up logging anyhow, and maybe write some helper procs to capture the common loggin patterns in each section of code
+
+then finally, try to get trivia (whitespace/comments) working nicely in serialization. 
+    unfortunately cannot do this all trivially since some nodes require more or variable numbers of tokens...
+
+would be nice to not have to store allocator on script, but I don't want to make this change until I am confident 
+    that all allocations the script does from some givne entry point can be done using a single allocator
+    for now, it helps to know that we can have a context allocator and node/token allocator that are distinct
+    in the future we should probbaly not have to do thigs this way as the need for multiple allocators seems 
+        like a design flaw or at least indicative of things being overcomplicated
+
+
