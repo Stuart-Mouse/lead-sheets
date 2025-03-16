@@ -658,13 +658,28 @@ directives improvements
 
 
 refactoring lexer to allow pre-tokenization of entire file
-will help with attaching token reference to ast nodes, while keeping some semblance of cache locality between nodes
+    will help with attaching token reference to ast nodes, while keeping some semblance of cache locality between nodes
+    we actually have a major problem here, which is that this method of attaching tokens to nodes by pointer requires 
+    that our get_token and peek_token procs now return tokens by pointer rather than by value
+    which means that all our tokens need to be heap-allocated...
+        well maybe not, since the tokens at least have valid storage until consumed, at which point they are replaced...
+        we could make the token buffer a bit larger and shorten the max lookahead so that the tokens are at least valid until the *next* token is consumed
+        but this is still a bit janky I think, since now we need to manually dereference the tokens in certain situations and AAHHHH
+    but all this complication is just because we are trying to allow both the current model for lexing and the new pre-lexing model
+    the pre-lexing thing also has an issue in that it requires the use of a dynamic array which will certainly realloc and waste a bunch of space either in our pool or in the temp allocator
+    
+    So it seems the best solution right now will just be to allocate space for the tokens we need at the time when we attach the token to the nodes
+    
+    
+so we are gonna defer working on the pre-tokenization stuff for now and just store a single source token for the sake of the source location information.
+   also, at that time it may not be a bad idea to also attach trivia from line comments to the preceding token if it is on the same line e.g.
+   `x := 5; // some line comment` would have the comment attached to the semicolon (or declaration?) rather than token whatever comes next
+   
+get source location info on nodes and print that information in debug logging
+    we need to just beef up logging anyhow, and maybe write some helper procs to capture the common logging patterns in each section of code
 
 also need to refactor nodes so that they no longer store a next, rather we will actually use a `[] Node` instead of linked-list of nodes
     maybe consider sticking with existing method IF we can make node replacement work nicely as is
-
-get source location info on nodes and print that information in debug logging
-    we need to just beef up logging anyhow, and maybe write some helper procs to capture the common loggin patterns in each section of code
 
 then finally, try to get trivia (whitespace/comments) working nicely in serialization. 
     unfortunately cannot do this all trivially since some nodes require more or variable numbers of tokens...
@@ -674,5 +689,7 @@ would be nice to not have to store allocator on script, but I don't want to make
     for now, it helps to know that we can have a context allocator and node/token allocator that are distinct
     in the future we should probbaly not have to do thigs this way as the need for multiple allocators seems 
         like a design flaw or at least indicative of things being overcomplicated
+
+
 
 

@@ -110,17 +110,13 @@ Source_Location :: struct {
         using the temporary allocator, depending on the use case.
 */
 Lexer :: struct {
-    file:           string;
-    is_prelexed:    bool;
+    file: string;
     
     TOKEN_BUFFER_COUNT :: 4;
-    union {
-        token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
-        tokens: [] Token;
-    };
-    
+    token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
     next_token_index: int;
-    cursor_location:  Source_Location;
+    
+    cursor_location: Source_Location;
     
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
     // always points to the character after then end of the last token consumed
@@ -153,16 +149,8 @@ get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
 // consumes a token
 get_token :: inline (using lexer: *Lexer) -> Token {
     return_token := token_buffer[next_token_index];
-    if return_token.type == .ERROR {
-        dprint("LEXER ERROR: % (line %, char %)\n", 
-            return_token.text, 
-            return_token.location.line, 
-            return_token.location.char
-        );
-        char_after_last_token = null;
-        return return_token;
-    }
-    if return_token.type == .EOF {
+    if return_token.type == .ERROR 
+    || return_token.type == .EOF {
         char_after_last_token = null;
         return return_token;
     }
@@ -194,7 +182,7 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
 lex_next_token :: (using lexer: *Lexer) -> Token {
     trivia, ok := skip_whitespace_and_comments(lexer);
     if !ok    return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
-    if !file  return .{ type = .EOF };
+    if !file  return .{ type = .EOF, location = cursor_location };
     
     
     // we grab cursor location at top so that it points to start of token
@@ -209,6 +197,40 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             location   = location,
             trivia     = trivia, 
             char_after = file.data + len,
+        };
+    }
+    
+    // parse a number
+    if is_digit(file[0]) || (file.count > 1 && file[0] == #char "-" && is_digit(file[1])) {
+        str: string = .{ 1, file.data };
+        advance(lexer);
+        
+        after_dot    := false;
+        accept_alpha := false;
+        if file && is_any(file[0], "bhx") {
+            str.count += 1;
+            if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing number.");
+            after_dot = true;   // so that we don't accept a dot in a integer literal
+            accept_alpha = true;
+        }
+        
+        while file {
+            // we can only allow one decimal point in a number, and it cannot be followed consecutively by a second decimal point
+            if !(is_digit(file[0]) || (accept_alpha && is_alpha(file[0]))) {
+                if file[0] != #char "." || after_dot       break;
+                if file.count > 1 && file[1] == #char "."  break;
+                after_dot = true;
+            }
+            str.count += 1;
+            advance(lexer);
+        }
+        
+        return .{
+            type        = .NUMBER,
+            text        = str,
+            location    = location,
+            trivia      = trivia,
+            char_after  = file.data
         };
     }
     
@@ -256,6 +278,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         }
     }
     
+    // TODO: perhaps this should not be a token in itself, and should be handled on a higher level by the parser
     // parse a directive
     {
         if file[0] == #char "#" {
@@ -270,42 +293,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             return make_error_token(location, "Unexpected character encountered while attempting to parse a directive name.");
         }
     }
-    
-    // parse a number
-    // TODO: maybe reintroduce the little parsing hack to allow `-` before number being part of the number token itself
-    if is_digit(file[0]) {//|| file[0] == #char "-" {
-        str: string = .{ 1, *file[0] };
-        advance(lexer);
         
-        after_dot    := false;
-        accept_alpha := false;
-        if file && is_any(file[0], "bhx") {
-            str.count += 1;
-            if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing number.");
-            after_dot = true;   // so that we don't accept a dot in a integer literal
-            accept_alpha = true;
-        }
-        
-        while file {
-            // we can only allow one decimal point in a number, and it cannot be followed consecutively by a second decimal point
-            if !(is_digit(file[0]) || (accept_alpha && is_alpha(file[0]))) {
-                if file[0] != #char "." || after_dot       break;
-                if file.count > 1 && file[1] == #char "."  break;
-                after_dot = true;
-            }
-            str.count += 1;
-            advance(lexer);
-        }
-        
-        return .{
-            type        = .NUMBER,
-            text        = str,
-            location    = location,
-            trivia      = trivia,
-            char_after  = file.data
-        };
-    }
-    
     // parse string or backticked identifier
     if file[0] == #char "\"" || file[0] == #char "`" { 
         quote_char := file[0];
@@ -374,11 +362,11 @@ is_legal_identifier :: (str: string) -> bool {
     return true;
 }
 
-// TODO: test if this can work without needing to move data when we use script's pool allocator
 tokenize :: (file: string) -> ([..] Token, bool) {
     lexer: Lexer;
     init_lexer(*lexer, file);
-    success := false;
+    
+    success := true;
     tokens: [..] Token;
     
     defer if !success {
@@ -387,37 +375,16 @@ tokenize :: (file: string) -> ([..] Token, bool) {
     }
     
     while lexer.file {
-        token := lex_next_token(*lexer);
+        token := get_token(lexer);
         array_add(*tokens, token);
         if token.type == {
             case .EOF;    break;
-            case .ERROR;  ok = false; break;
+            case .ERROR;  success = false; break;
         }
     }
     
     return tokens, success;
 }
-
-// // NOTE: you must set context.allocator to the scripts' pool allocator!
-// //       this procedure assumes that all allocated tokens will be contiguous, 
-// //       since it then creates a slice
-// lex_entire_input :: (lexer: *Lexer) -> bool {
-//     success := false;
-    
-//     while lexer.file {
-//         token := lex_next_token(*lexer);
-//         New(Token)
-//         array_add(*tokens, token);
-//         if token.type == {
-//             case .EOF;    break;
-//             case .ERROR;  ok = false; break;
-//         }
-//     }
-    
-//     return tokens, success;
-// }
-
-
 
 // cycles between skipping whitespace and comments until next character is neither
 skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bool) {

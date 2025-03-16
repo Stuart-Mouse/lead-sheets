@@ -20,6 +20,21 @@ Node :: struct {
     };
 }
 
+/*
+    Notes about source_token on nodes:
+    
+    Currently, we don't do a perfect job of preserving whitespace and comments on nodes (trivia), 
+    since there is not a one-to-one correspondence between tokens and nodes.
+    Many node types would need to store references to multiple tokens, and that's just not something I'm going to deal with at the moment.
+    For this reason, one should not rely on comments to be preserved if it's in strange places, such as between the name and parameter list of a procedure call.
+    In the future I may figure out some better solution, but for now one should be somewhat careful about where they stick comments if they plan to save over a script using the serialization functionality.
+    
+    The ultimate solution will probably just be to totally rewrite parsing so that we can do the pre-lexing thing and then storing token ranges on nodes.
+    But this will require major refactoring for all of parsing since we will have to get tokens by reference instead of by value.
+    And even then it will greatly complicate serialization, since we will have to consider both the source tokens and the current AST, which may have been altered or had nodes inserted procedurally.
+    Basically, its doable, but we are lacking a lot of the necessary prerequisites at the moment.
+*/
+
 Node_Block :: struct {
     using #as node_base:    Node;
     name:                   string;
