@@ -54,7 +54,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if_statement.statement = parse_statement(script, expect_semicolon);
         if if_statement.statement == null  return null;
         
-        current_scope = if_statement.parent; 
+        current_scope = if_statement.scope; 
         return if_statement;
         
       case .WHILE;
@@ -71,7 +71,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         while_loop.statement = parse_statement(script, expect_semicolon);
         if while_loop.statement == null  return null;
         
-        current_scope = while_loop.parent; 
+        current_scope = while_loop.scope; 
         return while_loop;
         
       case .FOR;
@@ -103,7 +103,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
-        current_scope = for_loop.parent; 
+        current_scope = for_loop.scope; 
         return for_loop;
         
       case .FOREACH;
@@ -127,7 +127,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
-        current_scope = for_loop.parent; 
+        current_scope = for_loop.scope; 
         return for_loop;
         
       case .OPEN_BRACE;
@@ -149,7 +149,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             previous       = statement;
         }
         
-        current_scope = block.parent; 
+        current_scope = block.scope; 
         return block;
     }
     

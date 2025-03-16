@@ -1,7 +1,7 @@
 
 Node :: struct {
     node_type:              Type;
-    parent, next:           *Node;              // used for argument lists or connecting statements in a block
+    scope, next:            *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
     source_token:           *Token;
@@ -273,7 +273,7 @@ alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, sourc
 } {
     node := New(T_Node,, script.allocator);
     node.node_type    = T_Node;
-    node.parent       = ifx scope else script.current_scope;
+    node.scope       = ifx scope else script.current_scope;
     if source_token {
         // if source token is allocated in the script's pool, then don't make a copy
         if is_this_yours(*script.pool, source_token) {
@@ -286,14 +286,14 @@ alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, sourc
     return node;
 }
 
-// TODO: maybe we can make node replacement nice by just making the parent node be the actual direct ancestor in cases where that is relevant
+// TODO: maybe we can make node replacement nice by just making the scope node be the actual direct ancestor in cases where that is relevant
 //       and that can actually just be a parameter given to the replace_node function methinks
-//       we may not even really need 'parent' stored on nodes at all, since we could honestly just pass what block we are in for scope resolution based on some parameter pass the call stack
-//       only blocks really need to store their parent block then, since for all other nodes we can just figure it out situationally
+//       we may not even really need 'scope' stored on nodes at all, since we could honestly just pass what block we are in for scope resolution based on some parameter pass the call stack
+//       only blocks really need to store their scope block then, since for all other nodes we can just figure it out situationally
 
-// can't be done properly without also taking in that actual direct parent node, since 'parent' stored on node is actually the parent block that is used for scope resolution
+// can't be done properly without also taking in that actual direct scope node, since 'scope' stored on node is actually the scope block that is used for scope resolution
 replace_node :: inline (original: **Node, new: *Node) {
-    new.parent = original.*.parent;
+    new.scope = original.*.scope;
     new.next   = original.*.next;
     original.* = new;
 }

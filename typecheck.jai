@@ -146,7 +146,7 @@ typecheck_node :: (
         identifier := node.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED);
         
-        declaration := resolve_declaration_by_identifier(identifier.name, identifier.parent, check_flags & .EXPECT_LVALUE != 0);
+        declaration := resolve_declaration_by_identifier(identifier.name, identifier.scope, check_flags & .EXPECT_LVALUE != 0);
         if declaration {
             if declaration.(*void) > identifier.(*void) {
                 log("Error: identifier % used before its declaration.", identifier.name);
@@ -234,7 +234,7 @@ typecheck_node :: (
                     return null;
                 }
                 if replacement {
-                    replacement.parent = operation.right.parent;
+                    replacement.scope = operation.right.scope;
                     replacement.next   = operation.right.next;
                     operation.right    = replacement;
                 }
@@ -352,7 +352,7 @@ typecheck_node :: (
                     }
                     if replacement {
                         // TODO: we need a better means of replacing nodes all throughout typechecking, because it's very hacky right now.
-                        replacement.parent = it.parent;
+                        replacement.scope = it.scope;
                         replacement.next   = it.next;
                         if it_index == 0
                             then procedure_call.arguments   = replacement;
@@ -584,7 +584,7 @@ typecheck_node :: (
         // TODO: I am dumb! we are not actually checking for redeclarations right now at all!
         // since declarations don't use an identifier node for the identifier, we actually will want to factor out identifier resolution so that it just takes a string and not a node
         
-        other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.parent);
+        other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.scope);
         if other_declaration != null && declaration != other_declaration {
             log("Error: redeclaration of identifier '%'.", declaration.name);
             return null;
@@ -753,8 +753,8 @@ typecheck_script :: (script: *Script) -> bool {
     return true;
 }
 
-resolve_declaration_by_identifier :: (identifier: string, parent_block: *Node, need_lvalue := false) -> *Node_Declaration {
-    scope := parent_block;
+resolve_declaration_by_identifier :: (identifier: string, scope_block: *Node, need_lvalue := false) -> *Node_Declaration {
+    scope := scope_block;
     while scope {
         if scope.node_type == {
           case Node_Block;
@@ -766,7 +766,7 @@ resolve_declaration_by_identifier :: (identifier: string, parent_block: *Node, n
             declaration := find_iterator_declaration(xx scope, identifier, need_lvalue);
             if declaration  return declaration;
         }
-        scope = scope.parent;
+        scope = scope.scope;
     }
     return null;
 }
