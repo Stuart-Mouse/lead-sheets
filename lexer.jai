@@ -125,6 +125,7 @@ Lexer :: struct {
 
 
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
+    lexer.* = .{};
     lexer.file = file;
     lexer.cursor_location = location;
     
