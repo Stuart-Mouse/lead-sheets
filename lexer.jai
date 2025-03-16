@@ -113,14 +113,15 @@ Lexer :: struct {
     file:           string;
     is_prelexed:    bool;
     
-    MAX_LOOKAHEAD :: 4;
+    TOKEN_BUFFER_COUNT :: 4;
     union {
-        token_buffer: [MAX_LOOKAHEAD] Token; // ring buffer, indexed modulo MAX_LOOKAHEAD
+        token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
         tokens: [] Token;
     };
     
-    next_token_index: int; // next token to consume in token buffer
-    cursor_location: Source_Location;
+    next_token_index: int;
+    cursor_location:  Source_Location;
+    
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
     // always points to the character after then end of the last token consumed
     char_after_last_token: *u8;
@@ -132,7 +133,7 @@ init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) 
     lexer.cursor_location = location;
     
     // lex first few tokens into token buffer
-    for 0..lexer.MAX_LOOKAHEAD-1 {
+    for 0..lexer.TOKEN_BUFFER_COUNT-1 {
         lexer.token_buffer[it] = lex_next_token(lexer);
         if lexer.token_buffer[it].type == .ERROR
         || lexer.token_buffer[it].type == .EOF {
@@ -167,7 +168,7 @@ get_token :: inline (using lexer: *Lexer) -> Token {
     }
     
     token_buffer[next_token_index] = lex_next_token(lexer);
-    next_token_index = (next_token_index + 1) % MAX_LOOKAHEAD;
+    next_token_index = (next_token_index + 1) % TOKEN_BUFFER_COUNT;
     
     char_after_last_token = return_token.char_after;
     return return_token;
@@ -175,8 +176,8 @@ get_token :: inline (using lexer: *Lexer) -> Token {
 
 // peeks next_token, but does not consume it
 peek_token :: inline (using t: *Lexer, peek_index := 0) -> Token {
-    assert(peek_index >= 0 && peek_index < MAX_LOOKAHEAD-1);
-    index := (next_token_index + peek_index) % MAX_LOOKAHEAD;
+    assert(peek_index >= 0 && peek_index < TOKEN_BUFFER_COUNT-1);
+    index := (next_token_index + peek_index) % TOKEN_BUFFER_COUNT;
     return token_buffer[index];
 }
 
@@ -191,9 +192,9 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
 }
 
 lex_next_token :: (using lexer: *Lexer) -> Token {
-    whitespace, is_eof, ok := skip_whitespace_and_comments(lexer);
-    if !ok     return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
-    if is_eof  return .{ type = .EOF };
+    trivia, ok := skip_whitespace_and_comments(lexer);
+    if !ok    return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
+    if !file  return .{ type = .EOF };
     
     
     // we grab cursor location at top so that it points to start of token
@@ -206,7 +207,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             type       = type,
             text       = slice(file, 0, len),
             location   = location,
-            trivia     = whitespace, 
+            trivia     = trivia, 
             char_after = file.data + len,
         };
     }
@@ -249,7 +250,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
               case "foreach";   ident.type = .FOREACH;
               case "while";     ident.type = .WHILE;
             }
-            ident.trivia     = whitespace;
+            ident.trivia     = trivia;
             ident.char_after = file.data;
             return ident;
         }
@@ -262,7 +263,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             ident, was_parsed := try_parse_identifier(lexer);
             if was_parsed {
                 ident.type       = .DIRECTIVE;
-                ident.trivia     = whitespace;
+                ident.trivia     = trivia;
                 ident.char_after = file.data;
                 return ident;
             }
@@ -300,7 +301,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             type        = .NUMBER,
             text        = str,
             location    = location,
-            trivia      = whitespace,
+            trivia      = trivia,
             char_after  = file.data
         };
     }
@@ -326,7 +327,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             type        = ifx is_identifier then .IDENTIFIER else .STRING, 
             text        = string_value, 
             location    = location,
-            trivia      = whitespace,
+            trivia      = trivia,
             char_after  = file.data
         };
     }
@@ -404,37 +405,42 @@ tokenize :: (text: string) -> ([..] Token, bool) {
     return tokens;
 }
 
-// TODO_THIS_TIME: make version of tokenize to pre-lex file, probably also fix the abov eto init tokenizer correctly
+// TODO_THIS_TIME: make version of tokenize to pre-lex file, probably also fix the above to init tokenizer correctly
 
 
 // cycles between skipping whitespace and comments until next character is neither
-skip_whitespace_and_comments :: (using lexer: *Lexer) -> (whitespace: string, is_eof: bool, ok: bool) {
-    if file.count == 0  return "", true, true;
+skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bool) {
+    if file.count == 0  return "", true;
     
-    whitespace := string.{ data = file.data };
-    is_eof := false;
-    while true {
+    trivia := string.{ 0, file.data };
+    ok := true;
+    
+    while loop := true {
         while is_whitespace(file[0]) {
-            if !advance(lexer) {
-                is_eof = true;
-                break;
-            }
+            if !advance(lexer)  break;
         }
         if begins_with(file, "//") {
+            advance(lexer, 2);
             while file[0] != #char "\n" {
-                if !advance(lexer)  return "", true, true;
+                if !advance(lexer)  break loop;
             }
+            advance(lexer);
         }
         else if begins_with(file, "/*") {
+            advance(lexer, 2);
             while !begins_with(file, "*/") {
-                if !advance(lexer)  return "", true, false;
+                if !advance(lexer) {
+                    ok = false;
+                    break loop; 
+                }
             }
+            advance(lexer, 2);
         }
         else break;
     }
     
-    whitespace.count = file.data - whitespace.data;
-    return whitespace, is_eof, true;
+    trivia.count = file.data - trivia.data;
+    return trivia, ok;
 }
 
 is_whitespace :: inline (char: u8) -> bool {
