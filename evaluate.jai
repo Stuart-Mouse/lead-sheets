@@ -30,7 +30,8 @@ evaluate_statement :: (script: *Script, expr: string, append_to_script_root := f
     value, ok := evaluate_node(script, root);
     if !ok  return Any.{}, false;
     
-    // TODO: maybe we remove this. but using it rn for soem testing
+    // TODO: maybe we remove this. but using it rn for some testing
+    // TODO: ok really, either fix this or just remove it
     if append_to_script_root {
         // last := script.ast_root.statements;
         // if !last {

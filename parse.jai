@@ -162,9 +162,18 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return block;
     }
     
-    // TODO: we can improve this section if we beef up the lexer so that we scan a few more tokens ahead, or pre-tokenize the entire file.
-    //       If we could peek 2 tokens ahead we could capture the identifer + colon case before the general expression case.
-    //       which would prevent us from making the identifier node and throwing it away just to stick the name on the declaration or assignment expression
+    /*
+        TODO:
+            we can improve this section if we beef up the lexer so that we scan a few more tokens ahead, or pre-tokenize the entire file.
+            If we could peek 2 tokens ahead we could capture the identifer + colon case before the general expression case.
+            which would prevent us from making the identifier node and throwing it away just to stick the name on the declaration or assignment expression
+        NOTE:
+            after later consideration, I've decided not to do the above, even though I've increased the lexer lookahead.
+            There are two reasons for this:
+                1. We can provide a better error message below, since we can recognize that some invalid expression was used on the left-hand side of a declaration, where only an identifier should go.
+                2. I am now thining that perhaps we will want to be able to do the same identifier renaming for declarations that we support (or are working on supporting) for other cases of identifiers.
+                    If we go through with this, we will need to stop throwing away the identifier on the declaration and store a *Node instead of the name as a string.
+    */
     
     dprint("EXPRESSION...\n");
     
@@ -206,7 +215,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         declaration := alloc_node(script, Node_Declaration);
         declaration.name = left.(*Node_Identifier).name;
-        // declaration.location = left.location;
         
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {

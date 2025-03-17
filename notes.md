@@ -678,9 +678,6 @@ so we are gonna defer working on the pre-tokenization stuff for now and just sto
 get source location info on nodes and print that information in debug logging
     we need to just beef up logging anyhow, and maybe write some helper procs to capture the common logging patterns in each section of code
 
-also need to refactor nodes so that they no longer store a next, rather we will actually use a `[] Node` instead of linked-list of nodes
-    maybe consider sticking with existing method IF we can make node replacement work nicely as is
-
 then finally, try to get trivia (whitespace/comments) working nicely in serialization. 
     unfortunately cannot do this all trivially since some nodes require more or variable numbers of tokens...
 
@@ -691,5 +688,6 @@ would be nice to not have to store allocator on script, but I don't want to make
         like a design flaw or at least indicative of things being overcomplicated
 
 
+when we get back to developing that whole feature about identifier renaming, go back and make that work with declarations as well
 
 
