@@ -1,7 +1,7 @@
 
 Node :: struct {
     node_type:              Type;
-    scope:                  *Node;              // used for argument lists or connecting statements in a block
+    scope:                  *Node;              // used for identifier resolution. maybe we can remove in the future
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
     source_token:           *Token;
@@ -60,7 +60,7 @@ Node_Cast :: struct {
         creating and maintaining declaration nodes for the external variables and procedures.
     The external variables in particular add complication because they can be subbed out, 
         so we need an additional indirection in accessing them from scripts.
-    We could still make it work this way by holding apointer to the corresponding declaration and then using that to update the declaration's value_pointer when the external variable is updated
+    We could still make it work this way by holding a pointer to the corresponding declaration and then using that to update the declaration's value_pointer when the external variable is updated
     BUT this means we NEED to have these declaration nodes in order to even use the external variables in expressions
     and maybe we don't want that if we want the user to be able to purely use the script as a way of evaluating expressions whose nodes are just allocated in temp
     and that use case would be completely broken, becuase we'd be absolutely forcing the use of the pool allocator...
@@ -143,7 +143,7 @@ Node_Literal :: struct {
         text:    string;
         aggr: struct {
             value_pointer:      *void;      // once type is resolved, we store pointer to allocated value here
-            expressions:        [] *Node;    // expressions to init struct members by. later maybe also accepting statements
+            expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting statements
         }
         any: Any;
     }
@@ -180,8 +180,8 @@ Node_Operation :: struct {
     return_ptr:             *Node;      // only if return type is aggregate
 }
 
-// TODO: maybe we can shortcut evaluatation of certain dot nodes when they're chained but only the last bit is relevant
-//       if I'm thinkning of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
+// TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
+//       if I'm thinking of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
 //       need to verify this, but if this is the case then we actually get the last dot node first in tree walking order, so we can easily short-circuit evaluate it if left side is some constant expression
 Node_Dot :: struct {
     using #as node_base:    Node;
@@ -239,15 +239,8 @@ alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, sourc
     return node;
 }
 
-// TODO: maybe we can make node replacement nice by just making the scope node be the actual direct ancestor in cases where that is relevant
-//       and that can actually just be a parameter given to the replace_node function methinks
-//       we may not even really need 'scope' stored on nodes at all, since we could honestly just pass what block we are in for scope resolution based on some parameter pass the call stack
-//       only blocks really need to store their scope block then, since for all other nodes we can just figure it out situationally
-
-// can't be done properly without also taking in that actual direct scope node, since 'scope' stored on node is actually the scope block that is used for scope resolution
 replace_node :: inline (original: **Node, new: *Node) {
-    new.scope = original.*.scope;
-    new.next   = original.*.next;
+    new.scope  = original.*.scope;
     original.* = new;
 }
 

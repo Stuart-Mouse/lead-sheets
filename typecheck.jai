@@ -233,10 +233,7 @@ typecheck_node :: (
                     log("Error: left and right types must match in a simple assignment statement!");
                     return null;
                 }
-                if replacement {
-                    replacement.scope = operation.right.scope;
-                    operation.right   = replacement;
-                }
+                if replacement  replace_node(*operation.right, replacement);
             }
             operation.value_type = left_type;
             return operation.value_type;
@@ -312,14 +309,10 @@ typecheck_node :: (
             // since it's possible it only failed due to lack of a type hint that we can 
             // provide later, after we've found an otherwise suitable overload
             // we also put the arguments in a nice little array view to make things simpler in resolve_procedure_index
-            arguments := NewArray(procedure_call.arguments.count, *Node,, temp);
-            for procedure_call.arguments {
-                typecheck_node(script, it);
-                arguments[it_index] = it;
-            }
+            for procedure_call.arguments  typecheck_node(script, it);
             
-            procedure_name := identifier.name;
-            procedure_index := resolve_procedure_index(script, procedure_name, arguments, node.flags & .OVERLOAD == .OVERLOAD);
+            procedure_name  := identifier.name;
+            procedure_index := resolve_procedure_index(script, procedure_name, procedure_call.arguments, node.flags & .OVERLOAD == .OVERLOAD);
             if procedure_index == -1  return null; // error message is logged by resolve_procedure_index
             
             identifier.identifier_type = .EXTERNAL_PROCEDURE;
@@ -329,32 +322,30 @@ typecheck_node :: (
             
             // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
             // iterating by **Node so that we can replace nodes if required
-            for *arguments {
-                expected_type := ti_proc.argument_types[it_index];
-                if it.*.value_type == null {
+            for 0..procedure_call.arguments.count {
+                node_ptr_ptr  := *procedure_call.arguments[it];
+                node          := node_ptr_ptr.*;
+                expected_type := ti_proc.argument_types[it];
+                if node.value_type == null {
                     dprint("re-typechecking argument with hint_type %", as_type(expected_type));
-                    type := typecheck_node(script, it.*, hint_type = expected_type);
+                    type := typecheck_node(script, node, hint_type = expected_type);
                     if type != expected_type {
                         log("Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.");
                         log("\tProcedure identifier: '%'", procedure_name);
-                        log("\tArgument expression: '%'", sprint_node(script, it.*,, temp));
+                        log("\tArgument expression: '%'", sprint_node(script, node,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, type);
                         return null;
                     }
                 } else {
-                    ok, replacement := try_implicit_cast(script, it.*, expected_type);
+                    ok, replacement := try_implicit_cast(script, node, expected_type);
                     if !ok {
                         log("Error: failed while trying to implicitly cast a procedure argument.");
                         log("\tProcedure identifier: '%'", procedure_name);
-                        log("\tArgument expression: '%'", sprint_node(script, it.*,, temp));
-                        log("\tExpected type '%', got '%'.", expected_type, it.*.value_type);
+                        log("\tArgument expression: '%'", sprint_node(script, node,, temp));
+                        log("\tExpected type '%', got '%'.", expected_type, node.value_type);
                         return null;
                     }
-                    if replacement {
-                        // TODO: we need a better means of replacing nodes all throughout typechecking, because it's very hacky right now.
-                        replacement.scope = it.*.scope;
-                        if it_index == 0 then it.* = replacement;
-                    }
+                    if replacement  replace_node(node_ptr_ptr, replacement);
                 }
             }
             

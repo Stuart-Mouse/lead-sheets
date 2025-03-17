@@ -691,6 +691,38 @@ would be nice to not have to store allocator on script, but I don't want to make
 when we get back to developing that whole feature about identifier renaming, go back and make that work with declarations as well
 
 
+
+## Improved Logging and Error Reporting
+
+already beefed up logging in parsing step, now need to do typechecking and execution
+    need to make sure we are properly getting source_token attached to nodes
+
 we should make expect_token_type better and log an error message when type is not as expected
-    
+
+need to provide source file path when parsing from a source file, else provide source location of Jai file by default
+
+
+
+## Identifier Renaming
+
+
+## Macros and Malleable Literals
+
+
+## Node Replacement
+
+
+## Directives Improvements
+
+
+## Ahead-of-Time Lexing 
+
+
+## Trivia Preservation and Serialization
+
+
+
+## Clearing Up Allocator Usage
+
+
 
