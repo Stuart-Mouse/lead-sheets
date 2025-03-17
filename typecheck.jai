@@ -322,7 +322,7 @@ typecheck_node :: (
             
             // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
             // iterating by **Node so that we can replace nodes if required
-            for 0..procedure_call.arguments.count {
+            for 0..procedure_call.arguments.count-1 {
                 node_ptr_ptr  := *procedure_call.arguments[it];
                 node          := node_ptr_ptr.*;
                 expected_type := ti_proc.argument_types[it];
