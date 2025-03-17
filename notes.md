@@ -691,3 +691,6 @@ would be nice to not have to store allocator on script, but I don't want to make
 when we get back to developing that whole feature about identifier renaming, go back and make that work with declarations as well
 
 
+we should make expect_token_type better and log an error message when type is not as expected
+    
+

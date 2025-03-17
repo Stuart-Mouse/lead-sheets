@@ -251,8 +251,8 @@ replace_node :: inline (original: **Node, new: *Node) {
     original.* = new;
 }
 
-get_location :: (node: Node) -> Source_Location {
-    if node.token  return node.token.location;
+get_location :: (node: Node) -> Source_Code_Location {
+    if node.source_token  return node.source_token.location;
     return .{};
 }
 

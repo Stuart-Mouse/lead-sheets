@@ -86,16 +86,11 @@ Token_Type :: enum {
 Token :: struct {
     type:       Token_Type;
     text:       string;
-    location:   Source_Location;
+    location:   Source_Code_Location;
     trivia:     string;
     
     // TODO: we really shouldn't have to store this, but for now it's required
     char_after: *u8;
-}
-
-// TODO: replace usage with Source_Code_Location
-Source_Location :: struct {
-    line, char: int;
 }
 
 /*
@@ -116,7 +111,7 @@ Lexer :: struct {
     token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
     next_token_index: int;
     
-    cursor_location: Source_Location;
+    cursor_location: Source_Code_Location;
     
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
     // always points to the character after then end of the last token consumed
@@ -124,7 +119,7 @@ Lexer :: struct {
 }
 
 
-init_lexer :: (lexer: *Lexer, file := "", location := Source_Location.{ 1, 1 }) {
+init_lexer :: (lexer: *Lexer, file := "", location := Source_Code_Location.{ "", 1, 1 }) {
     lexer.* = .{};
     lexer.file = file;
     lexer.cursor_location = location;
@@ -184,7 +179,6 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     trivia, ok := skip_whitespace_and_comments(lexer);
     if !ok    return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
     if !file  return .{ type = .EOF, location = cursor_location };
-    
     
     // we grab cursor location at top so that it points to start of token
     location := cursor_location;
@@ -324,7 +318,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     return make_error_token(location, "Unexpected character encountered.");
 }
 
-make_error_token :: (location: Source_Location, error_string: string = "") -> Token { 
+make_error_token :: (location: Source_Code_Location, error_string: string = "") -> Token { 
     return .{ type = .ERROR, location = location, text = error_string }; 
 }
 
@@ -437,10 +431,10 @@ advance :: inline (using lexer: *Lexer, amount := 1) -> bool {
     
     for 0.._amount-1 {
         if file[it] == #char "\n" {
-            cursor_location.line += 1;
-            cursor_location.char  = 0;
+            cursor_location.line_number += 1;
+            cursor_location.character_number = 0;
         }
-        cursor_location.char += 1;
+        cursor_location.character_number += 1;
     }
     
     file.data  += _amount;
