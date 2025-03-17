@@ -32,13 +32,13 @@ evaluate_statement :: (script: *Script, expr: string, append_to_script_root := f
     
     // TODO: maybe we remove this. but using it rn for soem testing
     if append_to_script_root {
-        last := script.ast_root.statements;
-        if !last {
-            script.ast_root.statements = root;
-        } else {
-            while last.next  last = last.next;
-            last.next = root;
-        }
+        // last := script.ast_root.statements;
+        // if !last {
+        //     script.ast_root.statements = root;
+        // } else {
+        //     while last.next  last = last.next;
+        //     last.next = root;
+        // }
     }
     
     return value, true;
@@ -190,7 +190,7 @@ evaluate_node :: (
         assert(proc_any.type.type == .PROCEDURE);
         dprint("proc_type: %\n", as_type(proc_any.type));
         
-        arguments_anys := NewArray(procedure_call.arguments_count, Any,, temp);
+        arguments_anys := NewArray(procedure_call.arguments.count, Any,, temp);
         for procedure_call.arguments {
             arg_any, ok := evaluate_node(script, it);
             if !ok  return Any.{}, false;

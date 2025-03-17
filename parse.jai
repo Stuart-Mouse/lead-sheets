@@ -7,22 +7,15 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     
     init_lexer(*script.lexer, source);
     
+    // TODO: this really should not be a check 
     if script.ast_root == null {
         script.ast_root = alloc_node(script, Node_Block);
-        script.current_scope = script.ast_root;
     }
+    script.current_scope = script.ast_root;
     
-    script.ast_root.statements = parse_statement(script);
-    if !script.ast_root.statements  return false;
-    
-    previous := script.ast_root.statements;
-    while !expect_token_type(*script.lexer, .EOF) {
-        node := parse_statement(script);
-        if !node  return false;
-        
-        previous.next = node;
-        previous      = node;
-    }
+    statements, ok := parse_statements(script);
+    if !ok  return false;
+    script.ast_root.statements = array_copy(statements,, script.allocator);
     
     assert(script.current_scope == script.ast_root);
     
@@ -35,6 +28,21 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     
     success = true;
     return true;
+}
+
+parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF) -> ([] *Node, bool) {
+    statements: [..] *Node;
+    while true {
+        if expect_token_type(*lexer, break_token_type) break;
+        if expect_token_type(*lexer, .EOF) break;
+        stmt := parse_statement(script);
+        if stmt == null {
+            array_reset(*statements);
+            return .[], false;
+        }
+        array_add(*statements, stmt);
+    }
+    return statements, true;
 }
 
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
@@ -117,11 +125,21 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             log("Error: an open paren is required to begin a foreach iterator list.");
             return null;
         }
-        expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_PAREN);
+        if expect_token_type(*lexer, .CLOSE_PAREN) {
+            log("Error: foreach loop cannot have an empty iterator list!");
+            return null;
+        }
+        expressions, ok := parse_comma_separated_expressions(script,, temp);
         if !ok  return null;
         
+        for_loop.list = array_copy(expressions,, script.allocator);
         for_loop.control_type = .LIST;
-        for_loop.list = expressions;
+        
+        close_paren := get_token(*lexer);
+        if close_paren.type != .CLOSE_PAREN {
+            log("Error: expected closing paren after foreach loop iterator list at (%:%). Instead we saw %\n", close_paren.location.line, close_paren.location.char, close_paren.text);
+            return null;
+        }
         
         dprint("STATEMENT\n");
         for_loop.statement = parse_statement(script, expect_semicolon);
@@ -136,18 +154,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         block := alloc_node(script, Node_Block);
         current_scope = block; 
         
-        statement := parse_statement(script);
-        if !statement  return null;
-        block.statements = statement;
-        
-        previous := statement;
-        while !expect_token_type(*lexer, .CLOSE_BRACE) {
-            statement = parse_statement(script);
-            if !statement  return null;
-            
-            previous.next  = statement;
-            previous       = statement;
-        }
+        statements, ok := parse_statements(script, .CLOSE_BRACE);
+        if !ok  return null;
+        block.statements = array_copy(statements,, script.allocator);
         
         current_scope = block.scope; 
         return block;
@@ -313,9 +322,18 @@ parse_leaf :: (using script: *Script) -> *Node {
         if token_after_dot.type == .OPEN_BRACE {
             literal := alloc_node(script, Node_Literal);
             literal.literal_type = .STRUCT;
-            ok: bool;
-            literal.aggr.expressions, _, ok = parse_comma_separated_expressions(script, .CLOSE_BRACE);
-            if !ok  return null;
+            
+            if !expect_token_type(*lexer, .CLOSE_BRACE) {
+                expressions, ok := parse_comma_separated_expressions(script,, temp);
+                if !ok  return null;
+                literal.aggr.expressions = array_copy(expressions,, script.allocator);
+                
+                close_brace := get_token(*lexer);
+                if close_brace.type != .CLOSE_BRACE {
+                    log("Error: expected a closing brace after initialization expressions of struct literal at (%:%). Instead we saw %\n", close_brace.location.line, close_brace.location.char, close_brace.text);
+                    return null;
+                }
+            }
             
             dot := alloc_node(script, Node_Dot);
             dot.right = literal;
@@ -379,9 +397,17 @@ parse_leaf :: (using script: *Script) -> *Node {
             return null;
         }
         
-        ok: bool;
-        directive.arguments, directive.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
-        if !ok  return null;
+        if !expect_token_type(*lexer, .CLOSE_PAREN) {
+            expressions, ok := parse_comma_separated_expressions(script,, temp);
+            if !ok  return null;
+            directive.arguments = array_copy(expressions,, script.allocator);
+            
+            close_paren := get_token(*lexer);
+            if close_paren.type != .CLOSE_PAREN {
+                log("Error: expected a closing paren after arguments of directive at (%:%). Instead we saw %\n", close_paren.location.line, close_paren.location.char, close_paren.text);
+                return null;
+            }
+        }
         
         if !execute_directive(script, directive) {
             log("Error: failed while trying to execute a directive.");
@@ -393,10 +419,6 @@ parse_leaf :: (using script: *Script) -> *Node {
       case .IDENTIFIER;
         dprint("IDENTIFIER (%)\n", token.text);
         node = make_identifier(script, token.text);
-        
-        
-      case;
-        log("Error: Unexpected token type '%' at (%:%). Expected a number or identifier.\n", token.type, token.location.line, token.location.char);
     }
     
     return node;
@@ -477,32 +499,18 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 }
 
 // needs to also return bool since node can be null validly if there were no arguments
-parse_comma_separated_expressions :: (using script: *Script, expected_end_token: Token_Type) -> (*Node, int, bool) {
-    first: *Node;
-    count: int;
-    
-    if !expect_token_type(*lexer, expected_end_token) {
-        first = parse_expression(script, 0);
-        if first == null  return null, 0, false;
-        count = 1;
-        
-        prev := first;
-        while expect_token_type(*lexer, .COMMA) {
-            next := parse_expression(script, 0);
-            if next == null  return null, 0, false;
-            
-            prev.next = next;
-            prev = next;
-            count += 1;
+parse_comma_separated_expressions :: (using script: *Script) -> ([] *Node, bool) {
+    expressions: [..] *Node;
+    while true {
+        expr := parse_expression(script, 0);
+        if expr == null {
+            array_reset(*expressions);
+            return .[], false;
         }
-        
-        if !expect_token_type(*lexer, expected_end_token) {
-            log("Error, expected a % token at the end of comma separated expressions!\n", expected_end_token);
-            return null, 0, false;
-        }
+        array_add(*expressions, expr);
+        if !expect_token_type(*lexer, .COMMA)  break;
     }
-    
-    return first, count, true;
+    return expressions, true;
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
@@ -531,9 +539,17 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         node := alloc_node(script, Node_Procedure_Call);
         node.procedure_expression = left;
         
-        ok: bool;
-        node.arguments, node.arguments_count, ok = parse_comma_separated_expressions(script, .CLOSE_PAREN);
-        if !ok  return null;
+        if !expect_token_type(*lexer, .CLOSE_PAREN) {
+            expressions, ok := parse_comma_separated_expressions(script,, temp);
+            if !ok  return null;
+            node.arguments = array_copy(expressions,, script.allocator);
+            
+            close_paren := get_token(*lexer);
+            if close_paren.type != .CLOSE_PAREN {
+                log("Error: expected a closing paren after arguments of procedure call at (%:%). Instead we saw %\n", close_paren.location.line, close_paren.location.char, close_paren.text);
+                return null;
+            }
+        }
         
         return node;
         
@@ -570,9 +586,21 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
           case .OPEN_BRACE;
             literal := alloc_node(script, Node_Literal);
             literal.literal_type = .STRUCT;
-            init_expressions, _, ok := parse_comma_separated_expressions(script, .CLOSE_BRACE);
-            if !ok  return null;
-            literal.aggr.expressions = init_expressions;
+            
+            if !expect_token_type(*lexer, .CLOSE_BRACE) {
+                expressions, ok := parse_comma_separated_expressions(script,, temp);
+                if !ok {
+                    log("Error: failed to parse an expression in struct literal.");
+                    return null;
+                }
+                literal.aggr.expressions = array_copy(expressions,, script.allocator);
+                
+                close_brace := get_token(*lexer);
+                if close_brace.type != .CLOSE_BRACE {
+                    log("Error: expected a closing brace after initialization expressions of struct literal at (%:%). Instead we saw %\n", close_brace.location.line, close_brace.location.char, close_brace.text);
+                    return null;
+                }
+            }
             
             dot := alloc_node(script, Node_Dot);
             dot.left  = left;

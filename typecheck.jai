@@ -235,8 +235,7 @@ typecheck_node :: (
                 }
                 if replacement {
                     replacement.scope = operation.right.scope;
-                    replacement.next   = operation.right.next;
-                    operation.right    = replacement;
+                    operation.right   = replacement;
                 }
             }
             operation.value_type = left_type;
@@ -282,9 +281,9 @@ typecheck_node :: (
         procedure_call := alloc_node(script, Node_Procedure_Call);
         procedure_call.procedure_expression = make_identifier(script, operation.name);
         
-        procedure_call.arguments_count  = ifx operation.operator_type == .UNARY then 1 else 2;
-        procedure_call.arguments        = operation.left;
-        operation.left.next             = operation.right; // link these as we do for procedure arguments
+        if operation.operator_type == .UNARY 
+            then procedure_call.arguments = array_copy((*Node).[ operation.left ],, script.allocator);
+            else procedure_call.arguments = array_copy((*Node).[ operation.left, operation.right ],, script.allocator);
         operation.overload_procedure    = procedure_call;
         operation.value_type            = typecheck_node(script, procedure_call);
         operation.flags                |= .OVERLOAD;
@@ -296,7 +295,7 @@ typecheck_node :: (
         procedure_call := node.(*Node_Procedure_Call);
         
         dprint("typechecking arguments...\n");
-        dprint("arg_count: %\n", procedure_call.arguments_count);
+        dprint("arg_count: %\n", procedure_call.arguments.count);
         
         ti_proc := typecheck_node(script, procedure_call.procedure_expression, .IS_PROCEDURE_EXPRESSION).(*Type_Info_Procedure);
 
@@ -313,7 +312,7 @@ typecheck_node :: (
             // since it's possible it only failed due to lack of a type hint that we can 
             // provide later, after we've found an otherwise suitable overload
             // we also put the arguments in a nice little array view to make things simpler in resolve_procedure_index
-            arguments := NewArray(procedure_call.arguments_count, *Node,, temp);
+            arguments := NewArray(procedure_call.arguments.count, *Node,, temp);
             for procedure_call.arguments {
                 typecheck_node(script, it);
                 arguments[it_index] = it;
@@ -329,34 +328,32 @@ typecheck_node :: (
             ti_proc, identifier.value_type = procedures[procedure_index].type;
             
             // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
-            for arguments {
+            // iterating by **Node so that we can replace nodes if required
+            for *arguments {
                 expected_type := ti_proc.argument_types[it_index];
-                if it.value_type == null {
+                if it.*.value_type == null {
                     dprint("re-typechecking argument with hint_type %", as_type(expected_type));
-                    type := typecheck_node(script, it, hint_type = expected_type);
+                    type := typecheck_node(script, it.*, hint_type = expected_type);
                     if type != expected_type {
                         log("Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.");
                         log("\tProcedure identifier: '%'", procedure_name);
-                        log("\tArgument expression: '%'", sprint_node(script, it,, temp));
+                        log("\tArgument expression: '%'", sprint_node(script, it.*,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, type);
                         return null;
                     }
                 } else {
-                    ok, replacement := try_implicit_cast(script, it, expected_type);
+                    ok, replacement := try_implicit_cast(script, it.*, expected_type);
                     if !ok {
                         log("Error: failed while trying to implicitly cast a procedure argument.");
                         log("\tProcedure identifier: '%'", procedure_name);
-                        log("\tArgument expression: '%'", sprint_node(script, it,, temp));
-                        log("\tExpected type '%', got '%'.", expected_type, it.value_type);
+                        log("\tArgument expression: '%'", sprint_node(script, it.*,, temp));
+                        log("\tExpected type '%', got '%'.", expected_type, it.*.value_type);
                         return null;
                     }
                     if replacement {
                         // TODO: we need a better means of replacing nodes all throughout typechecking, because it's very hacky right now.
-                        replacement.scope = it.scope;
-                        replacement.next   = it.next;
-                        if it_index == 0
-                            then procedure_call.arguments   = replacement;
-                            else arguments[it_index-1].next = replacement;
+                        replacement.scope = it.*.scope;
+                        if it_index == 0 then it.* = replacement;
                     }
                 }
             }
@@ -381,8 +378,8 @@ typecheck_node :: (
             }
             
             // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
-            if ti_proc.argument_types.count != procedure_call.arguments_count {
-                log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, procedure_call.arguments_count);
+            if ti_proc.argument_types.count != procedure_call.arguments.count {
+                log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, procedure_call.arguments.count);
                 return null;
             }
             for procedure_call.arguments {
@@ -715,15 +712,18 @@ typecheck_node :: (
             };
             
           case .LIST;
-            first_type := typecheck_node(script, for_loop.list, check_flags = .EXPECT_LVALUE);
+            first_type := typecheck_node(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);
             if first_type == null  return null;
-            for for_loop.list.next {
-                type := typecheck_node(script, it, check_flags = .EXPECT_LVALUE);
+            
+            for 1..for_loop.list.count-1 {
+                node := for_loop.list[it];
+                type := typecheck_node(script, node, check_flags = .EXPECT_LVALUE);
                 if type != first_type {
-                    log("Error: all expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it_index + 2, as_type(type));
+                    log("Error: all expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it + 2, as_type(type));
                     return null;
                 }
             }
+            
             for_loop.it_decl = .{
                 name       = "it",
                 value_type = first_type,

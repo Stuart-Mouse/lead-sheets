@@ -1,7 +1,7 @@
 
 Node :: struct {
     node_type:              Type;
-    scope, next:            *Node;              // used for argument lists or connecting statements in a block
+    scope:                  *Node;              // used for argument lists or connecting statements in a block
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
     source_token:           *Token;
@@ -38,7 +38,7 @@ Node :: struct {
 Node_Block :: struct {
     using #as node_base:    Node;
     name:                   string;
-    statements:             *Node; 
+    statements:             [] *Node; 
 }
 
 // TODO: before continuing with whitespace/comments issue, refactor node creation so that we are passing in source token wherever possible.
@@ -122,8 +122,7 @@ Node_Declaration :: struct {
 Node_Procedure_Call :: struct {
     using #as node_base:    Node;
     procedure_expression:   *Node;
-    arguments:              *Node;
-    arguments_count:        int;
+    arguments:              [] *Node;
     return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
 }
 
@@ -131,8 +130,7 @@ Node_Directive :: struct {
     using #as node_base:    Node;
     name:                   string;
     directive_index:        int;
-    arguments:              *Node;
-    arguments_count:        int;
+    arguments:              [] *Node;
     runtime_node:           *Node;  // returned from directive as a replacement node. We still keep the directive itself around for re-serialization, though.
 }
 
@@ -144,8 +142,8 @@ Node_Literal :: struct {
         number:  Small_Any;
         text:    string;
         aggr: struct {
-            value_pointer:      *void;   // once type is resolved, we store pointer to allocated value here
-            expressions:        *Node;   // expressions to init struct members by. later maybe also accepting statements
+            value_pointer:      *void;      // once type is resolved, we store pointer to allocated value here
+            expressions:        [] *Node;    // expressions to init struct members by. later maybe also accepting statements
         }
         any: Any;
     }
@@ -214,57 +212,12 @@ Node_For_Loop :: struct {
     union {
         array_expression:   *Node;
         range:              struct { lower, upper: *Node; };
-        list:               *Node;
+        list:               [] *Node;
     }
     statement:  *Node;
     
     // just storing these directly on the for loop itself
     it_decl, it_index_decl: Node_Declaration;
-}
-
-// TODO: Clean up this horrible iterator...
-for_expansion :: (node: *Node, body: Code, flags: For_Flags) #expand {
-    #assert(flags & .POINTER == 0);
-    #if flags & .REVERSE {
-        // required to define it index here it seems? but it doesn't make any sense to use...
-        `it := node;
-        `it_index := 0;
-        while it != null {
-            #insert body;
-            it = it.prev;
-            it_index -= 1;
-        }
-    } else {
-        `it := node;
-        `it_index := 0;
-        while it != null {
-            #insert body;
-            it = it.next;
-            it_index += 1;
-        }
-    }
-}
-
-// for iterating nodes with an additional indirection, so that we can replace nodes in a parameter or block statements list
-iterate :: (node: **Node, body: Code, reverse := false) #expand {
-    #if reverse {
-        // required to define it index here it seems? but it doesn't make any sense to use...
-        `it := node;
-        `it_index := 0;
-        while it.* != null {
-            #insert body;
-            it = *it.*.prev;
-            it_index -= 1;
-        }
-    } else {
-        `it := node;
-        `it_index := 0;
-        while it.* != null {
-            #insert body;
-            it = *it.*.next;
-            it_index += 1;
-        }
-    }
 }
 
 alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null, loc := #caller_location) -> *T_Node

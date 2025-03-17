@@ -520,8 +520,8 @@ execute_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     ti_proc   := procedure.type;
     
     // + 2 below for implicitly passing script pointer and data pointer
-    if ti_proc.argument_types.count != directive.arguments_count + 2 {
-        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments_count);
+    if ti_proc.argument_types.count != directive.arguments.count + 2 {
+        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments.count);
         return false;
     }
     

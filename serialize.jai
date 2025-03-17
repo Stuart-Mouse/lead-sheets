@@ -32,9 +32,7 @@ print_script :: (
         if !should_skip_placing_semicolon(it) {
             append(builder, ";");
         } 
-        if it.next != null {
-            append(builder, "\n");
-        }
+        if it_index != ast_root.statements.count-1 then append(builder, "\n");
     }
     return true;
 }
@@ -78,7 +76,7 @@ print_node :: (
         print_to_builder(builder, "#%(", directive.name);
         for directive.arguments {
             print_node_or_return(script, it, builder, indent);
-            if it.next != null  append(builder, ", ");
+            if it_index != ast_root.statements.count-1 then append(builder, ", ");
         }
         print_to_builder(builder, ")", );
         return true;
@@ -116,7 +114,7 @@ print_node :: (
             } else {
                 for literal.aggr.expressions {
                     print_node(script, it, builder, indent);
-                    if it.next != null  append(builder, ", ");
+                    if it_index != ast_root.statements.count-1  append(builder, ", ");
                 }
             }
             
@@ -179,7 +177,7 @@ print_node :: (
         append(builder, "(");
         for procedure_call.arguments {
             print_node_or_return(script, it, builder, indent);
-            if it.next  append(builder, ", ");
+            if it_index != ast_root.statements.count-1  append(builder, ", ");
         }
         append(builder, ")");
         return true;
@@ -275,9 +273,7 @@ print_node :: (
             if !should_skip_placing_semicolon(it) {
                 append(builder, ";");
             } 
-            if it.next != null {
-                append(builder, "\n");
-            }
+            if it_index != ast_root.statements.count-1 then append(builder, "\n");
         }
         indent -= INDENT_SIZE;
         append(builder, "\n");
@@ -322,7 +318,7 @@ print_node :: (
             append(builder, "(");
             for for_loop.list {
                 print_node_or_return(script, it, builder, indent);
-                if it.next  append(builder, ", ");
+                if it_index != ast_root.statements.count-1 then append(builder, ", ");
             }
             append(builder, ")");
         }
