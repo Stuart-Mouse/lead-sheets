@@ -371,9 +371,10 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
-        iterate(*procedure_call.arguments, #code {
-            if !walk_nodes(script, it, callback, data)  return false;
-        });
+        for 0..procedure_call.arguments.count-1 {
+            node_ptr_ptr := *procedure_call.arguments[it];
+            if !walk_nodes(script, node_ptr_ptr, callback, data)  return false;
+        }
         return true;
         
       case Node_Dot;
@@ -400,9 +401,10 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
         
       case Node_Block;
         block := node.(*Node_Block);
-        iterate(*block.statements, #code {
-            if !walk_nodes(script, it, callback, data)  return false;
-        });
+        for 0..block.statements.count-1 {
+            node_ptr_ptr := *block.statements[it];
+            if !walk_nodes(script, node_ptr_ptr, callback, data)  return false;
+        }
         return true;
         
       case Node_If_Statement;

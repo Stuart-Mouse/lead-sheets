@@ -13,7 +13,7 @@ parse_source_file :: (script: *Script, source: string) -> bool {
     }
     script.current_scope = script.ast_root;
     
-    statements, ok := parse_statements(script);
+    statements, ok := parse_statements(script,, temp);
     if !ok  return false;
     script.ast_root.statements = array_copy(statements,, script.allocator);
     

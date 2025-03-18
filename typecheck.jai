@@ -304,11 +304,11 @@ typecheck_node :: (
             //       then we can notify caller if failure is due to a missing type hint
             //       so that we can handle that case more intelligently here when resolving procedure
             
-            // pre-typecheck arguments without type hinting
-            // if we fail to typecheck a certain node, we ignore it here for now
-            // since it's possible it only failed due to lack of a type hint that we can 
-            // provide later, after we've found an otherwise suitable overload
-            // we also put the arguments in a nice little array view to make things simpler in resolve_procedure_index
+            /*
+                Procedure arguments are sort of typechecked twice, once before selecting an overload and once after.
+                In the first check, we do not provide any type hints, which means we may fail to typecheck arguments where the type hint is required.
+                But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
+            */
             for procedure_call.arguments  typecheck_node(script, it);
             
             procedure_name  := identifier.name;
@@ -320,8 +320,10 @@ typecheck_node :: (
             identifier.flags          |= .TYPECHECKED;
             ti_proc, identifier.value_type = procedures[procedure_index].type;
             
-            // go back and verify types for all arguments, re-typecheck those that failed due to a missing type hint
-            // iterating by **Node so that we can replace nodes if required
+            /*
+                For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that failed due to a missing type hint.
+                We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.
+            */
             for 0..procedure_call.arguments.count-1 {
                 node_ptr_ptr  := *procedure_call.arguments[it];
                 node          := node_ptr_ptr.*;
