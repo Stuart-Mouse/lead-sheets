@@ -153,7 +153,7 @@ main :: () {
         
         for expressions_to_test {
             log("Evaluating statement: '%'", it.expr);
-            value, ok := evaluate_statement(*script, it.expr, append_to_script_root = true);
+            value, ok := evaluate_statement(*script, it.expr, store_global_declarations = true);
             if !ok {
                 log("\tFailed to evaluate statement.");
                 continue;

@@ -1,5 +1,5 @@
 
-LS :: #import "Lead_Sheets";
+LS :: #import "Lead_Sheets"(DEBUG = true);
 
 #load "imgui_sdl_gl_docking.jai";
 #load "imgui_extras.jai";
@@ -209,7 +209,7 @@ main :: () {
                     // NOTE: string must be copied here because LS uses view onto source file...
                     //       we should probably have some flag that make LS copy the strings it needs from tokens into its pool!
                     str = copy_string(str);
-                    value, ok := LS.evaluate_statement(*script, str, append_to_script_root = true);
+                    value, ok := LS.evaluate_statement(*script, str, store_global_declarations = true);
                     if !ok {
                         log("\tFailed to evaluate statement.");
                     } else {

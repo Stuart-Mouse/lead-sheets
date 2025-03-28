@@ -21,7 +21,7 @@ evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
     return value, true;
 }
 
-evaluate_statement :: (script: *Script, expr: string, append_to_script_root := false) -> (Any, bool) {
+evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
     root := parse_statement(script, expr);
     if root == null  return Any.{}, false;
     
@@ -30,16 +30,10 @@ evaluate_statement :: (script: *Script, expr: string, append_to_script_root := f
     value, ok := evaluate_node(script, root);
     if !ok  return Any.{}, false;
     
-    // TODO: maybe we remove this. but using it rn for some testing
-    // TODO: ok really, either fix this or just remove it
-    if append_to_script_root {
-        // last := script.ast_root.statements;
-        // if !last {
-        //     script.ast_root.statements = root;
-        // } else {
-        //     while last.next  last = last.next;
-        //     last.next = root;
-        // }
+    if store_global_declarations {
+        if root.node_type == Node_Declaration {
+            array_add(*script.global_declarations, xx root);
+        }
     }
     
     return value, true;

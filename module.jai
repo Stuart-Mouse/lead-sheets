@@ -30,8 +30,8 @@ External_Variable :: struct {
 }
 
 Name_And_Type :: struct {
-    name: string; 
-    type: *Type_Info;
+    name:   string; 
+    type:   *Type_Info;
 }
 
 Script :: struct {
@@ -43,6 +43,9 @@ Script :: struct {
     directives:             [..] Directive;
     named_blocks:           [..] *Node_Block;
     type_table:             [..] Name_And_Type;
+    
+    // added for the sake of convenience and use in repl
+    global_declarations:    [..] *Node_Declaration;
     
     pool:                   Flat_Pool;
     allocator:              Allocator;

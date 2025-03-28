@@ -56,7 +56,7 @@ typecheck_node :: (
     // TODO: print source code location on error as well. really, we need to support this in many places for better error reporting.
     if node.flags & .MUST_BE_STATEMENT_ROOT {
         if !(check_flags & .IS_STATEMENT_ROOT) {
-            log("Error: This expression '%' can only be used as the root of a statement, not just as an arbitrary expression.", sprint_node(script, node,, temp));
+            log("%: Error: This expression '%' can only be used as the root of a statement, not just as an arbitrary expression.", get_location(node), sprint_node(script, node,, temp));
             return null;
         }
     }
@@ -104,23 +104,21 @@ typecheck_node :: (
             literal.value_type = literal.number.type; 
             
           case .STRUCT;
-            // type can either be gotten explicitly from literal.aggr.type_identifier, or from the hint type.
-            // it is not necessarily an error at this point if the two do not agree, even though it probably will be further up the tree
             ti_struct := hint_type.(*Type_Info_Struct);
             if ti_struct.type != .STRUCT {
-                log("Error: type hint provided to struct literal is not a struct type. (was '%')", as_type(ti_struct));
+                log("%: Error: type hint provided to struct literal is not a struct type. (was '%')", get_location(literal), as_type(ti_struct));
                 return null;
             }
             
             for literal.aggr.expressions {
                 if it_index >= ti_struct.members.count {
-                    log("Error: too many values provided in struct literal.");
+                    log("%: Error: too many values provided in struct literal.", get_location(literal));
                     return null;
                 }
                 member  := ti_struct.members[it_index];
                 expr_ti := typecheck_node(script, it, hint_type = member.type); 
                 if expr_ti != member.type {
-                    log("Error: value type provided in struct initializer for field '%' was incorrect. Expected '%', got '%'.", member.name, as_type(member.type), as_type(expr_ti));
+                    log("%: Error: value type provided in struct initializer for field '%' was incorrect. Expected '%', got '%'.", get_location(it), member.name, as_type(member.type), as_type(expr_ti));
                     return null;
                 }
             }
@@ -146,18 +144,18 @@ typecheck_node :: (
         identifier := node.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED);
         
-        declaration := resolve_declaration_by_identifier(identifier.name, identifier.scope, check_flags & .EXPECT_LVALUE != 0);
+        declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope, check_flags & .EXPECT_LVALUE != 0);
         if declaration {
             if declaration.(*void) > identifier.(*void) {
-                log("Error: identifier % used before its declaration.", identifier.name);
+                log("%: Error: identifier % used before its declaration.", get_location(identifier), identifier.name);
                 return null;
             }
-            // TODO: we cannot mark the identifier is constant based on the declaration yet, 
+            // TODO: we cannot mark the identifier as constant based on the declaration yet, 
             //       since the declaration may later be referenced by another identifier as an lvalue, making the declaration non-constant
             //       This is fine since we don't really do any constant evaluation on the AST, but when we lower to bytecode, 
             //       we will need to consider that a DECLARATION identifier may yet need to be checked for constancy.
             // TODO: if the declaration is a macro though, and the init_expression of the macro is constant, then we can still go ahead and safely mark the identifier as constant
-            //       this may be a good idea to go ahead and implement sinceit would allow us to use such an identifier in a type expression.
+            //       this may be a good idea to go ahead and implement since it would allow us to use such an identifier in a type expression.
             if declaration.flags & .IS_CONSTANT {
                 if check_flags & .EXPECT_LVALUE {
                     dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue\n", declaration.name);
@@ -230,7 +228,7 @@ typecheck_node :: (
             if left_type != right_type {
                 ok, replacement := try_implicit_cast(script, operation.right, left_type); 
                 if !ok {
-                    log("Error: left and right types must match in a simple assignment statement!");
+                    log("%: Error: left and right types must match in a simple assignment statement!", get_location(operation));
                     return null;
                 }
                 if replacement  replace_node(*operation.right, replacement);
@@ -332,7 +330,7 @@ typecheck_node :: (
                     dprint("re-typechecking argument with hint_type %", as_type(expected_type));
                     type := typecheck_node(script, node, hint_type = expected_type);
                     if type != expected_type {
-                        log("Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.");
+                        log("%: Error: we deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.", get_location(node));
                         log("\tProcedure identifier: '%'", procedure_name);
                         log("\tArgument expression: '%'", sprint_node(script, node,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, type);
@@ -341,7 +339,7 @@ typecheck_node :: (
                 } else {
                     ok, replacement := try_implicit_cast(script, node, expected_type);
                     if !ok {
-                        log("Error: failed while trying to implicitly cast a procedure argument.");
+                        log("%: Error: failed while trying to implicitly cast a procedure argument.", get_location(node));
                         log("\tProcedure identifier: '%'", procedure_name);
                         log("\tArgument expression: '%'", sprint_node(script, node,, temp));
                         log("\tExpected type '%', got '%'.", expected_type, node.value_type);
@@ -358,28 +356,28 @@ typecheck_node :: (
         // procedure was the result of some larger expression, so it already has a strict type
         else {
             if ti_proc == null {
-                log("Error: failed to typecheck procedure_expression.");
+                log("%: Error: failed to typecheck procedure_expression.", get_location(node));
                 return null;
             }
             if ti_proc.type != .PROCEDURE {
-                log("Error: attempt to call a non-procedure type as if it were a procedure.");
+                log("%: Error: attempt to call a non-procedure type as if it were a procedure.", get_location(node));
                 return null;
             }
             if ti_proc.return_types.count > 1 {
-                log("Error: attempt to call a procedure which returns more than one value. This is not currently supported.");
+                log("%: Error: attempt to call a procedure which returns more than one value. This is not currently supported.", get_location(node));
                 return null;
             }
             
             // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
             if ti_proc.argument_types.count != procedure_call.arguments.count {
-                log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, procedure_call.arguments.count);
+                log("%: Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", get_location(node), ti_proc.argument_types.count, procedure_call.arguments.count);
                 return null;
             }
             for procedure_call.arguments {
                 expected_type := ti_proc.argument_types[it_index];
                 argument_type := typecheck_node(script, it, hint_type = expected_type);
                 if argument_type != expected_type {
-                    log("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(expected_type), as_type(argument_type));
+                    log("%: Error: mismatch on argument % for procedure call. Expected %, got %.\n", get_location(it), it, as_type(expected_type), as_type(argument_type));
                     return null;
                 }
             }
@@ -407,12 +405,12 @@ typecheck_node :: (
             type_expression := node_cast.type_expression;
             type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
             if type_type == null || type_type.type != .TYPE {
-                log("Error: Type expression in cast did not resolve to a Type.");
+                log("%: Error: Type expression in cast did not resolve to a Type.", get_location(type_expression));
                 return null;
             }
             // TODO: make sure that type expression is constant before evaluating it
             if !(type_expression.flags & .IS_CONSTANT) {
-                log("Error: Type expression in cast must be constant.");
+                log("%: Error: Type expression in cast must be constant.", get_location(type_expression));
                 return null;
             }
             type_any, ok := evaluate_node(script, type_expression);
@@ -439,7 +437,7 @@ typecheck_node :: (
         if left_type.type == {
           case .STRUCT;
             if dot.right.node_type != Node_Identifier {
-                log("Error: right side of struct member dot dereference expression must be an identifier.");
+                log("%: Error: right side of struct member dot dereference expression must be an identifier.", get_location(dot));
                 return null;
             }
             // TODO: we should check that member offset is non-negative so as to prevent use of constants until we can properly support those
@@ -455,7 +453,7 @@ typecheck_node :: (
             // so we can't just set the left type to be a namespace.
             //      but we do still want to do this if left type is an identifier? or no, since it could be a type identifier? which maybe we want to leave as is?
             if member_ti.flags & .CONSTANT {
-                log("Error: access of constant struct members is not yet allowed.");
+                log("%: Error: access of constant struct members is not yet allowed.", get_location(node));
                 return null;
                 // member_identifier.identifier_type = .LITERAL;
                 // member_identifier.literal = alloc_node(script, Node_Literal);
@@ -477,7 +475,7 @@ typecheck_node :: (
             if dot.left {
                 // TODO: make sure that type expression is constant before evaluating it
                 if !(dot.left.flags & .IS_CONSTANT) {
-                    log("Error: Type expression on left-hand side of dot operator must be constant.");
+                    log("%: Error: Type expression on left-hand side of dot operator must be constant.", get_location(node));
                     return null;
                 }
                 left_any, ok := evaluate_node(script, dot.left);
@@ -485,7 +483,7 @@ typecheck_node :: (
                 namespace = left_any.value_pointer.(**Type_Info).*;
             } else {
                 if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
-                    log("Error: unary dot can only be used for enums, but hint_type was %", as_type(hint_type));
+                    log("%: Error: unary dot can only be used for enums, but hint_type was %", get_location(node), as_type(hint_type));
                     return null;
                 }
                 namespace = hint_type;
@@ -513,7 +511,7 @@ typecheck_node :: (
                     so we would need to peek dot.right for constancy, then tell dot.left about that in the flags we pass up to that node
                     idk, this is all very strange... may just say fuck it and not support this.
                 */
-                log("Error: use of struct type as a namespace is not yet implemented!");
+                log("%: Error: use of struct type as a namespace is not yet implemented!", get_location(node));
                 return null;
                 
               case .ENUM;
@@ -525,7 +523,7 @@ typecheck_node :: (
                 
                 value, found := enum_name_to_value(ti_enum, member_name);
                 if !found {
-                    log("Error: invalid enum value name '%' for enum type '%'.", member_name, as_type(ti_enum));
+                    log("%: Error: invalid enum value name '%' for enum type '%'.", get_location(node), member_name, as_type(ti_enum));
                     return null;
                 }
                 
@@ -539,25 +537,25 @@ typecheck_node :: (
                 return dot.value_type;
                 
               case;
-                log("Error: a % type cannot be used as a namespace.", namespace.type);
+                log("%: Error: a % type cannot be used as a namespace.", get_location(node), namespace.type);
                 return null;
             }
         }
         
-        log("Error: left side of dot expression must be a struct or type.");
+        log("%: Error: left side of dot expression must be a struct or type.", get_location(node));
         return null;
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         base_type := typecheck_node(script, subscript.base_expression, check_flags & .EXPECT_LVALUE).(*Type_Info_Array);
         if base_type == null || base_type.type != .ARRAY {
-            log("Typechecking Error: Type '%' cannot be indexed!", as_type(base_type));
+            log("%: Error: Type '%' cannot be indexed!", get_location(node), as_type(base_type));
             return null;
         }
         
         indexing_type := typecheck_node(script, subscript.indexing_expression/*, hint_type = type_info(int)*/);
         if indexing_type == null || (indexing_type.type != .INTEGER && indexing_type.type != .FLOAT) {
-            log("Typechecking Error: Type '%' cannot be used in an indexing expression!", as_type(indexing_type));
+            log("%: Error: Type '%' cannot be used in an indexing expression!", get_location(node), as_type(indexing_type));
             return null;
         }
         
@@ -574,9 +572,9 @@ typecheck_node :: (
         // TODO: I am dumb! we are not actually checking for redeclarations right now at all!
         // since declarations don't use an identifier node for the identifier, we actually will want to factor out identifier resolution so that it just takes a string and not a node
         
-        other_declaration := resolve_declaration_by_identifier(declaration.name, declaration.scope);
+        other_declaration := resolve_declaration_by_identifier(script, declaration.name, declaration.scope);
         if other_declaration != null && declaration != other_declaration {
-            log("Error: redeclaration of identifier '%'.", declaration.name);
+            log("%: Error: redeclaration of identifier '%'.", get_location(node), declaration.name);
             return null;
         }
         
@@ -585,12 +583,12 @@ typecheck_node :: (
             type_expression := declaration.type_expression;
             type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
             if type_type == null || type_type.type != .TYPE {
-                log("Error: Type expression in declaration did not resolve to a Type.");
+                log("%: Error: Type expression in declaration did not resolve to a Type.", get_location(node));
                 return null;
             }
             // TODO: make sure that type expression is constant before evaluating it
             if !(type_expression.flags & .IS_CONSTANT) {
-                log("Error: Type expression in declaration must be constant.");
+                log("%: Error: Type expression in declaration must be constant.", get_location(node));
                 return null;
             }
             type_any, ok := evaluate_node(script, type_expression);
@@ -603,7 +601,7 @@ typecheck_node :: (
             right_type = typecheck_node(script, declaration.init_expression, hint_type = explicit_type);
             if right_type == null  return null;
             if explicit_type && explicit_type != right_type {
-                log("Error: init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type);
+                log("%: Error: init expression of declaration does not match given type. Expected '%', got '%'.", get_location(node), explicit_type, right_type);
                 return null;
             }
             // if the init expression of a declaration is marked as constant, then the declaration is also marked as constant
@@ -619,12 +617,12 @@ typecheck_node :: (
         
         if declaration.flags & .MACRO {
             if declaration.init_expression.node_type != Node_Literal {
-                log("Error: macro declarations can only be made to simple literals at this time.");
+                log("%: Error: macro declarations can only be made to simple literals at this time.", get_location(node));
                 return null;
             }
             value, ok := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
             if !ok {
-                log("Error: failed to evaulate init expression of macro declaration. We do this during typechecking at the moment as a hack to make malleable literals work, and I'm not fixing this until we really make macros actually a thing.");
+                log("%: Error: failed to evaulate init expression of macro declaration. We do this during typechecking at the moment as a hack to make malleable literals work, and I'm not fixing this until we really make macros actually a thing.", get_location(node));
                 return null;
             }
         }
@@ -683,7 +681,7 @@ typecheck_node :: (
             assert(for_loop.range.upper != null);
             upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
             if lower_type != upper_type { 
-                log("Error: type mismatch on lower and upper bounds of range.\n");
+                log("%: Error: type mismatch on lower and upper bounds of range.\n", get_location(node));
                 return null;
             }
             
@@ -712,7 +710,7 @@ typecheck_node :: (
                 node := for_loop.list[it];
                 type := typecheck_node(script, node, check_flags = .EXPECT_LVALUE);
                 if type != first_type {
-                    log("Error: all expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it + 2, as_type(type));
+                    log("%: Error: all expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", get_location(node), as_type(first_type), it + 2, as_type(type));
                     return null;
                 }
             }
@@ -746,7 +744,7 @@ typecheck_script :: (script: *Script) -> bool {
     return true;
 }
 
-resolve_declaration_by_identifier :: (identifier: string, scope_block: *Node, need_lvalue := false) -> *Node_Declaration {
+resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope_block: *Node, need_lvalue := false) -> *Node_Declaration {
     scope := scope_block;
     while scope {
         if scope.node_type == {
@@ -760,6 +758,11 @@ resolve_declaration_by_identifier :: (identifier: string, scope_block: *Node, ne
             if declaration  return declaration;
         }
         scope = scope.scope;
+    }
+    for script.global_declarations {
+        if it.name == identifier {
+            return it;
+        }
     }
     return null;
 }
@@ -814,7 +817,8 @@ find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need
     }
     if for_loop.it_index_decl.name == identifier {
         if need_lvalue {
-            log("Error: it_index cannot be used as an lvalue.");
+            // TODO: this is a bad error message since it's reported with the for loop's location and not the identifier's location.
+            log("%: Error: it_index cannot be used as an lvalue.", get_location(for_loop));
             return null;
         }
         return *for_loop.it_index_decl;
@@ -907,7 +911,7 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
         return true, make_implicit_cast(script, node, type);
     }
     
-    log("Error: unable to implicitly cast type '%' to '%'", as_type(node.value_type), as_type(type));
+    log("%: Error: unable to implicitly cast type '%' to '%'", get_location(node), as_type(node.value_type), as_type(type));
     return false, null;
 }
 
@@ -922,7 +926,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
         literal.number = new_number;
         return true;
     }
-    log("Error: unable to coerce % literal of type '%' to '%'", literal.literal_type, as_type(literal.value_type), as_type(type));
+    log("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
     return false;
 }
 
