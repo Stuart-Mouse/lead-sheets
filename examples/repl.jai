@@ -232,6 +232,11 @@ main :: () {
                 // TODO: maybe flags to show if constant / malleable?
                 imgui.TableHeadersRow();
                 
+                for script.global_declarations {
+                    decl_value := Any.{ it.value_type, it.value_pointer };
+                    TableTreeNodeAny(it.name, decl_value);
+                }
+                
                 // TODO: this is probably slow because we walk the entire ast to show the declarations instead of storing them in some array.
                 //       but not really worried about that at the moment since scripts are intended to be small anyhow.
                 walk_proc :: (script: *LS.Script, node: *LS.Node, data: *void) -> (bool, *LS.Node) {

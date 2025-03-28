@@ -1,11 +1,11 @@
-
-parse_source_file :: (script: *Script, source: string) -> bool {
+// NOTE: file path only used for error reporting
+parse_source_file :: (script: *Script, source: string, file_path := "") -> bool {
     if !(script.flags & .INITIALIZED)  return false;
     
     success: bool;
     defer if !success  free_script(script);
     
-    init_lexer(*script.lexer, source);
+    init_lexer(*script.lexer, source, location = .{ file_path, 1, 1 });
     
     // TODO: this really should not be a check 
     if script.ast_root == null {

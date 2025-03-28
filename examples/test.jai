@@ -101,8 +101,9 @@ main :: () {
     set_variable(*script, "str", str);
     
     print("\nPARSING SCRIPT\n");
-    source := read_entire_file("test.ls");
-    if !parse_source_file(*script, source) {
+    source_path := "test.ls";
+    source := read_entire_file(source_path);
+    if !parse_source_file(*script, source, source_path) {
         print("failed to construct script from source!\n");
         return;
     }
