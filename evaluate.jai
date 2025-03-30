@@ -263,13 +263,10 @@ evaluate_node :: (
         index_any:, ok  = evaluate_node(script, subscript.indexing_expression);
         
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
-        indexing_type := subscript.indexing_expression.value_type;
         
         // get index as s64
-        // TODO: maybe improve this
-        //       for bytecode, could do an instruction for inplace type cast
-        index_as_s64: s64;
-        assert(remap_int(index_as_s64, index_any));
+        // TODO: maybe improve this. for bytecode, could do an instruction for inplace type cast
+        index_as_s64:, ok = remap_to(s64, index_any);  assert(ok);
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         

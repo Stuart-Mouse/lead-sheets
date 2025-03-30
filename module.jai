@@ -511,52 +511,63 @@ make_small_any :: inline (value: $T) -> Small_Any #modify {
 // NOTE: this would not work with dynamic type infos, 
 //       as that would require a more complex switch case
 //       on type of type, runtime size, and signedness
-negate_number :: inline (any: *Small_Any) {
-    if as_type(any.type) == {
-      // case u\8;     val := (*any.value).(*u\8);     val.* = -val.*;
-      // case u16;     val := (*any.value).(*u16);     val.* = -val.*;
-      // case u32;     val := (*any.value).(*u32);     val.* = -val.*;
-      // case u64;     val := (*any.value).(*u64);     val.* = -val.*;
-      case s\8;     val := (*any.value).(*s\8);     val.* = -val.*;
-      case s16;     val := (*any.value).(*s16);     val.* = -val.*;
-      case s32;     val := (*any.value).(*s32);     val.* = -val.*;
-      case s64;     val := (*any.value).(*s64);     val.* = -val.*;
-      case float32; val := (*any.value).(*float32); val.* = -val.*;
-      case float64; val := (*any.value).(*float64); val.* = -val.*;
-      
-      case; assert(false, "Small_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
-    }
-}
-
-
-
-// copied from how_to/170_modify.jai
-Dynamic_New :: (ti: *Type_Info, initialized := true) -> *void {
-    size := ti.runtime_size;
-    if size < 0 return null;   // Maybe they gave us a weird polymorphic type for some reason.
-
-    memory := alloc(size);
-
-    if initialized {
-        if ti.type == .STRUCT {
-            // Structs can have initializers. If the initializer is null, the struct is to be zeroed.
-            tis := ti.(*Type_Info_Struct);
-            if tis.initializer  tis.initializer(memory);
-            else                memset(memory, 0, size);
-        } else {
-            // Non-structs always default to 0.
-            // @Incomplete: Here we are not handling variants, or arrays of things that might have initializers.
-            memset(memory, 0, size);
+negate_number :: inline (any: *Small_Any) -> bool {
+    if any.type.type == {
+      case .INTEGER;
+        ti_integer := any.type.(*Type_Info_Integer);
+        if ti_integer.signed == false {
+            log("Small_Any passed to negate_number was an unsigned integer type! (was %)", as_type(any.type));
+            return false;
         }
+        if any.type.runtime_size == {
+          case 1; val := (*any.value).(*s\8);     val.* = -val.*;
+          case 2; val := (*any.value).(*s16);     val.* = -val.*;
+          case 4; val := (*any.value).(*s32);     val.* = -val.*;
+          case 8; val := (*any.value).(*s64);     val.* = -val.*;
+        }
+        return true;
+        
+      case .FLOAT;
+        if any.type.runtime_size == {
+          case 4; val := (*any.value).(*float32); val.* = -val.*;
+          case 8; val := (*any.value).(*float64); val.* = -val.*;
+        }
+        return true;
     }
-
-    return memory;
+    
+    log("Small_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
+    return false;
 }
+
+
 
 Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
     memory := Dynamic_New(ti, initialized);
     return ifx memory then Any.{ ti, memory } else Any.{};
 }
+
+Dynamic_New :: (type: *Type_Info, initialized := true) -> *void {
+    size := type.runtime_size;
+    if size < 0 return null;   // Maybe they gave us a weird polymorphic type for some reason.
+
+    memory := alloc(size);
+    if initialized  initialize_any(Any.{ type, memory });
+    return memory;
+}
+
+initialize_any :: (any: Any) {
+    if any.type.type == .STRUCT {
+        tis := any.type.(*Type_Info_Struct);
+        if tis.initializer  tis.initializer(any.value_pointer);
+        else                memset(any.value_pointer, 0, any.type.runtime_size);
+    } else {
+        // Non-structs always default to 0.
+        // @Incomplete: Here we are not handling variants, or arrays of things that might have initializers.
+        memset(any.value_pointer, 0, any.type.runtime_size);
+    }
+}
+
+
 
 
 as_type :: inline (ti: *Type_Info) -> Type {
