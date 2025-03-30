@@ -702,6 +702,34 @@ we should make expect_token_type better and log an error message when type is no
 need to provide source file path when parsing from a source file, else provide source location of Jai file by default
 
 
+### Result Objects
+
+Result :: struct(T: Type) {
+    success:    bool;
+    union {
+        error:  string;
+        value:  T;
+    }
+}
+
+would like to be able to append to error string, maybe
+would also like to convert from one result type to another for errors, so we at least need some binary compatibility there
+
+// only for errors, since we have binary compatibility in that case
+recast_error :: (result: T/Result, to_type: R) -> Result(R) {
+    assert(result.success == false);
+    return .{ success = false, error = result.error };
+}   
+
+implementing usable result objects will require considerable rewriting, since it basically affects every single procedure call
+maybe this will actaully just be too clunky to use, but will have to just try it and see
+
+the main reason I want this is to be able to get better error reporting, or get error strings from evaluation procs
+but maybe a better solution is just to set some global or context error string that the user can then manually check
+
+
+
+
 
 ## Identifier Renaming
 

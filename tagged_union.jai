@@ -7,10 +7,10 @@
 
 Tagged_Union :: struct (value_types: ..Type) {
     tag: Type;
-    using value: union {
+    union {
         #insert -> string {
             sb: String_Builder;
-            for value_types  print_to_builder(*sb, "_%1: %1;", it);
+            for value_types  print_to_builder(*sb, "\t_%1: %1;\n", it);
             return builder_to_string(*sb);
         }
     }

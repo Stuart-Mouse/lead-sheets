@@ -322,11 +322,7 @@ make_error_token :: (location: Source_Code_Location, error_string: string = "") 
     return .{ type = .ERROR, location = location, text = error_string }; 
 }
 
-
-begins_identifier :: (char: u8) -> bool {
-    return is_alpha(char) || char == #char "_";
-}
-
+begins_identifier :: (char: u8) -> bool { return is_alpha(char) || char == #char "_"; }
 continues_identifier :: is_alnum;
 
 // returns true if we even start to parse an identifier, not only on success
