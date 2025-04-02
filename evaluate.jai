@@ -501,8 +501,11 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     }
     
     if !push_argument(script.dyncall_vm, type_info(*Script), *script)  return false;
-    if !push_argument(script.dyncall_vm, type_info(*void), *procedure.data)  return false;
     
+    for procedure.data 
+        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
+            return false;
+            
     for arguments_anys 
         if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
             return false;
