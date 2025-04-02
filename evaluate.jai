@@ -195,10 +195,10 @@ evaluate_node :: (
         proc_ptr := proc_any.value_pointer.(**void).*;
         ti_proc  := proc_any.type.(*Type_Info_Procedure);
         
+        // TODO: we really should support #c_call procedures in Lead Sheets, kind surprised I never got around to that tbh...
         {
             dcReset(script.dyncall_vm);
-            jai_call :: true;
-            if jai_call || !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
+            if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
@@ -207,7 +207,7 @@ evaluate_node :: (
                 else type_info(void);
             
             for arguments_anys 
-                if !push_argument(script.dyncall_vm, it.type, it.value_pointer, jai_call)  
+                if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
                     return Any.{}, false;
             
             if return_type != type_info(void) {
@@ -467,9 +467,9 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     procedure := script.directives[directive.directive_index];
     ti_proc   := procedure.type;
     
-    // + 2 below for implicitly passing script pointer and data pointer
-    if ti_proc.argument_types.count != directive.arguments_count + 2 {
-        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments_count);
+    // + 2 below for implicitly passing script pointer and user data pointer
+    if ti_proc.argument_types.count != directive.arguments.count + 2 {
+        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments.count);
         return false;
     }
     
@@ -482,51 +482,48 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
         }
     }
     
-    assert(ti_proc.return_types.count == 1);
-    assert(ti_proc.return_types[0] == type_info(bool));
-    
-    assert(ti_proc.argument_types.count >= 2);
-    assert(ti_proc.argument_types[0] == type_info(*Script));
-    assert(ti_proc.argument_types[1] == type_info(*void));
-    assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
-    
-    return_type := ti_proc.return_types[0];
-    return_ptr  := script.stack_ptr;
-    
-    if is_aggr(return_type) {
-        stack_push_any(script, Any.{ return_type, return_ptr });         
-    } else {
-        stack_push_zeroes(script, 8);
+    return_value:   Any;
+    return_success: bool;
+    if ti_proc.return_types.count > 1 {
+        return_value = New_Any(ti_proc.return_types[0],, temp);
     }
-    arg_ptr_start := script.stack_ptr;
     
+    arguments_anys := NewArray(directive.arguments.count, Any,, temp);
     for directive.arguments {
-        _, ok := evaluate_node(script, it);
+        arg_any, ok := evaluate_node(script, it);
         if !ok  return false;
+        arguments_anys[it_index] = arg_any;
     }
     
     dcReset(script.dyncall_vm);
-    jai_call :: true;
-    if !jai_call || !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
+    if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
         dcArgPointer(script.dyncall_vm, *context);
     }
     
     if !push_argument(script.dyncall_vm, type_info(*Script), *script)  return false;
     if !push_argument(script.dyncall_vm, type_info(*void), *procedure.data)  return false;
     
-    arg_ptr := arg_ptr_start;
-    for arg_type: array_view(ti_proc.argument_types, 2) {
-        value_pointer := arg_ptr;
-        if is_aggr(arg_type)  value_pointer = value_pointer.(**void).*;
-        if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
-        arg_ptr += size_of(*void);
-    }
+    for arguments_anys 
+        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
+            return false;
     
-    dcArgPointer(script.dyncall_vm, return_ptr);
+    if return_value.type != null {
+        dcArgPointer(script.dyncall_vm, return_value.value_pointer);
+    }
+    dcArgPointer(script.dyncall_vm, *return_success);
     dcCallVoid(script.dyncall_vm, xx procedure.ptr);
     
-    script.stack_ptr = arg_ptr_start;
-    
-    assert(return_type == type_info(bool)); // can't be too safe!
-    return stack_pop_any(script, return_type).value_pointer.(*bool).*;
+    if return_success {
+        if return_value.type == {
+          case null; // do nothing!
+          
+          case type_info(*Node);
+            // NOTE: node being pointed to is already assumed to be in the script's pool and have valid storage duration
+            directive.runtime_node = return_value.value_pointer.(**Node).*;
+            
+          case;
+            directive.runtime_node = make_literal(script, return_value);
+        }
+    }
+    return return_success;
 }

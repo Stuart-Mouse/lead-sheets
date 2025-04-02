@@ -42,10 +42,6 @@ Script :: struct {
     }
 }
 
-get_pool_allocator :: (script: *Script) -> Allocator {
-    return .{ flat_pool_allocator_proc, *script.pool };
-}
-
 free_script :: (using script: *Script) {
     array_free(variables);
     array_free(procedures);
@@ -58,7 +54,7 @@ free_script :: (using script: *Script) {
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
-    script.allocator = get_pool_allocator(script);
+    script.allocator = get_pool_allocator(*script.pool);
     
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
@@ -116,7 +112,7 @@ PTR_SIZE :: size_of(*void);
 
 stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
     script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base, "stack_ptr offset: %", script.stack_ptr - script.stack_base);
+    assert(script.stack_ptr >= script.stack_base);
     if is_lvalue {
         return script.stack_ptr.(**void).*;
     } else {
@@ -147,7 +143,6 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
         assert(any.type.runtime_size <= PTR_SIZE);
         memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
     }
-    // dprint("wrote % to stack at %\n", << cast(**void)script.stack_ptr, script.stack_ptr);
     return true;
 }
 
@@ -157,16 +152,14 @@ stack_push_zeroes :: (script: *Script, size: int) -> bool {
         return false;
     }
     
-    dprint("stack ptr: %\n", script.stack_ptr);
     memset(script.stack_ptr, 0, size);
     script.stack_ptr += size;
     return true;
 }
 
 stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
-    assert(script.stack_ptr >= script.stack_base);
-    
     script.stack_ptr -= PTR_SIZE;
+    assert(script.stack_ptr >= script.stack_base);
     if is_aggr(ti) || is_lvalue {
         return Any.{ ti, script.stack_ptr.(**void).* }; // additional dereference to get pointer to value
     } else {
@@ -176,9 +169,8 @@ stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) ->
 }
 
 stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
-    assert(script.stack_ptr >= script.stack_base);
     ptr := script.stack_ptr - PTR_SIZE;
-    
+    assert(script.stack_ptr >= script.stack_base);
     if is_aggr(ti) || is_lvalue {
         return Any.{ ti, ptr.(**void).* }; // additional dereference to get pointer to value
     } else {
@@ -186,6 +178,8 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
         return Any.{ ti, ptr };
     }
 }
+
+
 
 make_number_literal :: (script: *Script, token: Token) -> *Node {
     value, ok := parse_number(token.text);
@@ -207,6 +201,7 @@ make_number_literal :: (script: *Script, token: Token) -> *Node {
 //       so this will only work for basically numbers, strings, and enums
 make_literal :: (script: *Script, value: Any) -> *Node_Literal {
     literal := alloc_node(script, Node_Literal);
+    literal.value_type = value.type;
     if value.type.type == .STRING {
         literal.literal_type = .STRING;
         literal.text = value.value_pointer.(*string).*;
@@ -214,8 +209,12 @@ make_literal :: (script: *Script, value: Any) -> *Node_Literal {
     else if value.type.type == .ENUM || is_numeric_type(value.type) {
         literal.literal_type = .NUMBER;
         literal.number = Small_Any.from(value);
+    } else {
+        // @Hack: doing this temporarily so that we can at least return structs and 
+        //        such from directives and still insert them as literals.
+        literal.literal_type = .ANY;
+        literal.any = copy_to_pool_if_needed(*script.pool, value);
     }
-    literal.value_type = value.type;
     return literal;
 }
 
@@ -227,7 +226,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
       case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
       case .ANY;    return literal.any;
     }
-    assert(false, "unreachable");
+    unreachable();
 }
 
 
@@ -398,11 +397,5 @@ dprint_push_indent :: () #expand {
         context.dprint_indent += 1;
         `defer context.dprint_indent -= 1;
     }
-}
-
-
-// is_this_yours for flat pool allocator. may move this to Utils
-is_this_yours :: (pool: *Flat_Pool, memory: *void) -> bool {
-    return flat_pool_allocator_proc(.IS_THIS_YOURS, 0, 0, memory, pool).(bool);
 }
 

@@ -237,18 +237,6 @@ main :: () {
                     TableTreeNodeAny(it.name, decl_value);
                 }
                 
-                // TODO: this is probably slow because we walk the entire ast to show the declarations instead of storing them in some array.
-                //       but not really worried about that at the moment since scripts are intended to be small anyhow.
-                walk_proc :: (script: *LS.Script, node: *LS.Node, data: *void) -> (bool, *LS.Node) {
-                    if node.node_type == LS.Node_Declaration {
-                        decl := node.(*LS.Node_Declaration);
-                        decl_value := Any.{ decl.value_type, decl.value_pointer };
-                        TableTreeNodeAny(decl.name, decl_value);
-                    }
-                    return true, null;
-                }
-                LS.walk_nodes(*script, xx *script.ast_root, walk_proc, null);
-                
                 imgui.EndTable();
             }
         }

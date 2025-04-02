@@ -20,25 +20,19 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     });
 }
 
-// TODO: maybe we want to add some procedure to sub out the data pointer for a directive?
-//       for now this does not really matter since we only parse once, but maybe in the future we will want to do this
+// TODO: replace data pointer with array of Any's that fill in first X number of arguments.
+
 Directive :: struct {
     using #as proc: External_Procedure;
     data: *void;
-    // flags:  enum_flags { IS_RUNTIME_DIRECTIVE; }
 }
 
 register_directive :: (script: *Script, name: string, procedure: Any, data: *void) {
     assert(procedure.type.type == .PROCEDURE);
     
     ti_proc := procedure.type.(*Type_Info_Procedure);
-    assert(ti_proc.return_types.count == 1);
-    assert(ti_proc.return_types[0] == type_info(bool));
     
-    // assert(ti_proc.argument_types.count >= 2);
-    assert(ti_proc.argument_types[0] == type_info(*Script));
-    // assert(ti_proc.argument_types[1] == type_info(*void));
-    assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
+    assert(is_valid_directive(ti_proc));
     
     array_add(*script.directives, .{
         name = name,
@@ -48,6 +42,35 @@ register_directive :: (script: *Script, name: string, procedure: Any, data: *voi
     });
 }
 
+/*
+    Directives may have as many arguments as they wish, but they must have at least two:
+        1. The first argument must be a *Script (receives the currently executing script).
+        2. The second argument must be a *void (or any other pointer type) for a user data pointer. 
+           This is just something I assume many directives will want, so it's part of the official interface.
+           Also, note again that the pointer can be of any type.
+    
+    Directives may have either 1 or 2 return values. 
+    The first may be either a *Node (which will be assumed to have proper storage duration, as the user should just allocate nodes into the script's pool)
+        or any other type, in which case the value will be inserted as a literal.
+    The last (second, or if only one, then the only) return value must be a bool which denotes whether some error has occured and we need to abort parsing.
+    Maybe in the future we will get a little more sophisticated about how directives work, but I think this interface should cover must use cases.
+    
+    TODO: add logging here so user can see why directive is invalid
+*/
+is_valid_directive :: (ti_proc: *Type_Info_Procedure) -> bool {
+    if ti_proc.procedure_flags & .IS_C_CALL  return false;
+    
+    if ti_proc.argument_types.count < 2
+    || ti_proc.argument_types[0] != type_info(*Script)
+    || ti_proc.argument_types[1].type != .POINTER
+        return false;
+    
+    if ti_proc.return_types.count > 2
+    || ti_proc.return_types[ti_proc.return_types.count-1] != type_info(bool)
+        return false;
+    
+    return true;
+}
 
 Procedure_Overload :: struct {
     proc_index:         int;

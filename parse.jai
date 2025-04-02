@@ -418,7 +418,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             }
         }
         
-        if !execute_directive(script, directive) {
+        if !evaluate_directive(script, directive) {
             log("%: Error: failed while trying to execute a directive.", token.location);
             return null;
         }
