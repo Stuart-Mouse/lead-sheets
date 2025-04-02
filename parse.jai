@@ -274,7 +274,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
 parse_number :: (s: string) -> Small_Any, bool {
     if !s {
         log("Empty string in parse_number!");
-        return Any.{}, false;
+        return .{}, false;
     }
     
     // if number begins with 0b, 0h, 0x, etc..
@@ -289,7 +289,7 @@ parse_number :: (s: string) -> Small_Any, bool {
             str := advance(s, 2);
             val, ok, remainder := string_to_int(str, base, s64);
             if !ok || remainder  log("Failed to parse int with base % from '%'.", base, str);
-            return make_small_any(val), ok;
+            return Small_Any.from(val), ok;
         }
     }
     
@@ -298,13 +298,13 @@ parse_number :: (s: string) -> Small_Any, bool {
     if contains(s, #char ".") {
         val, ok := string_to_float64(s);
         if !ok  log("Failed to parse float from '%'.", s);
-        return make_small_any(val), ok;
+        return Small_Any.from(val), ok;
     }
     
     // else we parse and store it as an integer
     val, ok := string_to_int(s, 10, s64);
     if !ok  log("Failed to parse integer from '%'.", s);
-    return make_small_any(val), ok;
+    return Small_Any.from(val), ok;
 }
 
 parse_leaf :: (using script: *Script) -> *Node {

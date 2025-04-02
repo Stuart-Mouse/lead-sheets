@@ -91,8 +91,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return true;
             
           case .NUMBER;
-            if !stack_push_any(script, to_any(literal.number), literal.flags & .IS_LVALUE != 0)  return false;
-            dprint("returning literal with value %\n", to_any(literal.number));
+            if !stack_push_any(script, to_any(*literal.number), literal.flags & .IS_LVALUE != 0)  return false;
+            dprint("returning literal with value %\n", to_any(*literal.number));
             return true;
             
           case .STRUCT;

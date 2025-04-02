@@ -84,7 +84,7 @@ evaluate_node :: (
             return ret, true;
             
           case .NUMBER;
-            ret := to_any(literal.number);
+            ret := to_any(*literal.number);
             if hint_storage {
                 memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
                 ret.value_pointer = hint_storage;

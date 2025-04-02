@@ -106,7 +106,7 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
       case .DECLARATION;        return identifier.declaration.name;
       case .LITERAL;
         assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));
-        return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.value_pointer.(s64));
+        return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.as_s64);
     }
     assert(false, "unreachable");
 }

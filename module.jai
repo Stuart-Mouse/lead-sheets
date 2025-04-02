@@ -1,29 +1,4 @@
 
-#import "Basic";
-#import "Math";
-#import "String";
-#import "Hash_Table";
-#import "Flat_Pool";
-#import "Reflection";
-#import "Compiler";     // for 'is_subclass_of'
-
-#import "Data_Packer";  // for 'remap_data'
-#import "dyncall";
-
-#load "lexer.jai";
-#load "parse.jai";
-#load "node.jai";
-#load "typecheck.jai";
-#load "execute.jai";
-#load "procedure.jai";
-#load "binary_op.jai";
-#load "serialize.jai";
-#load "evaluate.jai";
-
-
-#module_parameters (DEBUG := false);
-
-
 External_Variable :: struct {
     name:       string;
     binding:    Any;
@@ -238,7 +213,7 @@ make_literal :: (script: *Script, value: Any) -> *Node_Literal {
     }
     else if value.type.type == .ENUM || is_numeric_type(value.type) {
         literal.literal_type = .NUMBER;
-        literal.number = Small_Any.{ value.type, value.value_pointer.(**void).* };
+        literal.number = Small_Any.from(value);
     }
     literal.value_type = value.type;
     return literal;
@@ -248,7 +223,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
     assert(literal.value_type != null);
     if #complete literal.literal_type == {
       case .STRING; return Any.{ type_info(string), *literal.text };
-      case .NUMBER; return to_any(literal.number);
+      case .NUMBER; return to_any(*literal.number);
       case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
       case .ANY;    return literal.any;
     }
@@ -259,7 +234,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 make_number_literal :: (script: *Script, number: float64) -> *Node {
     literal := alloc_node(script, Node_Literal);
     literal.literal_type = .NUMBER;
-    literal.number = make_small_any(number);
+    literal.number = Small_Any.from(number);
     return literal;
 }
 
@@ -382,132 +357,35 @@ register_common_types :: (script: *Script) {
 
 
 
+#module_parameters ()(DEBUG := false);
 
+#load "lexer.jai";
+#load "parse.jai";
+#load "node.jai";
+#load "typecheck.jai";
+#load "execute.jai";
+#load "procedure.jai";
+#load "binary_op.jai";
+#load "serialize.jai";
+#load "evaluate.jai";
 
 
 #scope_module
 
-memzero :: (t: *$T) { memset(t, 0, size_of(T)); };
+#import "Basic";
+#import "Math";
+#import "String";
+using,except(next_power_of_two) Hash_Table :: #import "Hash_Table";
+#import "Flat_Pool";
+#import "Reflection";
+#import "Compiler";     // for 'is_subclass_of'
 
-is_numeric_type :: (t: Type) -> bool {
-    ti := t.(*Type_Info);
-    return ti.type == .INTEGER || ti.type == .FLOAT;
-}
-
-is_numeric_type :: (ti: *Type_Info) -> bool {
-    return ti.type == .INTEGER || ti.type == .FLOAT;
-}
-
-
-/* 
-    Small_Any is an Any, but we only use it for small values (<= 8 bytes), 
-        which get packed into the space of the value_pointer.
-    Maybe in the future I will also use this to double as a standard any, when we need to point to larger values.
-*/
-Small_Any :: #type,distinct Any; 
-
-// kind of feels like this should have ot be passed by pointer, but it works?
-// and there's a strange error when I do it that way, so...
-to_any :: inline (any: Small_Any) -> Any { 
-    return Any.{ any.type, *any.value_pointer }; 
-};
-
-get_as_type :: inline (any: Small_Any, $T: Type) -> T, bool #modify {
-    return T.(*Type_Info).runtime_size <= 8;
-} { 
-    return (*any.value_pointer).(*T).*, any.type == type_info(T);
-}
-
-make_small_any :: inline (value: $T) -> Small_Any #modify {
-    return T.(*Type_Info).runtime_size <= 8;
-} { 
-    // init with zerp and then copy value just so we don't get some weird random bytes copied over somehow
-    ret := Small_Any.{ type_info(T), null }; 
-    (*ret.value_pointer).(*T).* = value;
-    return ret;
-}
-
-// NOTE: this would not work with dynamic type infos, 
-//       as that would require a more complex switch case
-//       on type of type, runtime size, and signedness
-negate_number :: inline (any: *Small_Any) -> bool {
-    if any.type.type == {
-      case .INTEGER;
-        ti_integer := any.type.(*Type_Info_Integer);
-        if ti_integer.signed == false {
-            log("Small_Any passed to negate_number was an unsigned integer type! (was %)", as_type(any.type));
-            return false;
-        }
-        if any.type.runtime_size == {
-          case 1; val := (*any.value).(*s\8);     val.* = -val.*;
-          case 2; val := (*any.value).(*s16);     val.* = -val.*;
-          case 4; val := (*any.value).(*s32);     val.* = -val.*;
-          case 8; val := (*any.value).(*s64);     val.* = -val.*;
-        }
-        return true;
-        
-      case .FLOAT;
-        if any.type.runtime_size == {
-          case 4; val := (*any.value).(*float32); val.* = -val.*;
-          case 8; val := (*any.value).(*float64); val.* = -val.*;
-        }
-        return true;
-    }
-    
-    log("Small_Any passed to negate_number was not a valid numeric type! (was %)", as_type(any.type));
-    return false;
-}
+#import "Utils";
+#import "Data_Packer";  // for 'remap_data'
+#import "dyncall";
 
 
-
-Dynamic_New_Any :: inline (ti: *Type_Info, initialized := true) -> Any {
-    memory := Dynamic_New(ti, initialized);
-    return ifx memory then Any.{ ti, memory } else Any.{};
-}
-
-Dynamic_New :: (type: *Type_Info, initialized := true) -> *void {
-    size := type.runtime_size;
-    if size < 0 return null;   // Maybe they gave us a weird polymorphic type for some reason.
-
-    memory := alloc(size);
-    if initialized  initialize_any(Any.{ type, memory });
-    return memory;
-}
-
-initialize_any :: (any: Any) {
-    if any.type.type == .STRUCT {
-        tis := any.type.(*Type_Info_Struct);
-        if tis.initializer  tis.initializer(any.value_pointer);
-        else                memset(any.value_pointer, 0, any.type.runtime_size);
-    } else {
-        // Non-structs always default to 0.
-        // @Incomplete: Here we are not handling variants, or arrays of things that might have initializers.
-        memset(any.value_pointer, 0, any.type.runtime_size);
-    }
-}
-
-
-
-
-as_type :: inline (ti: *Type_Info) -> Type {
-    return (*ti).(*Type).*;
-}
-
-enum_name_to_value :: (ti: *Type_Info_Enum, name: string) -> s64, bool {
-    assert(ti.type == .ENUM);
-    for ti.names  if name == it  return ti.values[it_index], true;
-    return 0, false;
-}
-
-enum_value_to_name :: (ti: *Type_Info_Enum, value: s64) -> string {
-    assert(ti.type == .ENUM);
-    for ti.values  if value == it  return ti.names[it_index];
-    return "";
-}
-
-
-
-#if DEBUG {#add_context dprint_indent: int;}
+#if DEBUG { #add_context dprint_indent: int; }
 
 dprint :: (format_string: string, args: .. Any) {
     #if DEBUG {
@@ -523,7 +401,7 @@ dprint_push_indent :: () #expand {
 }
 
 
-// implement is_this_yours for flat pool allocator
+// is_this_yours for flat pool allocator. may move this to Utils
 is_this_yours :: (pool: *Flat_Pool, memory: *void) -> bool {
     return flat_pool_allocator_proc(.IS_THIS_YOURS, 0, 0, memory, pool).(bool);
 }
