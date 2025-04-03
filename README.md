@@ -1,7 +1,13 @@
 
 # Lead Sheets
 
-A very simple scripting language for Jai.
+A simple scripting language for Jai.
+
+
+## Dependencies
+
+This module depends on my Utils module (sorry): https://github.com/Stuart-Mouse/jai-utils
+I use this Utils module for many functions which are common across my other modules.
 
 
 ## Overview
