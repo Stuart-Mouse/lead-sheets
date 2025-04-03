@@ -42,15 +42,10 @@ main :: () {
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;
     
-    add_named_value :: (script: *Script, data: *void, name: string) -> bool {
-        print("data %\n", data);
-        array := cast(*[..] Named_Value) data;
+    add_named_value :: (script: *Script, array: *[..] Named_Value, name: string) -> bool {
         new := array_add(array);
         new.name = name;
         set_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
-        
-        print("array: %\n", array.*);
-        
         return true;
     }
     register_directive(*script, "declare", add_named_value, *named_values);

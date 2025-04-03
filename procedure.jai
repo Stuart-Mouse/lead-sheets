@@ -20,28 +20,6 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     });
 }
 
-// TODO: replace data pointer with array of Any's that fill in first X number of arguments.
-
-Directive :: struct {
-    using #as proc: External_Procedure;
-    data: *void;
-}
-
-register_directive :: (script: *Script, name: string, procedure: Any, data: *void) {
-    assert(procedure.type.type == .PROCEDURE);
-    
-    ti_proc := procedure.type.(*Type_Info_Procedure);
-    
-    assert(is_valid_directive(ti_proc));
-    
-    array_add(*script.directives, .{
-        name = name,
-        type = xx procedure.type,
-        ptr  = procedure.value_pointer.(**void).*,
-        data = data
-    });
-}
-
 /*
     Directives may have as many arguments as they wish, but they must have at least two:
         1. The first argument must be a *Script (receives the currently executing script).
@@ -57,26 +35,71 @@ register_directive :: (script: *Script, name: string, procedure: Any, data: *voi
     
     TODO: add logging here so user can see why directive is invalid
 */
-is_valid_directive :: (ti_proc: *Type_Info_Procedure) -> bool {
-    if ti_proc.procedure_flags & .IS_C_CALL  return false;
-    
-    if ti_proc.argument_types.count < 2
-    || ti_proc.argument_types[0] != type_info(*Script)
-    || ti_proc.argument_types[1].type != .POINTER
+
+
+Directive :: struct {
+    using #as proc: External_Procedure;
+    data: [] Any;
+}
+
+register_directive :: (script: *Script, name: string, procedure: Any, data: ..Any) -> bool {
+    ti_proc := procedure.type.(*Type_Info_Procedure);
+    if ti_proc.type != .PROCEDURE {
+        log("Error: procedure provided was not actually a procedure.");
         return false;
-    
+    }
+    if ti_proc.procedure_flags & .IS_C_CALL {
+        log("Error: #c_call procedures are not currently supported as directives.");
+        return false;
+    }
+    if ti_proc.argument_types.count < 1 {
+        log("Error: directive must take at least 1 argument for Script pointer.");
+        return false;
+    }
+    if ti_proc.argument_types[0] != type_info(*Script) {
+        log("Error: directive must take a *Script as the first argument.");
+        return false;
+    }
+    if ti_proc.argument_types.count < data.count + 1 {
+        log("Error: too many data values provided to directive.");
+        return false;
+    }
+    for data {
+        // TODO: allow using #as, maybe also coerce integers/floats
+        if it.type != ti_proc.argument_types[it_index + 1] {
+            log("Error: type of data value % does not match type of corresponding directive argument.", it_index + 1);
+            return false;
+        }
+    }
     if ti_proc.return_types.count > 2
-    || ti_proc.return_types[ti_proc.return_types.count-1] != type_info(bool)
+    || ti_proc.return_types[ti_proc.return_types.count-1] != type_info(bool) {
+        log("Error: directive must return a bool signifying success as last return value.");
         return false;
+    }
+    
+    for script.directives {
+        if it.name == name {
+            log("Error: directives do not support overloading.");
+            return false;
+        }
+    }
+    
+    array_add(*script.directives, .{
+        name = name,
+        type = xx procedure.type,
+        ptr  = procedure.value_pointer.(**void).*,
+        data = data
+    });
     
     return true;
 }
+
 
 Procedure_Overload :: struct {
     proc_index:         int;
     coercion_distance:  int;                                    // a score assigned based on how 'far' we have to coerce arguments in order to make the candidate procedure match
     swap_args:          bool;
-    reject_reason:         enum { NONE; ARG_COUNT; ARG_TYPE; };    // if .NONE, then candidate is still in the running
+    reject_reason:      enum { NONE; ARG_COUNT; ARG_TYPE; };    // if .NONE, then candidate is still in the running
     reject_details: union {
         arg_count:  struct { expected: int; provided: int; };
         arg_type:   struct { index: int; expected_type: *Type_Info; argument: *Node; };
