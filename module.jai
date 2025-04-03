@@ -112,7 +112,7 @@ PTR_SIZE :: size_of(*void);
 
 stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
     script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base);
+    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
     if is_lvalue {
         return script.stack_ptr.(**void).*;
     } else {
@@ -122,7 +122,7 @@ stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
 
 stack_peek :: inline (script: *Script, $$is_lvalue := false) -> *void {
     stack_ptr := script.stack_ptr - PTR_SIZE;
-    assert(stack_ptr >= script.stack_base);
+    assert(stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
     if is_lvalue {
         return stack_ptr.(**void).*;
     } else {
@@ -159,7 +159,7 @@ stack_push_zeroes :: (script: *Script, size: int) -> bool {
 
 stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
     script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base);
+    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
     if is_aggr(ti) || is_lvalue {
         return Any.{ ti, script.stack_ptr.(**void).* }; // additional dereference to get pointer to value
     } else {
@@ -170,7 +170,7 @@ stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) ->
 
 stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
     ptr := script.stack_ptr - PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base);
+    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
     if is_aggr(ti) || is_lvalue {
         return Any.{ ti, ptr.(**void).* }; // additional dereference to get pointer to value
     } else {

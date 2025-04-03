@@ -39,16 +39,36 @@ main :: () {
     register_procedure(*script, "*", #procedure_of_call operator*(Vector3.{}, 1.0));
     register_procedure(*script, "scale", (vec: *Vector2, scale: float) { vec.* *= scale; });
     
+    
+    /*
+        TODO: test directives...
+            receiving and returning nodes
+            
+    */
     Named_Value :: struct { name: string; value: float; };
     named_values: [..] Named_Value;
     
-    add_named_value :: (script: *Script, array: *[..] Named_Value, name: string) -> bool {
+    add_named_value :: (using call: *Directive_Call, array: *[..] Named_Value, name: string) -> bool {
         new := array_add(array);
         new.name = name;
         set_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
         return true;
     }
     register_directive(*script, "declare", add_named_value, *named_values);
+    
+    make_binary :: (using call: *Directive_Call, left: *Node, right: *Node) -> (*Node, bool) {
+        node := alloc_node(script, Node_Operation);
+        node.name          = "+";
+        node.operator_type = .BINARY;
+        node.left          = left;
+        node.right         = right;
+        print("left : %\n", left);
+        print("right: %\n", right);
+        print("Creating operation node: % + %\n", sprint_node(script, left), sprint_node(script, right));
+        return node, true;
+    }
+    register_directive(*script, "add", make_binary);
+    
     
     r1: Vector2;
     r2: float;
@@ -119,6 +139,8 @@ main :: () {
     } else {
         print("failed!\n");
     }
+    
+    return;
     
     
     print("\nSERIALIZING SCRIPT\n");

@@ -71,8 +71,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     
     if node.node_type == {
       case Node_Directive;
-        return true; // Directives are run as soon as they are parsed, so just skip this node.
-        // TODO: execute replacement node
+        directive := node.(*Node_Directive);
+        if directive.runtime_node {
+            return execute_node(script, directive.runtime_node);
+        }
+        return true;
         
         
       case Node_Literal;

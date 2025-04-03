@@ -108,9 +108,12 @@ echo(v2);
    foreach (a, b, c)  echo(it);
 }
 
+some_value := #add(1, 2);
+echo(some_value);
 
 // named blocks
 test_block: {
    print("Running test block.");
 }
+
 

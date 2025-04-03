@@ -68,7 +68,12 @@ typecheck_node :: (
     
     if node.node_type == {
       case Node_Directive;
-        node.value_type = type_info(void);
+        directive := node.(*Node_Directive);
+        if directive.runtime_node {
+            node.value_type = typecheck_node(script, directive.runtime_node, check_flags, hint_type);
+        } else {
+            node.value_type = type_info(void);
+        }
         return node.value_type;
         
         
