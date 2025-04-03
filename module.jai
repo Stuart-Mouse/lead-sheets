@@ -358,15 +358,17 @@ register_common_types :: (script: *Script) {
 
 #module_parameters ()(DEBUG := false);
 
+#load "node.jai";
 #load "lexer.jai";
 #load "parse.jai";
-#load "node.jai";
 #load "typecheck.jai";
 #load "execute.jai";
-#load "procedure.jai";
-#load "binary_op.jai";
-#load "serialize.jai";
 #load "evaluate.jai";
+#load "serialize.jai";
+
+#load "procedure.jai";
+#load "directive.jai";
+#load "binary_op.jai";
 
 
 #scope_module

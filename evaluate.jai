@@ -59,7 +59,12 @@ evaluate_node :: (
     
     if node.node_type == {
       case Node_Directive;
-        return Any.{}, true; // Directives are run as soon as they are parsed, so just skip this node.
+        directive := node.(*Node_Directive);
+        if directive.runtime_node {
+            ret, ok := evaluate_node(script, directive.runtime_node, hint_storage);
+            return ret, ok;
+        }
+        return Any.{}, true;
         
         
       case Node_Literal;
@@ -287,23 +292,15 @@ evaluate_node :: (
         //     return false;
         // }
         
-        // TODO: we need to check that the identifier does not refer to a previously declared variable
+        // TODO: we need to check that the identifier  not refer to a previously declared variable
         l_value: Any;
         if declaration.init_expression {
             r_value, ok := evaluate_node(script, declaration.init_expression);
             if !ok {
-                dprint("failed to evaluate init expression of declaration statement!\n");
+                log("%: Runtime Error: failed to evaluate init expression of declaration statement!\n", get_location(declaration));
                 return Any.{}, false;
             }
-            
             l_value = Any.{ declaration.value_type, declaration.value_pointer };
-            
-            dprint("l_value.value_pointer: %\n", l_value.value_pointer);
-            dprint("r_value.value_pointer: %\n", r_value.value_pointer);
-            
-            dprint("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
-            dprint("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
-            
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
             l_value = Any.{ declaration.value_type, declaration.value_pointer };
@@ -460,73 +457,3 @@ evaluate_node :: (
 }
 
 
-
-
-// TODO
-evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
-    procedure := script.directives[directive.directive_index];
-    ti_proc   := procedure.type;
-    
-    // + 2 below for implicitly passing script pointer and user data pointer
-    if ti_proc.argument_types.count != directive.arguments.count + 2 {
-        log("Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", ti_proc.argument_types.count, directive.arguments.count);
-        return false;
-    }
-    
-    for directive.arguments {
-        argument_type := typecheck_node(script, it);
-        expected_type := ti_proc.argument_types[it_index + 2]; // + 1 for implicitly passing script pointer and data pointer
-        if !argument_type || argument_type != expected_type {
-            log("Error: mismatch on argument % for procedure call. Expected %, got %.\n", it, as_type(expected_type), as_type(argument_type));
-            return false;
-        }
-    }
-    
-    return_value:   Any;
-    return_success: bool;
-    if ti_proc.return_types.count > 1 {
-        return_value = New_Any(ti_proc.return_types[0],, temp);
-    }
-    
-    arguments_anys := NewArray(directive.arguments.count, Any,, temp);
-    for directive.arguments {
-        arg_any, ok := evaluate_node(script, it);
-        if !ok  return false;
-        arguments_anys[it_index] = arg_any;
-    }
-    
-    dcReset(script.dyncall_vm);
-    if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
-        dcArgPointer(script.dyncall_vm, *context);
-    }
-    
-    if !push_argument(script.dyncall_vm, type_info(*Script), *script)  return false;
-    
-    for procedure.data 
-        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
-            return false;
-            
-    for arguments_anys 
-        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
-            return false;
-    
-    if return_value.type != null {
-        dcArgPointer(script.dyncall_vm, return_value.value_pointer);
-    }
-    dcArgPointer(script.dyncall_vm, *return_success);
-    dcCallVoid(script.dyncall_vm, xx procedure.ptr);
-    
-    if return_success {
-        if return_value.type == {
-          case null; // do nothing!
-          
-          case type_info(*Node);
-            // NOTE: node being pointed to is already assumed to be in the script's pool and have valid storage duration
-            directive.runtime_node = return_value.value_pointer.(**Node).*;
-            
-          case;
-            directive.runtime_node = make_literal(script, return_value);
-        }
-    }
-    return return_success;
-}
