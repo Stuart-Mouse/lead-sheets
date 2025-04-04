@@ -410,7 +410,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             expressions, ok := parse_comma_separated_expressions(script,, temp);
             if !ok  return null;
             directive.arguments = array_copy(expressions,, script.allocator);
-                        
+            
             close_paren := get_token(*lexer);
             if close_paren.type != .CLOSE_PAREN {
                 log("%: Error: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren.location, close_paren.text);
@@ -418,8 +418,8 @@ parse_leaf :: (using script: *Script) -> *Node {
             }
         }
         
-        if !evaluate_directive(script, directive) {
-            log("%: Error: failed while trying to execute a directive.", token.location);
+        if !evaluate_directive(script, directive, .PARSE) {
+            log("%: Error: failed while trying to execute a directive during parsing.", token.location);
             return null;
         }
         node = directive;

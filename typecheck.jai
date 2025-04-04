@@ -69,10 +69,16 @@ typecheck_node :: (
     if node.node_type == {
       case Node_Directive;
         directive := node.(*Node_Directive);
+        node.value_type = type_info(void); // by default
+        
+        // we always call the directive a second time during typechecking, 
+        // even if the directive already returned some replacement node during parsing
+        if !evaluate_directive(script, directive, .TYPECHECK) {
+            log("Error: failed to evaluate directive in typechecking phase.");
+            return null;
+        }
         if directive.runtime_node {
             node.value_type = typecheck_node(script, directive.runtime_node, check_flags, hint_type);
-        } else {
-            node.value_type = type_info(void);
         }
         return node.value_type;
         

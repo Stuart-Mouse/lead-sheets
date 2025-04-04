@@ -26,26 +26,37 @@
             The second (or only) value must be a bool which represent the success or failure of the directive.
                 If this value is false, the script will cease parsing and report the error.
     
+    IMPORTANT: 
+        Directives are always called twice, once during parsing and once during typechecking.
+        In order to ensure that the main logic of your directive is not doubyl executed, you need to check the 'phase' value passed in the Directive_Call.
+    
     
     TODO: 
-        directives taking nodes as arguments instead of values
         directive should be able to accept Any as a valid argument type as well
             will require changes in dyncall. I guess I overlooked Any's as procedure arguments
-        directive should probably also take a pointer to its own node, so that it can do things like figure out what expression/statement it belongs to.
-            really, we should have some structured data that we provide to directive as first argument. that way we can add things over time without breaking older code
         operator-style directives
         option to sub-out or reset directive user_data if need be
+            user can do this manually if they're getting that technical
+        
         
         maybe directives should accept both a parse and typecheck procedure
-        for example, a directive may want to wait until typechecking to execute so that it has access to the full AST
+            for example, a directive may want to wait until typechecking to execute so that it has access to the full AST
+            instead, will pass an enum value in Directive_Call representing which phase of parsing/typechecking we are in
+            
+        consider if we should just remove the extra complication around return types setting the replacement node and just let the user do that manually in the directive body
+            since the user is given a pointer to the directive node, he can just set it himself...
 */
 
+Script_Phase :: enum { PARSE; TYPECHECK; /*.LOWER_TO_BYTECODE;*/ };
+
+
 Directive :: struct {
-    using #as proc: External_Procedure;
+    using #as base: External_Procedure;
     user_data: [] Any;
 }
 
 Directive_Call :: struct {
+    phase:          Script_Phase;
     script:         *Script;
     directive_node: *Node_Directive;
 }
@@ -100,16 +111,15 @@ register_directive :: (script: *Script, name: string, procedure: Any, user_data:
         }
     }
     array_add(*script.directives, .{
-        name = name,
-        type = xx procedure.type,
-        ptr  = procedure.value_pointer.(**void).*,
+        name      = name,
+        procedure = Any_Proc.from(procedure),
         user_data = user_data
     });
     return true;
 }
 
 
-evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
+evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Script_Phase) -> bool {
     procedure := script.directives[directive.directive_index];
     ti_proc   := procedure.type;
     
@@ -167,7 +177,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
     
     // ===== perform call =====
     
-    directive_call := Directive_Call.{ script, directive };
+    directive_call := Directive_Call.{ phase, script, directive };
     
     dcReset(script.dyncall_vm);
     if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
@@ -187,7 +197,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive) -> bool {
         dcArgPointer(script.dyncall_vm, return_value.value_pointer);
     }
     dcArgPointer(script.dyncall_vm, *return_success);
-    dcCallVoid(script.dyncall_vm, procedure.ptr);
+    dcCallVoid(script.dyncall_vm, procedure.pointer);
     
     
     // ===== handle returns =====

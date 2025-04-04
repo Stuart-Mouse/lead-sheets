@@ -128,9 +128,9 @@ evaluate_node :: (
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
-            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
+            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.pointer);
             assert(identifier.flags & .IS_LVALUE == 0);
-            return Any.{ procedure.type, *procedure.ptr }, true;
+            return Any.{ procedure.type, *procedure.pointer }, true;
             
           case .LITERAL;
             ret, ok := evaluate_node(script, identifier.literal, hint_storage);

@@ -137,9 +137,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
-            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.ptr);
+            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.pointer);
             assert(identifier.flags & .IS_LVALUE == 0);
-            if !stack_push_any(script, procedure.ptr)  return false;
+            if !stack_push_any(script, procedure.pointer)  return false;
             return true;
             
           case .LITERAL;

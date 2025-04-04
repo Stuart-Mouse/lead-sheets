@@ -1,8 +1,7 @@
 
 External_Procedure :: struct {
+    using #as procedure: Any_Proc;
     name:   string;
-    type:   *Type_Info_Procedure;
-    ptr:    *void;
 }
 
 // adds a procedure to the given script's context
@@ -13,11 +12,7 @@ register_procedure :: (script: *Script, name: string, procedure: Any) {
     assert(ti_proc.return_types.count <= 1);
     assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
     
-    array_add(*script.procedures, .{
-        name = name,
-        type = xx procedure.type,
-        ptr  = procedure.value_pointer.(**void).*
-    });
+    array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
 }
 
 Procedure_Overload :: struct {
