@@ -115,6 +115,7 @@ main :: () {
     set_variable(*script, "struct1", struct1);
     set_variable(*script, "str", str);
     
+    
     print("\nPARSING SCRIPT\n");
     source_path := "test.ls";
     source := read_entire_file(source_path);
@@ -122,6 +123,7 @@ main :: () {
         print("failed to construct script from source!\n");
         return;
     }
+    
     
     print("\nEXECUTING SCRIPT\n");
     ok := execute_script(*script);
@@ -140,15 +142,12 @@ main :: () {
         print("failed!\n");
     }
     
-    return;
-    
     
     print("\nSERIALIZING SCRIPT\n");
     builder: String_Builder;
     print_script(*script, *builder);
     output := builder_to_string(*builder);
     write_entire_file("output.ls", output);
-    
     
     
     print("\nWALK NODES TEST\n");

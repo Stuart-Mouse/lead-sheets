@@ -220,21 +220,15 @@ Node_For_Loop :: struct {
     it_decl, it_index_decl: Node_Declaration;
 }
 
-alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null, loc := #caller_location) -> *T_Node
+alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null) -> *T_Node
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
     node := New(T_Node,, script.allocator);
-    node.node_type    = T_Node;
-    node.scope       = ifx scope else script.current_scope;
+    node.node_type = T_Node;
+    node.scope     = ifx scope else script.current_scope;
     if source_token {
-        // if source token is allocated in the script's pool, then don't make a copy
-        if is_this_yours(*script.pool, source_token) {
-            node.source_token = source_token;
-        } else {
-            node.source_token   = New(Token,, script.allocator);
-            node.source_token.* = source_token.*;
-        }
+        node.source_token = copy_to_pool_if_needed(*script.pool, source_token).value_pointer;
     }
     return node;
 }

@@ -308,55 +308,34 @@ parse_number :: (s: string) -> Small_Any, bool {
 }
 
 parse_leaf :: (using script: *Script) -> *Node {
-    // dprint("parse_leaf()\n");
-    // dprint_push_indent();
+    dprint("parse_leaf()\n");
+    dprint_push_indent();
     token := get_token_or_return(*lexer, null);
     
     is_operator, operator_type, precedence := token_is_operator(token, expect_unary = true);
     if is_operator && operator_type == .UNARY {
         dprint("UNARY OPERATOR (%)\n", token.text);
-        unary_op := alloc_node(script, Node_Operation);
-        unary_op.name = token.text;
-        unary_op.operator_type = .UNARY;
-        unary_op.left = parse_expression(script, precedence);
-        if unary_op.left == null  return null;
-        return unary_op;
+        left := parse_expression(script, precedence);
+        if left == null  return null;
+        return make_unary_operation(script, *token, left);
     }
     
-    node: *Node;
     if token.type == {
       case .DOT;
         dprint("UNARY DOT\n");
         token_after_dot := get_token(*lexer);
         if token_after_dot.type == .OPEN_BRACE {
-            literal := alloc_node(script, Node_Literal);
-            literal.literal_type = .STRUCT;
+            struct_contents, ok := parse_contents_of_struct_literal(script);
+            if !ok  return null;
             
-            if !expect_token_type(*lexer, .CLOSE_BRACE) {
-                expressions, ok := parse_comma_separated_expressions(script,, temp);
-                if !ok  return null;
-                literal.aggr.expressions = array_copy(expressions,, script.allocator);
-                
-                close_brace := get_token(*lexer);
-                if close_brace.type != .CLOSE_BRACE {
-                    log("%: Error: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
-                    return null;
-                }
-            }
-            
-            dot := alloc_node(script, Node_Dot);
-            dot.right = literal;
-            node = dot;
+            literal := make_struct_literal(script, *token_after_dot, struct_contents);
+            return make_dot(script, *token, null, literal);
         }
         else if token_after_dot.type == .IDENTIFIER {
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
-            identifier := alloc_node(script, Node_Identifier);
-            identifier.name = token_after_dot.text;
-            
-            dot := alloc_node(script, Node_Dot);
-            dot.right = identifier;
-            node = dot;
+            identifier := make_identifier(script, *token_after_dot);
+            return make_dot(script, *token, null, identifier);
         }
         else log("%: Error: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
 
@@ -364,28 +343,26 @@ parse_leaf :: (using script: *Script) -> *Node {
       case .OPEN_PAREN;
         open_paren_location := token.location;
         
-        node = parse_expression(script, 0);
-        if node == null  return null;
-        node.flags |= .PARENTHESIZED;
+        expression := parse_expression(script, 0);
+        if expression == null  return null;
+        expression.flags |= .PARENTHESIZED;
         
-        token = get_token_or_return(*lexer, null);
-        if token.type != .CLOSE_PAREN {
-            log("%: Error: expected a closing paren for open paren.", open_paren_location);
+        close_paren_token := get_token(*lexer);
+        if close_paren_token.type != .CLOSE_PAREN {
+            log("%: Error: expected a closing paren for open paren at %.", close_paren_token.location, open_paren_location);
             return null;
         }
+        return expression;
         
         
       case .NUMBER;
         dprint("NUMBER (%)\n", token.text);
-        node = make_number_literal(script, token);
+        return make_number_literal(script, *token);
         
         
       case .STRING;
         dprint("STRING (\"%\")\n", token.text);
-        literal := alloc_node(script, Node_Literal);
-        literal.literal_type = .STRING;
-        literal.text = token.text;
-        node = literal;
+        return make_string_literal(script, *token);
         
     
       case .DIRECTIVE;
@@ -422,15 +399,15 @@ parse_leaf :: (using script: *Script) -> *Node {
             log("%: Error: failed while trying to execute a directive during parsing.", token.location);
             return null;
         }
-        node = directive;
+        return directive;
         
         
       case .IDENTIFIER;
         dprint("IDENTIFIER (%)\n", token.text);
-        node = make_identifier(script, token.text);
+        return make_identifier(script, *token);
     }
     
-    return node;
+    return null;
 }
 
 
@@ -593,20 +570,12 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             
             
           case .OPEN_BRACE;
+            struct_contents, ok := parse_contents_of_struct_literal(script);
+            if !ok  return null;
+            
             literal := alloc_node(script, Node_Literal);
             literal.literal_type = .STRUCT;
-            
-            if !expect_token_type(*lexer, .CLOSE_BRACE) {
-                expressions, ok := parse_comma_separated_expressions(script,, temp);
-                if !ok  return null;
-                literal.aggr.expressions = array_copy(expressions,, script.allocator);
-                
-                close_brace := get_token(*lexer);
-                if close_brace.type != .CLOSE_BRACE {
-                    log("%: Error: expected a closing brace after initialization expressions of struct literal. Instead we saw %\n", close_brace.location, close_brace.text);
-                    return null;
-                }
-            }
+            literal.aggr.expressions = struct_contents;
             
             dot := alloc_node(script, Node_Dot);
             dot.left  = left;
@@ -653,4 +622,20 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     }
     
     return left;
+}
+
+
+parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) {
+    if expect_token_type(*lexer, .CLOSE_BRACE)  return .[], true;
+
+    expressions, ok := parse_comma_separated_expressions(script,, temp);
+    if !ok  return .[], false;
+    
+    close_brace := get_token(*lexer);
+    if close_brace.type != .CLOSE_BRACE {
+        log("%: Error: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
+        return .[], false;
+    }
+    
+    return array_copy(expressions,, script.allocator), true;
 }

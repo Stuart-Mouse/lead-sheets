@@ -47,6 +47,7 @@ free_script :: (using script: *Script) {
     array_free(procedures);
     array_free(directives);
     array_free(type_table);
+    array_free(global_declarations);
     fini(*pool);
     if script.dyncall_vm  dcFree(script.dyncall_vm);
     
@@ -181,14 +182,20 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
 
 
 
-make_number_literal :: (script: *Script, token: Token) -> *Node {
-    value, ok := parse_number(token.text);
+make_number_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
+    value, ok := parse_number(source_token.text);
     if !ok  return null;
     
-    // TODO: copy extra token stuff onto node as well
-    literal := alloc_node(script, Node_Literal);
+    literal := alloc_node(script, Node_Literal, source_token = source_token);
     literal.literal_type = .NUMBER;
     literal.number = value;
+    return literal;
+}
+
+make_string_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal, source_token = source_token);
+    literal.literal_type = .STRING;
+    literal.text = source_token.text;
     return literal;
 }
 
@@ -244,6 +251,35 @@ make_identifier :: (script: *Script, name: string) -> *Node_Identifier {
     node.name = name;
     return node;
 }
+
+make_identifier :: (script: *Script, source_token: *Token) -> *Node_Identifier {
+    node := alloc_node(script, Node_Identifier, source_token = source_token);
+    node.name = source_token.text;
+    return node;
+}
+
+make_unary_operation :: (script: *Script, source_token: *Token, left: *Node = null) -> *Node_Operation {
+    node := alloc_node(script, Node_Operation, source_token = source_token);
+    node.name          = source_token.text;
+    node.operator_type = .UNARY;
+    node.left          = left;
+    return node;
+}
+
+make_struct_literal :: (script: *Script, source_token: *Token, contents: [] *Node) -> *Node_Literal {
+    node := alloc_node(script, Node_Literal, source_token = source_token);
+    node.literal_type = .STRUCT;
+    node.aggr.expressions = contents;
+    return node;
+}
+
+make_dot :: (script: *Script, source_token: *Token, left: *Node, right: *Node) -> *Node_Dot {
+    node := alloc_node(script, Node_Dot, source_token = source_token);
+    node.left  = left;
+    node.right = right;
+    return node;
+}
+
 
 
 Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (bool, *Node);
