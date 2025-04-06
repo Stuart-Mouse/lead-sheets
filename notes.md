@@ -733,6 +733,7 @@ but maybe a better solution is just to set some global or context error string t
 
 ## Identifier Renaming
 
+need to make declarations use an identifier node instead of just a name string
 
 ## Macros and Malleable Literals
 
@@ -749,8 +750,23 @@ but maybe a better solution is just to set some global or context error string t
 ## Trivia Preservation and Serialization
 
 
-
 ## Clearing Up Allocator Usage
+
+
+## Implementing #code and #insert operators as a test
+
+
+## Compile-Time Operators
+
+Or, operators as directives.
+These operators will need to operate on a given node type rather than on a given value type.
+For example, in GON, we will use this to implement custom identifier resolution for field references.
+This will be done with special prefix operators that act on a Node_Identifier at typechecking time, replacing the identifier node with an Any literal.
+
+In general for language design, it would probably not be a good idea to allow operator overload to create new compile-time operators, but for Lead Sheets, it makes sense, since this language is sort of meant more as a collection of simple utilities out of which to construct your own simple language.
+So extending the language in this way seems very natural, in my opinion.
+The approach will probably just be to extend the operator table to include directive-like callback functions for manipulating nodes in the same sort of way.
+
 
 
 

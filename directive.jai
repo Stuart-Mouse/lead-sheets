@@ -61,53 +61,53 @@ Directive_Call :: struct {
     directive_node: *Node_Directive;
 }
 
-register_directive :: (script: *Script, name: string, procedure: Any, user_data: ..Any) -> bool {
+register_directive :: (script: *Script, name: string, procedure: Any, user_data: ..Any) -> bool, int {
     for script.directives {
         if it.name == name {
             log("Error: directives do not support overloading.");
-            return false;
+            return false, -1;
         }
     }
     ti_proc := procedure.type.(*Type_Info_Procedure);
     if ti_proc.type != .PROCEDURE {
         log("Error: procedure provided was not actually a procedure.");
-        return false;
+        return false, -1;
     }
     if ti_proc.procedure_flags & .IS_C_CALL {
         log("Error: #c_call procedures are not currently supported as directives.");
-        return false;
+        return false, -1;
     }
     if ti_proc.argument_types.count < 1 {
         log("Error: directive must take at least 1 argument for Script pointer.");
-        return false;
+        return false, -1;
     }
     if ti_proc.argument_types[0] != type_info(*Directive_Call) {
         log("Error: directive must take a *Script as the first argument.");
-        return false;
+        return false, -1;
     }
     if ti_proc.argument_types.count < user_data.count + 1 {
         log("Error: too many user_data values provided to directive.");
-        return false;
+        return false, -1;
     }
     for user_data {
         // TODO: allow using #as, maybe also coerce integers/floats
         // if ti_proc.argument_types[it_index + 1] != type_info(Any)
         // && it.type != ti_proc.argument_types[it_index + 1] {
         if it.type != ti_proc.argument_types[it_index + 1] {
-            log("Error: type of user_data value % does not match type of corresponding directive argument.", it_index + 1);
-            return false;
+            log("Error: type of user_data value % does not match type of corresponding directive argument. % vs %", it_index + 1, as_type(it.type), as_type(ti_proc.argument_types[it_index + 1]));
+            return false, -1;
         }
     }
     if ti_proc.return_types.count < 1
     || ti_proc.return_types.count > 2
     || ti_proc.return_types[ti_proc.return_types.count-1] != type_info(bool) {
         log("Error: directive must return a bool signifying success as last return value.");
-        return false;
+        return false, -1;
     }
     for script.directives {
         if it.name == name {
             log("Error: directives do not support overloading.");
-            return false;
+            return false, -1;
         }
     }
     array_add(*script.directives, .{
@@ -115,7 +115,7 @@ register_directive :: (script: *Script, name: string, procedure: Any, user_data:
         procedure = Any_Proc.from(procedure),
         user_data = user_data
     });
-    return true;
+    return true, script.directives.count-1;
 }
 
 
