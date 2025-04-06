@@ -327,7 +327,6 @@ parse_leaf :: (using script: *Script) -> *Node {
         if token_after_dot.type == .OPEN_BRACE {
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
-            
             literal := make_struct_literal(script, *token_after_dot, struct_contents);
             return make_dot(script, *token, null, literal);
         }
@@ -541,7 +540,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         
         
       case .DOT;
-        get_token(*lexer);
+        dot_token := get_token(*lexer);
         dprint("BINARY DOT\n");
         
         token_after_dot := get_token(*lexer);
@@ -549,76 +548,53 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
           case .OPEN_PAREN;
             dprint("CAST\n");
             type_expr := parse_expression(script, 0);
-            
             close_paren := get_token(*lexer);
             if close_paren.type != .CLOSE_PAREN {
                 log("%: Error: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
                 return null;
             }
-            
-            node_cast := alloc_node(script, Node_Cast);
-            node_cast.value = left;
-            node_cast.type_expression = type_expr;
-            return node_cast;
+            return make_cast(script, *dot_token, left, type_expr);
 
             
           case .IDENTIFIER;
-            node := alloc_node(script, Node_Dot);
-            node.left   = left;
-            node.right  = make_identifier(script, token_after_dot.text);
-            return node;
+            identifier := make_identifier(script, *token_after_dot);
+            return make_dot(script, *dot_token, left, identifier);
             
             
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
-            
-            literal := alloc_node(script, Node_Literal);
-            literal.literal_type = .STRUCT;
-            literal.aggr.expressions = struct_contents;
-            
-            dot := alloc_node(script, Node_Dot);
-            dot.left  = left;
-            dot.right = literal;
-            return dot;
+            literal := make_struct_literal(script, *token_after_dot, struct_contents);
+            return make_dot(script, *dot_token, left, literal);
         }
         
         log("%: Error: unexpected % token '%' after dot.", token.location, token.type, token.text);
         return null;
         
       case .OPEN_BRACKET;
-        get_token(*lexer);
+        open_bracket_token := get_token(*lexer);
         dprint("ARRAY SUBSCRIPT\n");
         
         indexing_expr := parse_expression(script, 0);
         if indexing_expr == null  return null;
-        
         if !expect_token_type(*lexer, .CLOSE_BRACKET)  return null;
         
-        node := alloc_node(script, Node_Subscript);
-        node.base_expression     = left;
-        node.indexing_expression = indexing_expr;
-        return node;
+        return make_subscript(script, *open_bracket_token, left, indexing_expr);
     }
     
     is_operator, operator_type, precedence := token_is_operator(token);
     if is_operator && operator_type != .UNARY {
         if precedence <= min_prec  return left;
         dprint("% OPERATION (%)\n", operator_type, token.text);
-        get_token(*lexer);
+        operator_token := get_token(*lexer);
         
         right := parse_expression(script, precedence);
         if right == null  return null;
         
-        node := alloc_node(script, Node_Operation);
-        node.name          = token.text;
-        node.operator_type = operator_type;
-        node.left          = left;
-        node.right         = right;
-        if operator_type == .ASSIGNMENT {
-            node.flags |= .MUST_BE_STATEMENT_ROOT;
-        }
-        return node;
+        operation := make_operation(script, *operator_token, operator_type, left, right);
+        if operator_type == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
+        
+        return operation;
     }
     
     return left;
@@ -627,7 +603,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
 
 parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) {
     if expect_token_type(*lexer, .CLOSE_BRACE)  return .[], true;
-
+    
     expressions, ok := parse_comma_separated_expressions(script,, temp);
     if !ok  return .[], false;
     

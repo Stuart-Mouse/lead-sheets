@@ -4,7 +4,10 @@ Node :: struct {
     scope:                  *Node;              // used for identifier resolution. maybe we can remove in the future
     flags:                  Flags;
     value_type:             *Type_Info;         // null if not yet typechecked
-    source_token:           *Token;
+    
+    // get copied from source token
+    location:   Source_Code_Location;
+    trivia:     string;
     
     Flags :: enum_flags { 
         TYPECHECKED;
@@ -149,6 +152,17 @@ Node_Literal :: struct {
     }
 }
 
+get_literal_value_as_any :: (literal: Node_Literal) -> Any {
+    assert(literal.value_type != null);
+    if #complete literal.literal_type == {
+      case .STRING; return Any.{ type_info(string), *literal.text };
+      case .NUMBER; return to_any(*literal.number);
+      case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
+      case .ANY;    return literal.any;
+    }
+    unreachable();
+}
+
 /*
     Not sure where to put this for now, but here's some documentation about a cool feature with literals:
     
@@ -220,6 +234,10 @@ Node_For_Loop :: struct {
     it_decl, it_index_decl: Node_Declaration;
 }
 
+
+
+
+
 alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null) -> *T_Node
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
@@ -228,7 +246,8 @@ alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, sourc
     node.node_type = T_Node;
     node.scope     = ifx scope else script.current_scope;
     if source_token {
-        node.source_token = copy_to_pool_if_needed(*script.pool, source_token).value_pointer;
+        node.location = source_token.location;
+        node.trivia   = source_token.trivia;
     }
     return node;
 }
@@ -239,7 +258,126 @@ replace_node :: inline (original: **Node, new: *Node) {
 }
 
 get_location :: (node: Node) -> Source_Code_Location {
-    if node.source_token  return node.source_token.location;
-    return .{};
+    return node.location;
 }
 
+
+
+
+
+// ===== Make Nodes From Tokens =====
+
+make_number_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
+    value, ok := parse_number(source_token.text);
+    if !ok  return null;
+    
+    literal := alloc_node(script, Node_Literal, source_token = source_token);
+    literal.literal_type = .NUMBER;
+    literal.number       = value;
+    return literal;
+}
+
+make_string_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal, source_token = source_token);
+    literal.literal_type = .STRING;
+    literal.text         = source_token.text;
+    return literal;
+}
+
+// NOTE: source_token here should be the open brace token
+make_struct_literal :: (script: *Script, source_token: *Token, contents: [] *Node) -> *Node_Literal {
+    node := alloc_node(script, Node_Literal, source_token = source_token);
+    node.literal_type     = .STRUCT;
+    node.aggr.expressions = contents;
+    return node;
+}
+
+make_identifier :: (script: *Script, source_token: *Token) -> *Node_Identifier {
+    node := alloc_node(script, Node_Identifier, source_token = source_token);
+    node.name = source_token.text;
+    return node;
+}
+
+make_unary_operation :: inline (script: *Script, source_token: *Token, left: *Node) -> *Node_Operation {
+    return make_operation(script, source_token, .UNARY, left, null);
+}
+
+make_binary_operation :: inline (script: *Script, source_token: *Token, left: *Node, right: *Node) -> *Node_Operation {
+    return make_operation(script, source_token, .BINARY, left, right);
+}
+
+make_operation :: (script: *Script, source_token: *Token, operator_type: Operator_Type, left: *Node, right: *Node) -> *Node_Operation {
+    node := alloc_node(script, Node_Operation, source_token = source_token);
+    node.name          = source_token.text;
+    node.operator_type = operator_type;
+    node.left          = left;
+    node.right         = right;
+    return node;
+}
+
+make_subscript :: (script: *Script, source_token: *Token, operand: *Node, indexing_expr: *Node) -> Node_Subscript {
+    node := alloc_node(script, Node_Subscript, source_token = source_token);
+    node.base_expression     = operand;
+    node.indexing_expression = indexing_expr;
+    return node;
+}
+
+make_dot :: (script: *Script, source_token: *Token, left: *Node, right: *Node) -> *Node_Dot {
+    node := alloc_node(script, Node_Dot, source_token = source_token);
+    node.left  = left;
+    node.right = right;
+    return node;
+}
+
+make_cast :: (script: *Script, source_token: *Token, value: *Node, type_expr: *Node) -> *Node_Cast {
+    node := alloc_node(script, Node_Cast, source_token = source_token);
+    node.value           = value;
+    node.type_expression = type_expr;
+    return node;
+}
+
+
+// ===== Make Nodes Manually =====
+
+// TODO: need to have some kind of flag on such a node so that we know whether we need to print the fully qualified enum name with type or not
+//       adn that will depend on whether this node is held by a node_identifier/node_dot or not
+//       if this nod eis held by a node_identifier or node_dot, then it actually won't get directly called by print_node anyhow though
+//       since the identifier will just print itself with get_identifier_name. so i guess it's actually just fine to always use the fully qualified enum name if we print an enum literal?
+//       or maybe we use a flag like .IMPLICIT to signify that the enum literal was using a unary dot in the source text.
+
+// NOTE: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
+//       so this will only work for basically numbers, strings, and enums
+make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal);
+    literal.value_type = value.type;
+    if value.type.type == .STRING {
+        literal.literal_type = .STRING;
+        literal.text = value.value_pointer.(*string).*;
+    }
+    else if value.type.type == .ENUM || is_numeric_type(value.type) {
+        literal.literal_type = .NUMBER;
+        literal.number = Small_Any.from(value);
+    } else {
+        // @Hack: doing this temporarily so that we can at least return structs and 
+        //        such from directives and still insert them as literals.
+        literal.literal_type = .ANY;
+        literal.any = copy_to_pool_if_needed(*script.pool, value);
+    }
+    return literal;
+}
+
+make_number_literal :: (script: *Script, number: $T, loc := #caller_location) -> *Node 
+#modify {
+    return is_numeric_type(T), "Type must be numeric (integer or float).";
+} {
+    literal := alloc_node(script, Node_Literal);
+    literal.literal_type = .NUMBER;
+    literal.number = Small_Any.from(number);
+    return literal;
+}
+
+make_identifier :: (script: *Script, name: string, loc := #caller_location) -> *Node_Identifier {
+    node := alloc_node(script, Node_Identifier);
+    node.name = name;
+    return node;
+}
