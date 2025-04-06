@@ -238,17 +238,15 @@ Node_For_Loop :: struct {
 
 
 
-alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, source_token: *Token = null) -> *T_Node
+alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *T_Node
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
     node := New(T_Node,, script.allocator);
     node.node_type = T_Node;
     node.scope     = ifx scope else script.current_scope;
-    if source_token {
-        node.location = source_token.location;
-        node.trivia   = source_token.trivia;
-    }
+    node.location  = loc;
+    node.trivia    = trivia;
     return node;
 }
 
@@ -257,57 +255,55 @@ replace_node :: inline (original: **Node, new: *Node) {
     original.* = new;
 }
 
-get_location :: (node: Node) -> Source_Code_Location {
-    return node.location;
+get_location :: (node: Node) -> string {
+    return tprint("%:%,%", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
 }
-
-
 
 
 
 // ===== Make Nodes From Tokens =====
 
-make_number_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
+make_number_literal :: (script: *Script, source_token: Token) -> *Node_Literal {
     value, ok := parse_number(source_token.text);
     if !ok  return null;
     
-    literal := alloc_node(script, Node_Literal, source_token = source_token);
+    literal := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
     literal.literal_type = .NUMBER;
     literal.number       = value;
     return literal;
 }
 
-make_string_literal :: (script: *Script, source_token: *Token) -> *Node_Literal {
-    literal := alloc_node(script, Node_Literal, source_token = source_token);
+make_string_literal :: (script: *Script, source_token: Token) -> *Node_Literal {
+    literal := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
     literal.literal_type = .STRING;
     literal.text         = source_token.text;
     return literal;
 }
 
 // NOTE: source_token here should be the open brace token
-make_struct_literal :: (script: *Script, source_token: *Token, contents: [] *Node) -> *Node_Literal {
-    node := alloc_node(script, Node_Literal, source_token = source_token);
+make_struct_literal :: (script: *Script, source_token: Token, contents: [] *Node) -> *Node_Literal {
+    node := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
     node.literal_type     = .STRUCT;
     node.aggr.expressions = contents;
     return node;
 }
 
-make_identifier :: (script: *Script, source_token: *Token) -> *Node_Identifier {
-    node := alloc_node(script, Node_Identifier, source_token = source_token);
+make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {
+    node := alloc_node(script, Node_Identifier, loc = source_token.location, trivia = source_token.trivia);
     node.name = source_token.text;
     return node;
 }
 
-make_unary_operation :: inline (script: *Script, source_token: *Token, left: *Node) -> *Node_Operation {
+make_unary_operation :: inline (script: *Script, source_token: Token, left: *Node) -> *Node_Operation {
     return make_operation(script, source_token, .UNARY, left, null);
 }
 
-make_binary_operation :: inline (script: *Script, source_token: *Token, left: *Node, right: *Node) -> *Node_Operation {
+make_binary_operation :: inline (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Operation {
     return make_operation(script, source_token, .BINARY, left, right);
 }
 
-make_operation :: (script: *Script, source_token: *Token, operator_type: Operator_Type, left: *Node, right: *Node) -> *Node_Operation {
-    node := alloc_node(script, Node_Operation, source_token = source_token);
+make_operation :: (script: *Script, source_token: Token, operator_type: Operator_Type, left: *Node, right: *Node) -> *Node_Operation {
+    node := alloc_node(script, Node_Operation, loc = source_token.location, trivia = source_token.trivia);
     node.name          = source_token.text;
     node.operator_type = operator_type;
     node.left          = left;
@@ -315,22 +311,29 @@ make_operation :: (script: *Script, source_token: *Token, operator_type: Operato
     return node;
 }
 
-make_subscript :: (script: *Script, source_token: *Token, operand: *Node, indexing_expr: *Node) -> Node_Subscript {
-    node := alloc_node(script, Node_Subscript, source_token = source_token);
+make_procedure_call :: (script: *Script, source_token: Token, proc_expr: *Node, arg_exprs: [] *Node) -> *Node_Procedure_Call {
+    node := alloc_node(script, Node_Procedure_Call, loc = source_token.location, trivia = source_token.trivia);
+    node.procedure_expression = proc_expr;
+    node.arguments            = arg_exprs;
+    return node;
+}
+
+make_subscript :: (script: *Script, source_token: Token, operand: *Node, indexing_expr: *Node) -> *Node_Subscript {
+    node := alloc_node(script, Node_Subscript, loc = source_token.location, trivia = source_token.trivia);
     node.base_expression     = operand;
     node.indexing_expression = indexing_expr;
     return node;
 }
 
-make_dot :: (script: *Script, source_token: *Token, left: *Node, right: *Node) -> *Node_Dot {
-    node := alloc_node(script, Node_Dot, source_token = source_token);
+make_dot :: (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Dot {
+    node := alloc_node(script, Node_Dot, loc = source_token.location, trivia = source_token.trivia);
     node.left  = left;
     node.right = right;
     return node;
 }
 
-make_cast :: (script: *Script, source_token: *Token, value: *Node, type_expr: *Node) -> *Node_Cast {
-    node := alloc_node(script, Node_Cast, source_token = source_token);
+make_cast :: (script: *Script, source_token: Token, value: *Node, type_expr: *Node) -> *Node_Cast {
+    node := alloc_node(script, Node_Cast, loc = source_token.location, trivia = source_token.trivia);
     node.value           = value;
     node.type_expression = type_expr;
     return node;

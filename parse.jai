@@ -317,7 +317,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         dprint("UNARY OPERATOR (%)\n", token.text);
         left := parse_expression(script, precedence);
         if left == null  return null;
-        return make_unary_operation(script, *token, left);
+        return make_unary_operation(script, token, left);
     }
     
     if token.type == {
@@ -327,14 +327,14 @@ parse_leaf :: (using script: *Script) -> *Node {
         if token_after_dot.type == .OPEN_BRACE {
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
-            literal := make_struct_literal(script, *token_after_dot, struct_contents);
-            return make_dot(script, *token, null, literal);
+            literal := make_struct_literal(script, token_after_dot, struct_contents);
+            return make_dot(script, token, null, literal);
         }
         else if token_after_dot.type == .IDENTIFIER {
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
-            identifier := make_identifier(script, *token_after_dot);
-            return make_dot(script, *token, null, identifier);
+            identifier := make_identifier(script, token_after_dot);
+            return make_dot(script, token, null, identifier);
         }
         else log("%: Error: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
 
@@ -356,12 +356,12 @@ parse_leaf :: (using script: *Script) -> *Node {
         
       case .NUMBER;
         dprint("NUMBER (%)\n", token.text);
-        return make_number_literal(script, *token);
+        return make_number_literal(script, token);
         
         
       case .STRING;
         dprint("STRING (\"%\")\n", token.text);
-        return make_string_literal(script, *token);
+        return make_string_literal(script, token);
         
     
       case .DIRECTIVE;
@@ -377,8 +377,9 @@ parse_leaf :: (using script: *Script) -> *Node {
         }
         if directive.directive_index == -1  return null;
         
-        if !expect_token_type(*lexer, .OPEN_PAREN) {
-            dprint("Error, expected an open paren after directive name!\n");
+        open_paren_token := get_token(*lexer);
+        if open_paren_token.type != .OPEN_PAREN {
+            dprint("%: Error, expected an open paren after directive name!\n", open_paren_token.location);
             return null;
         }
         
@@ -387,9 +388,9 @@ parse_leaf :: (using script: *Script) -> *Node {
             if !ok  return null;
             directive.arguments = array_copy(expressions,, script.allocator);
             
-            close_paren := get_token(*lexer);
-            if close_paren.type != .CLOSE_PAREN {
-                log("%: Error: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren.location, close_paren.text);
+            close_paren_token := get_token(*lexer);
+            if close_paren_token.type != .CLOSE_PAREN {
+                log("%: Error: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
                 return null;
             }
         }
@@ -403,7 +404,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
       case .IDENTIFIER;
         dprint("IDENTIFIER (%)\n", token.text);
-        return make_identifier(script, *token);
+        return make_identifier(script, token);
     }
     
     return null;
@@ -521,22 +522,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         get_token(*lexer);
         dprint("PROCEDURE ARGUMENTS LIST\n");
         
-        node := alloc_node(script, Node_Procedure_Call);
-        node.procedure_expression = left;
-        
-        if !expect_token_type(*lexer, .CLOSE_PAREN) {
-            expressions, ok := parse_comma_separated_expressions(script,, temp);
-            if !ok  return null;
-            node.arguments = array_copy(expressions,, script.allocator);
-            
-            close_paren := get_token(*lexer);
-            if close_paren.type != .CLOSE_PAREN {
-                log("%: Error: expected a closing paren after arguments of procedure call. Instead we saw %\n", close_paren.location, close_paren.text);
-                return null;
-            }
-        }
-        
-        return node;
+        arg_exprs, ok := parse_procedure_arguments(script);
+        return make_procedure_call(script, token, left, arg_exprs);
         
         
       case .DOT;
@@ -553,19 +540,19 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
                 log("%: Error: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
                 return null;
             }
-            return make_cast(script, *dot_token, left, type_expr);
+            return make_cast(script, dot_token, left, type_expr);
 
             
           case .IDENTIFIER;
-            identifier := make_identifier(script, *token_after_dot);
-            return make_dot(script, *dot_token, left, identifier);
+            identifier := make_identifier(script, token_after_dot);
+            return make_dot(script, dot_token, left, identifier);
             
             
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
-            literal := make_struct_literal(script, *token_after_dot, struct_contents);
-            return make_dot(script, *dot_token, left, literal);
+            literal := make_struct_literal(script, token_after_dot, struct_contents);
+            return make_dot(script, dot_token, left, literal);
         }
         
         log("%: Error: unexpected % token '%' after dot.", token.location, token.type, token.text);
@@ -579,7 +566,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         if indexing_expr == null  return null;
         if !expect_token_type(*lexer, .CLOSE_BRACKET)  return null;
         
-        return make_subscript(script, *open_bracket_token, left, indexing_expr);
+        return make_subscript(script, open_bracket_token, left, indexing_expr);
     }
     
     is_operator, operator_type, precedence := token_is_operator(token);
@@ -591,7 +578,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         right := parse_expression(script, precedence);
         if right == null  return null;
         
-        operation := make_operation(script, *operator_token, operator_type, left, right);
+        operation := make_operation(script, operator_token, operator_type, left, right);
         if operator_type == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
         
         return operation;
@@ -610,6 +597,21 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
     close_brace := get_token(*lexer);
     if close_brace.type != .CLOSE_BRACE {
         log("%: Error: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
+        return .[], false;
+    }
+    
+    return array_copy(expressions,, script.allocator), true;
+}
+
+parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
+    if expect_token_type(*lexer, .CLOSE_PAREN)  return .[], true;
+    
+    expressions, ok := parse_comma_separated_expressions(script,, temp);
+    if !ok  return .[], false;
+    
+    close_paren_token := get_token(*lexer);
+    if close_paren_token.type != .CLOSE_PAREN {
+        log("%: Error: expected a closing paren after arguments of procedure call. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
         return .[], false;
     }
     

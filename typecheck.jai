@@ -208,7 +208,7 @@ typecheck_node :: (
         //     then that will have to be handled in PROCEDURE_CALL case, 
         //     since we need the additional context for overload resolution.
         if !(check_flags & .IS_PROCEDURE_EXPRESSION) {
-            dprint("Error: Unable to resolve identifier '%'.\n", identifier.name);
+            dprint("%: Error: Unable to resolve identifier '%'.\n", get_location(identifier), identifier.name);
         }
         return null;
         
