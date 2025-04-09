@@ -9,6 +9,11 @@ Name_And_Type :: struct {
     type:   *Type_Info;
 }
 
+// Typecheck_Callback :: type_of(typecheck_node);
+// Execute\ _Callback :: type_of(execute_node);
+// Evaluate\_Callback :: type_of(evaluate_node);
+// Serialize_Callback :: type_of(serialize_node);
+
 Script :: struct {
     ast_root:               *Node_Block;
     flags:                  Flags;
@@ -34,6 +39,11 @@ Script :: struct {
     lexer:                  Lexer;
     current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
     
+    // callbacks for handling custom node types
+    // typecheck_callback:     Typecheck_Callback;
+    // execute\ _callback:     Execute\ _Callback;
+    // evaluate\_callback:     Evaluate\_Callback;
+    // serialize_callback:     Serialize_Callback;
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -305,6 +315,8 @@ register_common_types :: (script: *Script) {
 #load "procedure.jai";
 #load "directive.jai";
 #load "binary_op.jai";
+
+#load "result.jai";
 
 
 #scope_module

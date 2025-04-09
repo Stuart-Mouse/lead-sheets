@@ -142,12 +142,12 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         print("expecting: %\n", as_type(expected_type));
         if expected_type == type_info(*Node)  continue;
         
-        argument_type := typecheck_node(script, it);
+        argument_type := or_default(typecheck_node(script, it), null);
         if argument_type == null {
-            log("Error: failed to evaluate argument % for directive call.", it+1, );
+            log("Error: failed to evaluate argument % for directive call.", it_index+1, );
         }
         if argument_type != expected_type {
-            log("Error: type mismatch on argument % for directive call. Expected %, got %.\n", it+1, as_type(expected_type), as_type(argument_type));
+            log("Error: type mismatch on argument % for directive call. Expected %, got %.\n", it_index+1, as_type(expected_type), as_type(argument_type));
             return false;
         }
     }
