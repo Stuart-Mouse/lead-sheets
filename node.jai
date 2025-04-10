@@ -20,6 +20,7 @@ Node :: struct {
         PARENTHESIZED;          // explicitly 
         DISCARD_VALUE;
         MUST_BE_STATEMENT_ROOT;
+        IS_STATEMENT_ROOT;
     };
 }
 

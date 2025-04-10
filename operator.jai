@@ -24,13 +24,7 @@ get_operator_precedence :: (identifier: string) -> int {
     return -1;
 }
 
-// TODO: probably remove this, I don't think there's any good reason to do the whole bit set thing here just to check if a node is n operator
-// token_is_binary_operator :: (token: Token) -> bool {
-//     binary_operators :: #run make_bit_set(Token_Type.ADD | .SUB | .MUL | .DIV | .LOGICAL_AND | .LOGICAL_OR | .LESS_THAN | .GREATER_THAN | .LESS_THAN_OR_EQUAL_TO | .GREATER_THAN_OR_EQUAL_TO | .COMPARE_EQUAL);
-//     return check_bit(binary_operators, token.type);
-// }
-
-// TODO: expect_unary is a stupid hack, but I can't of a better way
+// TODO: expect_unary is a stupid hack, but I can't think of a better way
 token_is_operator :: (token: Token, expect_unary := false) -> bool, Operator_Type, int {
     if token.text == "="  return true, .ASSIGNMENT, 1;
     

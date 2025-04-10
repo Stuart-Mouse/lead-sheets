@@ -50,8 +50,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     if token.type == {
       case .IF; 
         dprint("IF STATEMENT\n"); dprint_push_indent();
-        get_token(*lexer);
-        if_statement := alloc_node(script, Node_If_Statement);
+        if_token := get_token(*lexer);
+        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
         current_scope = if_statement; 
         
         dprint("CONDITION\n"); dprint_push_indent();
@@ -67,8 +67,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
       case .WHILE;
         dprint("WHILE LOOP\n"); dprint_push_indent();
-        get_token(*lexer);
-        while_loop := alloc_node(script, Node_While_Loop);
+        while_token := get_token(*lexer);
+        while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
         current_scope = while_loop; 
         
         dprint("CONDITION\n");
@@ -84,8 +84,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
       case .FOR;
         dprint("FOR LOOP\n"); dprint_push_indent();
-        get_token(*lexer);
-        for_loop := alloc_node(script, Node_For_Loop);
+        for_token := get_token(*lexer);
+        for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
         current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION\n");
@@ -116,8 +116,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
       case .FOREACH;
         dprint("FOREACH LOOP\n"); dprint_push_indent();
-        get_token(*lexer);
-        for_loop := alloc_node(script, Node_For_Loop);
+        for_token := get_token(*lexer);
+        for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
         current_scope = for_loop; 
         
         dprint("ITERATOR LIST\n");
@@ -152,8 +152,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
       case .OPEN_BRACE;
         dprint("BLOCK\n"); dprint_push_indent();
-        get_token(*lexer);
-        block := alloc_node(script, Node_Block);
+        open_brace := get_token(*lexer);
+        block := alloc_node(script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
         current_scope = block; 
         
         statements, ok := parse_statements(script, .CLOSE_BRACE);
@@ -204,6 +204,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             if block == null  return null;
             assert(block.node_type == Node_Block);
             block.name = left.(*Node_Identifier).name;
+            block.location = left.location;
+            block.trivia   = left.trivia;
             
             array_add(*script.named_blocks, block);
             return block;
@@ -212,7 +214,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         dprint("DECLARATION\n"); dprint_push_indent();
         
-        declaration := alloc_node(script, Node_Declaration);
+        declaration := alloc_node(script, Node_Declaration, loc = left.location, trivia = left.trivia);
         declaration.name = left.(*Node_Identifier).name;
         
         next_token_type := peek_token(*lexer).type;
@@ -366,7 +368,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     
       case .DIRECTIVE;
         dprint("DIRECTIVE\n"); dprint_push_indent();
-        directive := alloc_node(script, Node_Directive);
+        directive := alloc_node(script, Node_Directive, loc = token.location, trivia = token.trivia);
         directive.name = token.text;
         
         directive.directive_index = -1;

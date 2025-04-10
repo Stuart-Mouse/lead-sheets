@@ -314,7 +314,7 @@ register_common_types :: (script: *Script) {
 
 #load "procedure.jai";
 #load "directive.jai";
-#load "binary_op.jai";
+#load "operator.jai";
 
 #load "result.jai";
 

@@ -701,6 +701,8 @@ we should make expect_token_type better and log an error message when type is no
 
 need to provide source file path when parsing from a source file, else provide source location of Jai file by default
 
+we do now store source location info well and report it in most error logging statments
+still probably want to do the thing with expect_token_type though, and also add jai location on manufactured nodes
 
 ### Result Objects
 
@@ -734,27 +736,60 @@ but maybe a better solution is just to set some global or context error string t
 ## Identifier Renaming
 
 need to make declarations use an identifier node instead of just a name string
+(It's sort of silly that we don't just do this already, since the node is already allocated anyhow. I guess I was just trying to remove an extra indirection.)
 
 ## Macros and Malleable Literals
 
+Not sure what to do here yet, will have to refer to my notes from above.
 
 ## Node Replacement
+
+Node replacement is pretty doable now, not too much else to say. Things got nicer in that department once we stopped doing the linked-list thing for nodes and just used `[] Node` instead.
+Maybe that change will come back to bite me in the future if I want to do more dynamically add nodes to blocks, but for now it seems like a good decision since it just reduces complexity.
+I think that the one case where I was really considering doing somethign of the sort was also jsut a case where one could externally augment LS to acheive the same result
+    e.g. maybe we have some user console with repl-y behavior that pushes all executed commands into a temporary buffer, then later allows the user to save that set of commands as a name block.
 
 
 ## Directives Improvements
 
+We made major improvemts to directives recently, making them much more powerful and giving them a much more flexible interface.
+The documentation is good enough in directives.jai that I would just point you to go read that, and maybe reference test.jai for an example usage.
+
 
 ## Ahead-of-Time Lexing 
 
+Maybe come back to this later if we want to improve the trivia preservation further...
 
 ## Trivia Preservation and Serialization
+
+Basic verison is working, but work more is needed in order to improve things.
+Although, it's already pretty usable in the current state, so I may go ahead and start implement script modificaiton and re-serialization into my game engine.
+
+Unable to save trivia on:
+    before parenthesized expressions
+    after final statement in block
+    after final expression in struct literal
+    after after type expression in declaration
+    after final argument in procedure or directive call
+    
+    
+in theory, we could save trivia before and after each node, then prevent appending pre-trivia if it is the same as last post-trivia
+but that's an extra 16 bytes per node for the extra string
+
+I think I may just acept the minor imperfections and live with it this way long-term
+    because the alternative is probably doing the things where we keep all source tokens and map each node to a token range, then overwrite tokens for what has changed on AST
+    and I dont' want to go down that rabbit hole right now...
 
 
 ## Clearing Up Allocator Usage
 
+Maybe we don't need to store an allocator on the script and can instead just always use the pool / temp storage
+I don't think the script ever allocates anything other than nodes and intermediate values
+Need to check, but if this is actually the case then I can remove some logic around setting the script allocator, and just `push_allocator(get_pool_allocator(*script.pool));` at each main script entry point 
 
 ## Implementing #code and #insert operators as a test
 
+Is there really a need for this? We can already do everything we would want to do with #code or #insert using directives...
 
 ## Compile-Time Operators
 
@@ -767,6 +802,168 @@ In general for language design, it would probably not be a good idea to allow op
 So extending the language in this way seems very natural, in my opinion.
 The approach will probably just be to extend the operator table to include directive-like callback functions for manipulating nodes in the same sort of way.
 
+if an operator is compile-time, then it can't have multiple overloads based on type
+    although, we could have differnt versions for prefix, postfix, binary
+
+we will probably first want to refactor operators slightly to add postfix operators
+    rename UNARY to PREFIX, then add POSTFIX as well
+
+operator table defines what operators exist on a syntax level
+    this is currently constant, but we could make this resizable so that we can expand the operator table at runtime
+    
+
+had some thoguht the other day about putting operators overloads in their own array, separate from procedure overloads... don't exactly remember that whole traing of thought
+    
 
 
+
+
+
+
+
+
+
+# A bunch of rambling
+
+syntax suggestion:
+    unary `?` as an insert operator for Code Nodes
+    would also want a similar shorthand for basically #code
+    or maybe prefix ? is the nodes of and postfix .? means insert the nodes
+    could make macros much easier to write and use
+    prefix double question mark means get tokens instead of get nodes
+    can be inserted in the same manner
+     
+
+
+
+I've had enough drinks to make an out-there suggestion, but I was thinking the other day that it would be cool to have an operator with similar semantics to pointers for dealing with code nodes. So instead of 'address of' and 'dereference' operators you have 'nodes of' and 'insert' operators respectively. Say for instance we use prefix `&` for the former and postfix `.&` for the latter. 
+
+Putting parameters on node insertion becomes very clean as well: 
+    `code.?(scope=caller_code);`
+
+maybe this operator could be used for macro calls as well since these insert code into the caller's scope
+    `some_macro(..macro_arguments).?(..insert_parameters);`
+
+If we just want to get Jai tokens, we can use this syntax:
+    `??{ some 6 tokens , * % };
+
+
+custom parsing with 'double question mark dot identifier' syntax
+takes parameter list for called parse procedure and second parameter list for insert parameters
+
+```
+??.parse_proc(..proc_args)(..insert_parameters)
+    ... arbitrary text here ...
+```
+
+```
+parse_proc :: (file: string, args: ..Any) -> (to_insert: Code, remaining: string)
+```
+
+Code node can also represent some array of tokens, so that custom parse proc can return either Jai tokens to be inserted or actual AST nodes
+parse proc actually cannot be a macro here, since we have no real AST yet in which the parse proc is being called,
+this is a purely syntactic construct in which the parse_proc is called as soon as it is parsed, takes over parsing to generate a new stream of tokens or AST, and then returns control to the compiler
+
+But maybe this is a less powerful version my directives in LS...?
+    also since the file is not yet parsed, the parse proc obviously has to be resolved as some identifier in a different workspace.
+
+Even if you don't like the idea of having custom parsing in principle, I think it is at least fair to say that this syntax makes it extremely clear when such custom parsing is occuring, so there should at leas tbe no confusion about what is going on
+the only potential confusion would be telling where the custom parsing ends, but this should probably be quite apparent and with the help of editor tooling, syntax highlighting could make it even more obvious
+
+If you editor supports using a dll or something in order to add syntax highlighting, it would be pretty trivial to write your custom parsing procs into a file that gets compiled to a dll for the editor to call
+so that your custom parsing proc can also provide the syntax highlighting to the editor
+
+It would honestly probably not be too hard to just add a compiler plugin that implements a demo of this custom parsing
+it's really just essentially a pre-processing step
+I assume we can just pre-proceess every new file that gets loaded/imported or added through an #insert
+and while that's not ideal since it means probably a lot a duplicated memory, it could be worse
+we just scan every file for `??.` and do the needful
+
+now, of all the things I'm proposing here, this is the only one which would not actually require direct language support
+since as mentioned, ir can really be done as a pre-processor step
+It's essentailly syntax sugar for stuff that can already be done in the language (albeit much more verbosely)
+
+but for things like actually passing tokens to macros, that would obviously require language-level support
+
+
+other thoughts:
+    remap identifiers exported form macro calls using the insert parameter list:
+        `some_macro().?(new_name = old_name)`
+        
+
+    maybe there is some possible generalization on how for loops allow remapping control statements like break and continue
+        the simple verison is probably just a token-level replacement
+            which is essentially what the break/continue override is: a simple replacement of a token with a new AST expression
+        the ultimate form of this would be a generalized AST find/replace mechanism
+            how exactly to implement that recursive AST expression search is still a question
+            and I will probably eventually work on that more with lead sheets
+            because we need some syntax for capturing varibles in what the epression can be
+            much like a regex for the AST
+            I wonder if I still have my old notes on this somewhere...
+            
+        
+    
+    
+AST regex:
+could use some such #code expression then provide a 'such that' clause defining constraints on variables
+here, the arrow notation attached to the prior #code expression shows type constraints on the variables
+this is sort of backwards to how a procedure declaration is structured I suppose
+```
+exprs := get_expressions_of_form(source_code, ?(x * y) -> (x: int, y: int, x != y));
+```
+This whole expression `?(x * y) -> (x: int, y: int, x != y)` would have to resolve to some structured type
+so that the user can then manipulate it 
+
+
+Iterating on the idea:
+    make it polymorphic with some type restriction:
+        `?(x * y) -> (x: $T, y: T, x != y, type_info(T).type == .INTEGER)`
+    maybe we don't want to use declaraiton syntax here actually, only boolean expressions, so we reformulate as
+        `?(x * y) -> (type_of(x) == type_of(y), x != y, type_info(T).type == .INTEGER)`
+    since we are no longer using declaration syntax, maybe we can use dollar as a wildcard in this context
+    or, we still allow declaration syntax but use it for the purpose of defining tokens that would otherwise be unparseable
+    e.g., we want to replace `*` with a node representing an arbitrary operator
+    well, nvm, I got a better idea there to just use the token 'operator' sine its already a keyword
+        `?(x operator y) -> (type_of(x) == type_of(y), x != y, type_info(T).type == .INTEGER)`
+    but maybe there's another example where we could use $ as some wildcard? maybe meaning wildard value?
+    I think any identifiers used in some search expression should have a declared value type
+        but then also, there's some question about whether the type in the decl should represent the type which the statement evaluates to, or the type of the statement itself
+            sort of an lvalue vs ralue thing, but maybe not really
+            what I mean is, say for example we have some procedure `(int) -> int`
+            well then is the type that we consider the expression as `(int) -> int` or just `int`?
+            in the context of looking for some expression like the above, we probably want to consider it just `int`
+            because what we mean by the above search expression is to find all instances of operators where the operands are both integers
+            but then how would we be able to detect the other case?
+            an attempt: `?( (($) -> x) * y ) -> (...)`
+                this doe snot work because x here is presumably then a type expression
+            here we use that wildcard to represent that parameters to proc can be anything
+            then we catch x as the return type, so that it can be checked against the same constraints
+            so this search expression would find any case where a procedure returns an integer and  the result by another integer
+            
+            crap -->   (x: T = ($) -> )  i dunno anymore
+
+the difficulty is that we want to be able to bind certain subexpressions to variables, but those subexpressions may themselves have their own variables which we want to pull out
+
+`?(x * y) -> (x: ($T) -> int), y: int)`
+    this search would yeild the type info for T in addition to providing the values for x and y
+
+
+```
+Code_Search_Expression :: struct {
+    expression_form: *Code_Node;
+    constraints: [] Expression_Constraint;
+}
+Expression_Constraint :: struct {
+    constraint_type: enum { SUBEXPRESSION_TYPE; 
+    ... more stuff to figure out later
+}
+```
+
+will need some Code_Wildcard type to represent arbitrary subexpressions in search expression
+
+
+
+go back to the examples where i was trying to insert an Any returned tby a #run as a statically typed variables
+I feel like this is something I should be abel to do but I remember it being nearly impossible to do tersely
+and there was also some related issue there with pointers not being able to have a null value i think
 

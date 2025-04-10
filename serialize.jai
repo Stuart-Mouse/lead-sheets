@@ -32,7 +32,7 @@ print_script :: (
         if !should_skip_placing_semicolon(it) {
             append(builder, ";");
         } 
-        if it_index != ast_root.statements.count-1 then append(builder, "\n");
+        // if it_index != ast_root.statements.count-1 then append(builder, "\n");
     }
     return true;
 }
@@ -41,6 +41,10 @@ sprint_node :: (script: *Script, node: *Node) -> string {
     builder: String_Builder;
     print_node(script, node, *builder, 0);
     return builder_to_string(*builder);
+}
+
+append_trivia :: (builder: *String_Builder, node: *Node) {
+    append(builder, ifx node.trivia);
 }
 
 print_node_or_return :: (
@@ -65,10 +69,14 @@ print_node :: (
         return false;
     }
     
+    if node.node_type != Node_Operation {
+        append_trivia(builder, node);
+    }
+    
+    
     // wrap expression in parenthesized if explicitly flagged as such
     if       node.flags & .PARENTHESIZED  append(builder, "(");
     defer if node.flags & .PARENTHESIZED  append(builder, ")");
-    
     
     if node.node_type == {
       case Node_Directive;
@@ -76,7 +84,7 @@ print_node :: (
         print_to_builder(builder, "#%(", directive.name);
         for directive.arguments {
             print_node_or_return(script, it, builder, indent);
-            if it_index != ast_root.statements.count-1 then append(builder, ", ");
+            if it_index != directive.arguments.count-1 then append(builder, ",");
         }
         print_to_builder(builder, ")", );
         return true;
@@ -97,7 +105,7 @@ print_node :: (
             
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
-            append(builder, ".{ ");
+            append(builder, ".{");
             
             if node.flags & .TYPECHECKED {
                 // ignoring #place members. Wish there were a better way to do this.
@@ -106,15 +114,18 @@ print_node :: (
                     if it.flags & .CONSTANT  continue;
                     if it.offset_in_bytes < last_member_offset  break;
                     
-                    if last_member_offset != -1  append(builder, ", ");
+                    if last_member_offset != -1  append(builder, ",");
                     last_member_offset = it.offset_in_bytes;
                     
+                    if it_index < literal.aggr.expressions.count {
+                        append_trivia(builder, literal.aggr.expressions[it_index]);
+                    }
                     print_to_builder(builder, "%", Any.{ it.type, literal.aggr.value_pointer + it.offset_in_bytes });
                 }
             } else {
                 for literal.aggr.expressions {
                     print_node(script, it, builder, indent);
-                    if it_index != ast_root.statements.count-1  append(builder, ", ");
+                    if it_index != literal.aggr.expressions.count-1  append(builder, ",");
                 }
             }
             
@@ -162,9 +173,10 @@ print_node :: (
         if do_parenthesize_left  append(builder, "(");
         print_node(script, operation.left, builder, indent);
         if do_parenthesize_left  append(builder, ")");
-        append(builder, " ");
+        // append(builder, " ");
+        append_trivia(builder, node);
         append(builder, operation.name);
-        append(builder, " ");
+        // append(builder, " ");
         if do_parenthesize_right  append(builder, "(");
         print_node(script, operation.right, builder, indent);
         if do_parenthesize_right  append(builder, ")");
@@ -177,7 +189,7 @@ print_node :: (
         append(builder, "(");
         for procedure_call.arguments {
             print_node_or_return(script, it, builder, indent);
-            if it_index != ast_root.statements.count-1  append(builder, ", ");
+            if it_index != procedure_call.arguments.count-1  append(builder, ",");
         }
         append(builder, ")");
         return true;
@@ -196,7 +208,6 @@ print_node :: (
         
       case Node_Dot;
         dot := node.(*Node_Dot);
-        
         if dot.left  print_node_or_return(script, dot.left, builder, indent);
         if !(dot.right.node_type == Node_Literal && dot.right.(*Node_Literal).literal_type == .STRUCT) { // @Hack
             append(builder, ".");
@@ -244,16 +255,15 @@ print_node :: (
         if !declaration.type_expression  append(builder, " ");
         append(builder, ":");
         if declaration.type_expression {
-            append(builder, " ");
+            // append(builder, " ");
             print_node_or_return(script, declaration.type_expression, builder, indent);
-            
             if declaration.init_expression  append(builder, " ");
         }
         if declaration.init_expression {
             if declaration.flags & .MACRO {
-                append(builder, ": ");
+                append(builder, ":");
             } else {
-                append(builder, "= ");
+                append(builder, "=");
             }
             print_node_or_return(script, declaration.init_expression, builder, indent);
         }
@@ -265,37 +275,37 @@ print_node :: (
         if block.name {
             print_to_builder(builder, "%: ", block.name);
         }
-        append(builder, "{\n");
+        append(builder, "{");
         indent += INDENT_SIZE;
         for block.statements {
-            append_spaces(builder, indent);
+            // append_spaces(builder, indent);
             print_node_or_return(script, it, builder, indent);
             if !should_skip_placing_semicolon(it) {
                 append(builder, ";");
             } 
-            if it_index != ast_root.statements.count-1 then append(builder, "\n");
+            // if it_index != block.statements.count-1 then append(builder, "\n");
         }
         indent -= INDENT_SIZE;
         append(builder, "\n");
         append_spaces(builder, indent);
-        append(builder, "}");
+        append(builder, "}\n");
         return true;
         
         
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
-        append(builder, "if ");
+        append(builder, "if");
         print_node_or_return(script, if_statement.condition, builder, indent);
-        append(builder, "  ");
+        // append(builder, "  ");
         print_node_or_return(script, if_statement.statement, builder, indent);
         return true;
         
         
       case Node_While_Loop;
         while_loop := node.(*Node_While_Loop);
-        append(builder, "while ");
+        append(builder, "while");
         print_node_or_return(script, while_loop.condition, builder, indent);
-        append(builder, "  ");
+        // append(builder, "  ");
         print_node_or_return(script, while_loop.statement, builder, indent);
         return true;
         
@@ -304,25 +314,25 @@ print_node :: (
         for_loop := node.(*Node_For_Loop);
         if for_loop.control_type == {
           case .RANGE;
-            append(builder, "for ");
+            append(builder, "for");
             print_node_or_return(script, for_loop.range.lower, builder, indent);
             append(builder, "..");
             print_node_or_return(script, for_loop.range.upper, builder, indent);
             
           case .ARRAY;
-            append(builder, "for ");
+            append(builder, "for");
             print_node_or_return(script, for_loop.array_expression, builder, indent);
             
           case .LIST;
-            append(builder, "foreach ");
+            append(builder, "foreach");
             append(builder, "(");
             for for_loop.list {
                 print_node_or_return(script, it, builder, indent);
-                if it_index != ast_root.statements.count-1 then append(builder, ", ");
+                if it_index != for_loop.list.count-1 then append(builder, ",");
             }
             append(builder, ")");
         }
-        append(builder, "  ");
+        // append(builder, "  ");
         print_node_or_return(script, for_loop.statement, builder, indent);
         return true;
     }

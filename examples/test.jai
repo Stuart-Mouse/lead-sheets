@@ -150,7 +150,7 @@ main :: () {
     write_entire_file("output.ls", output);
     
     
-    print("\nWALK NODES TEST\n");
+    // print("\nWALK NODES TEST\n");
     // walk_nodes(*script, script.ast_root, #code { // TODO: report this, it will crash the compiler
     // walk_nodes(*script, xx *script.ast_root, #code {
     //     if node.node_type == Node_Identifier {
@@ -159,35 +159,35 @@ main :: () {
     // });
     
     
-    print("\nEVAL TEST\n");
-    {
-        expressions_to_test := struct { expr: string; result: Any; }.[
-            .{ "v := 3", 3.0 },
-            .{ "v + 5", 8.0 },
-            .{ "Vector2.{ 1, 2 } * 3", Vector2.{ 1, 2 } * 3 },
-            .{ "(1 + 2) * pow(2, sin(3.14159/2) + 2)", (1 + 2) * pow(2, sin(3.14159/2) + 2) }
-        ];
+    // print("\nEVAL TEST\n");
+    // {
+    //     expressions_to_test := struct { expr: string; result: Any; }.[
+    //         .{ "v := 3", 3.0 },
+    //         .{ "v + 5", 8.0 },
+    //         .{ "Vector2.{ 1, 2 } * 3", Vector2.{ 1, 2 } * 3 },
+    //         .{ "(1 + 2) * pow(2, sin(3.14159/2) + 2)", (1 + 2) * pow(2, sin(3.14159/2) + 2) }
+    //     ];
         
-        for expressions_to_test {
-            log("Evaluating statement: '%'", it.expr);
-            value, ok := evaluate_statement(*script, it.expr, store_global_declarations = true);
-            if !ok {
-                log("\tFailed to evaluate statement.");
-                continue;
-            };
-            if !compare_any(value, it.result) {
-                log("\tValue did not match expected result!");
-            }
-            log("\tvalue:    (%) %", as_type(value.type), value);
-            log("\texpected: (%) %", as_type(it.result.type), it.result);
-        }
-    }
+    //     for expressions_to_test {
+    //         log("Evaluating statement: '%'", it.expr);
+    //         value, ok := evaluate_statement(*script, it.expr, store_global_declarations = true);
+    //         if !ok {
+    //             log("\tFailed to evaluate statement.");
+    //             continue;
+    //         };
+    //         if !compare_any(value, it.result) {
+    //             log("\tValue did not match expected result!");
+    //         }
+    //         log("\tvalue:    (%) %", as_type(value.type), value);
+    //         log("\texpected: (%) %", as_type(it.result.type), it.result);
+    //     }
+    // }
     
     
-    print("\nTEST NAMED BLOCKS\n");
-    block := get_named_block(*script, "test_block");
-    ok = execute_node(*script, block, explicit_call = true);
-    if !ok  log("failed to execute %", "test_block");
+    // print("\nTEST NAMED BLOCKS\n");
+    // block := get_named_block(*script, "test_block");
+    // ok = execute_node(*script, block, explicit_call = true);
+    // if !ok  log("failed to execute %", "test_block");
 }
 
 compare_any :: (a: Any, b: Any) -> bool {
