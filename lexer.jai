@@ -88,6 +88,7 @@ Token :: struct {
     text:       string;
     location:   Source_Code_Location;
     trivia:     string;
+    error_type: Error_Type; // TODO: maybe unionize with normal result?  Seems easier than making the lexer return some Result object...
     
     // TODO: we really shouldn't have to store this, but for now it's required
     char_after: *u8;
@@ -111,6 +112,8 @@ Lexer :: struct {
     token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
     next_token_index: int;
     
+    // TODO: probably replace with just file/line structure, then convert that to proper source location in caller
+    //       the lexer really shouldn't even have to hold the state of file path. just another potential area to introduce a big
     cursor_location: Source_Code_Location;
     
     // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
@@ -177,7 +180,7 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
 
 lex_next_token :: (using lexer: *Lexer) -> Token {
     trivia, ok := skip_whitespace_and_comments(lexer);
-    if !ok    return make_error_token(cursor_location, "Error: unexpected EOF in the middle of a comment!");
+    if !ok    return make_error_token(cursor_location, .UNEXPECTED_EOF, message = "in the middle of a comment");
     if !file  return .{ type = .EOF, location = cursor_location };
     
     // we grab cursor location at top so that it points to start of token
@@ -204,7 +207,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         accept_alpha := false;
         if file && is_any(file[0], "bhx") {
             str.count += 1;
-            if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing number.");
+            if !advance(lexer)  return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing number");
             after_dot = true;   // so that we don't accept a dot in a integer literal
             accept_alpha = true;
         }
@@ -230,20 +233,12 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     }
     
     if file.count >= 2 {
-        // 2-char comparison operators
-        if file[1] == #char "=" {
-            if file[0] == {
-              case #char "="; return make_token(.COMPARE_EQUAL, 2);
-              case #char "<"; return make_token(.LESS_THAN_OR_EQUAL_TO, 2);
-              case #char ">"; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
-              
-              case #char "+"; return make_token(.PLUS_EQUALS, 2);
-              case #char "-"; return make_token(.MINUS_EQUALS, 2);
-            }
-        }
-        
-        // 2-char logical operators
         if slice(file, 0, 2) == {
+          case "=="; return make_token(.COMPARE_EQUAL, 2);
+          case "<="; return make_token(.LESS_THAN_OR_EQUAL_TO, 2);
+          case ">="; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
+          case "+="; return make_token(.PLUS_EQUALS, 2);
+          case "-="; return make_token(.MINUS_EQUALS, 2);
           case "&&"; return make_token(.LOGICAL_AND, 2);
           case "||"; return make_token(.LOGICAL_OR, 2);
           case ".."; return make_token(.SPREAD, 2); // not a logical operator but whatever, it goes here
@@ -285,16 +280,16 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
                 ident.char_after = file.data;
                 return ident;
             }
-            return make_error_token(location, "Unexpected character encountered while attempting to parse a directive name.");
+            return make_error_token(location, .UNEXPECTED_CHARACTER, string.{1,file.data}, "while attempting to parse a directive name.");
         }
     }
-        
+    
     // parse string or backticked identifier
     if file[0] == #char "\"" || file[0] == #char "`" { 
         quote_char := file[0];
         is_identifier := quote_char == #char "`";
         
-        if !advance(lexer)  return make_error_token(location, "Unexpected EOF while parsing string.");
+        if !advance(lexer)  return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing string.");
         string_value := string.{ 0, file.data };
         
         while file[0] != quote_char {
@@ -302,7 +297,7 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
             adv := 1 + (file[0] == #char "\\").(int); 
             string_value.count += adv;
             if !advance(lexer, adv)  
-                return make_error_token(location, "Unexpected EOF while parsing string.");
+                return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing string.");
         }
         advance(lexer);
         
@@ -315,11 +310,13 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         };
     }
     
-    return make_error_token(location, "Unexpected character encountered.");
+    return make_error_token(location, .UNEXPECTED_CHARACTER, string.{1,file.data});
 }
 
-make_error_token :: (location: Source_Code_Location, error_string: string = "") -> Token { 
-    return .{ type = .ERROR, location = location, text = error_string }; 
+// NOTE: we use the trivia string to attach some additional context to error tokens
+make_error_token :: (location: Source_Code_Location, error_type: Error_Type, text := "", message := "") -> Token { 
+    assert(error_type & .CLASS_MASK == .LEXER_ERROR);
+    return .{ type = .ERROR, location = location, error_type = error_type, text = text, trivia = message }; 
 }
 
 begins_identifier :: (char: u8) -> bool { return is_alpha(char) || char == #char "_"; }

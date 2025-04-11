@@ -239,7 +239,7 @@ Node_For_Loop :: struct {
 
 
 
-alloc_node :: inline (script: *Script, $T_Node: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *T_Node
+alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *T_Node
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
@@ -256,6 +256,7 @@ replace_node :: inline (original: **Node, new: *Node) {
     original.* = new;
 }
 
+// todo: remove
 get_location :: (node: Node) -> string {
     return tprint("%:%,%", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
 }

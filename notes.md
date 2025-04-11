@@ -967,3 +967,13 @@ go back to the examples where i was trying to insert an Any returned tby a #run 
 I feel like this is something I should be abel to do but I remember it being nearly impossible to do tersely
 and there was also some related issue there with pointers not being able to have a null value i think
 
+
+for typechecking, we want to be able to return an error enum to denote the reason for failure, which should be helpful in certain cases which are currently somewhat ambiguous
+we also want to be able to return an error for the sake of user callbacks
+
+multiple returns is nicer from user side though, so we will just adapt with wrapper procs
+
+simplify error messages, don't format with location in error string, just attach location to Error object.
+if user then prints error later, then format location with error message
+
+
