@@ -20,7 +20,7 @@ for arr1  echo(it);
 
 // local declarations
 local: float;
-local = 5 + 5 * 2;
+local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
 echo(local/2);
 
 // assignment operators redux

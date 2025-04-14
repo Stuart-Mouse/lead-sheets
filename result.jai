@@ -2,12 +2,10 @@
 
 // Result :: struct(T: Type) {
 //     error: Error;
-//     // error: bool;
 //     value: T;
 // }
 
 // operator ! :: inline (result: Result) -> bool { return result.error.type != .NO_ERROR; }
-// // operator ! :: inline (result: Result) -> bool { return !result.error; }
 
 // make_result :: inline (value: $T) -> Result(T) {
 //     return .{ value = value };
@@ -33,12 +31,6 @@
 //     if !result  return default;
 //     return result.value;
 // }
-
-/*
-    f76a8 - d66c8 = 20FE0
-    c76e8 - afb98 = 17b50
-    
-*/
 
 
 // ===== Error Struct =====
@@ -142,7 +134,7 @@ format_error :: (builder: *String_Builder, error: Error) {
 
 format_error :: (error: Error) -> string {
     builder: String_Builder; 
-    format_error(builder, error);
+    format_error(*builder, error);
     return builder_to_string(*builder); 
 }
 
