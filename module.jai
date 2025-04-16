@@ -30,6 +30,8 @@ Script :: struct {
     pool:                   Flat_Pool;
     allocator:              Allocator;
     
+    error:                  Error;
+    
     stack_base:             *void;
     stack_size:             int;
     stack_ptr:              *void;
@@ -143,7 +145,7 @@ stack_peek :: inline (script: *Script, $$is_lvalue := false) -> *void {
 
 stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
     if script.stack_ptr >= script.stack_base + script.stack_size {
-        log("Runtime Error: ran out of space on stack!\n");
+        set_exec_error(script, "Ran out of space on stack!", node = null);
         return false;
     }
     defer script.stack_ptr += PTR_SIZE;
@@ -159,7 +161,7 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
 
 stack_push_zeroes :: (script: *Script, size: int) -> bool {
     if script.stack_ptr + size >= script.stack_base + script.stack_size {
-        log("Runtime Error: ran out of space on stack!\n");
+        set_exec_error(script, "Ran out of space on stack!", node = null);
         return false;
     }
     
@@ -348,4 +350,13 @@ dprint_push_indent :: () #expand {
         `defer context.dprint_indent -= 1;
     }
 }
+
+maybe_return_error :: (script: *Script, value: $R) #expand {
+    if script.error.type != .NO_ERROR then `return value;
+}
+
+maybe_return_error :: (script: *Script) #expand {
+    if script.error.type != .NO_ERROR then `return;
+}
+
 

@@ -123,12 +123,12 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         dprint("ITERATOR LIST\n");
         open_paren := get_token(*lexer);
         if open_paren.type != .OPEN_PAREN {
-            log("%: Error: expected an open paren to begin a foreach iterator list.", open_paren.location);
+            set_parse_error(script, "%: expected an open paren to begin a foreach iterator list.", open_paren.location);
             return null;
         }
         if peek_token(*lexer).type == .CLOSE_PAREN {
             close_paren := peek_token(*lexer);
-            log("%: Error: foreach loop cannot have an empty iterator list.", close_paren.location);
+            set_parse_error(script, "%: foreach loop cannot have an empty iterator list.", close_paren.location);
             return null;
         }
         expressions, ok := parse_comma_separated_expressions(script,, temp);
@@ -139,7 +139,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         close_paren := get_token(*lexer);
         if close_paren.type != .CLOSE_PAREN {
-            log("%: Error: expected closing paren after foreach loop iterator list. Instead we saw %\n", close_paren.location, close_paren.text);
+            set_parse_error(script, "%: expected closing paren after foreach loop iterator list. Instead we saw %\n", close_paren.location, close_paren.text);
             return null;
         }
         
@@ -186,7 +186,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/source_location to a declaration node 
         if left.node_type != Node_Identifier {
-            log("%: Error: left hand side of a declaration must be an identifier.", get_location(left));
+            set_parse_error(script, "%: left hand side of a declaration must be an identifier.", get_location(left));
             return null;
         }
         
@@ -196,7 +196,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if peek_token(*lexer).type == .OPEN_BRACE {
             dprint("NAMED BLOCK (%)\n", left.(*Node_Identifier).name); dprint_push_indent();
             if script.current_scope != script.ast_root {
-                log("%: Error: named blocks can only be declared at the top-level scope.", get_location(left));
+                set_parse_error(script, "%: named blocks can only be declared at the top-level scope.", get_location(left));
                 return null;
             }
             
@@ -223,7 +223,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             declaration.type_expression = parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
-                log("%: Error: type expression of a declaration must be an identifier. (was %)", get_location(left), declaration.type_expression.node_type);
+                set_parse_error(script, "%: type expression of a declaration must be an identifier. (was %)", get_location(left), declaration.type_expression.node_type);
                 return null;
             }
         }
@@ -338,7 +338,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             identifier := make_identifier(script, token_after_dot);
             return make_dot(script, token, null, identifier);
         }
-        else log("%: Error: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
+        else set_parse_error(script, "%: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
 
         
       case .OPEN_PAREN;
@@ -350,7 +350,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         close_paren_token := get_token(*lexer);
         if close_paren_token.type != .CLOSE_PAREN {
-            log("%: Error: expected a closing paren for open paren at %.", close_paren_token.location, open_paren_location);
+            set_parse_error(script, "%: expected a closing paren for open paren at %.", close_paren_token.location, open_paren_location);
             return null;
         }
         return expression;
@@ -392,13 +392,13 @@ parse_leaf :: (using script: *Script) -> *Node {
             
             close_paren_token := get_token(*lexer);
             if close_paren_token.type != .CLOSE_PAREN {
-                log("%: Error: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
+                set_parse_error(script, "%: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
                 return null;
             }
         }
         
         if !evaluate_directive(script, directive, .PARSE) {
-            log("%: Error: failed while trying to execute a directive during parsing.", token.location);
+            set_parse_error(script, "%: failed while trying to execute a directive during parsing.", token.location);
             return null;
         }
         return directive;
@@ -511,7 +511,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     if token.type == .QUESTION_MARK {
         question_mark := get_token(*lexer);
         if left.node_type != Node_Literal {
-            log("%: Error: a `?` can only be used directly after a literal.", question_mark.location);
+            set_parse_error(script, "%: a `?` can only be used directly after a literal.", question_mark.location);
             return null;
         }
         left.(*Node_Literal).flags |= .IS_MALLEABLE;
@@ -539,7 +539,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             type_expr := parse_expression(script, 0);
             close_paren := get_token(*lexer);
             if close_paren.type != .CLOSE_PAREN {
-                log("%: Error: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
+                set_parse_error(script, "%: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
                 return null;
             }
             return make_cast(script, dot_token, left, type_expr);
@@ -557,7 +557,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             return make_dot(script, dot_token, left, literal);
         }
         
-        log("%: Error: unexpected % token '%' after dot.", token.location, token.type, token.text);
+        set_parse_error(script, "%: unexpected % token '%' after dot.", token.location, token.type, token.text);
         return null;
         
       case .OPEN_BRACKET;
@@ -598,7 +598,7 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
     
     close_brace := get_token(*lexer);
     if close_brace.type != .CLOSE_BRACE {
-        log("%: Error: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
+        set_parse_error(script, "%: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
         return .[], false;
     }
     
@@ -613,7 +613,7 @@ parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
     
     close_paren_token := get_token(*lexer);
     if close_paren_token.type != .CLOSE_PAREN {
-        log("%: Error: expected a closing paren after arguments of procedure call. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
+        set_parse_error(script, "%: expected a closing paren after arguments of procedure call. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
         return .[], false;
     }
     

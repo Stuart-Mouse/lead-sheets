@@ -1,4 +1,26 @@
 
+/*
+    Notes about error handling:
+    
+        currently, we aren't using result objects because of the stack frame bloat issue...
+        we may reevaluate this in the future if it provides us with considerably better or_return semantics, but it seems like we can do just as well with a single error object that gets set in the script itself.
+        
+        only typechecking really makes much use of checking the script.error for flow control, 
+            and TBH we could probably go back to simply checking if the returned value type is null for all internal calls to typecheck_node, only checking script.error when we really need to. 
+                this would probably be just a bit faster too.
+            but in either case, we will want to check the script.error for typechecking callbacks, so that they may return null when they simply don't want to override typechecking for a given node
+        
+        there aren't really many error cases during execution, and we simply use a bool return value on execute_node for flow control. it is then just assumed that the error should always be set before returning false
+            again, we may make typechecking behave the same later on
+        
+        evaluation incomplete
+        parsing incomplete
+        lexing incomplete, really need to figure out better solution for propogating up lexer errors
+        
+        for all cases, we still need to further improve the actual error recording and reporting
+
+
+*/
 
 // Result :: struct(T: Type) {
 //     error: Error;
@@ -137,4 +159,26 @@ format_error :: (error: Error) -> string {
     format_error(*builder, error);
     return builder_to_string(*builder); 
 }
+
+
+set_error :: (script: *Script, type: Error_Type, format: string, args: ..Any, loc := #caller_location) {
+    script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+} @PrintLike
+
+set_general_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
+    script.error = .{ type = .GENERAL_ERROR, message = tprint(format, ..args), location = loc };
+} @PrintLike
+
+set_parse_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
+    script.error = .{ type = .PARSE_ERROR, message = tprint(format, ..args), location = loc };
+} @PrintLike
+
+set_typecheck_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
+    script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+} @PrintLike
+
+set_exec_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.EXEC_ERROR, loc := #caller_location) {
+    script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+} @PrintLike
+
 

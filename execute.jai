@@ -15,26 +15,20 @@
 
 execute_script :: (script: *Script) -> bool {
     if !(script.flags & .PARSED) {
-        log("Error: cannot execute script before AST has been constructed!\n");
+        set_exec_error(script, "Cannot execute script before AST has been constructed!\n", node = null);
         return false;
     }
     if !(script.flags & .TYPECHECKED) {
-        log("Error: cannot execute script before AST has been typechecked!\n");
+        set_exec_error(script, "Cannot execute script before AST has been typechecked!\n", node = null);
         return false;
     }
     
     script.stack_ptr = script.stack_base;
-    
     for script.ast_root.statements {
         dprint("executing statement #%\n", it_index);
         if !execute_node(script, it)  return false;
     }
-    
-    sentinel := cast(*type_of(STACK_SENTINEL_VALUE)) (script.stack_base + script.stack_size);
-    if sentinel.* != STACK_SENTINEL_VALUE {
-        log("Error: sentinel value was overwritten! was %\n", sentinel.*);
-        return false;
-    }
+    assert(script.stack_ptr == script.stack_base);
     
     return true;
 }
@@ -62,10 +56,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     }
     
     if !node.flags & .TYPECHECKED {
-        // TODO: file/line or content of node please?
-        log("Error: cannot execute a node that has not been typechecked!");
-        log("\tNode type was %", node.node_type);
-        log("\tNode expression was %", sprint_node(script, node));
+        set_exec_error(script, "Cannot execute a node that has not been typechecked.", node = node);
         return false;
     }
     
@@ -80,7 +71,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
+        if literal.flags & .IS_LVALUE {
+            assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
+        }
         
         if #complete literal.literal_type == {
           case .ANY;
@@ -146,11 +139,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, identifier.literal);
             
           case;
-            log("Error: unhandled case in execute_node for identifier type: %", identifier.identifier_type);
+            set_exec_error(script, "Unhandled case in execute_node for identifier type: %", identifier.identifier_type, node = node);
             return false;
         }
         return false;
-
+        
         
       case Node_Operation;
         operation := node.(*Node_Operation);
@@ -229,7 +222,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
-        // script.stack_ptr -= procedure_call.arg_count * PTR_SIZE;
         {
             dcReset(script.dyncall_vm);
             jai_call :: true;
@@ -328,7 +320,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
         if index_as_s64 < 0 || index_as_s64 >= array_count {
-            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
+            set_exec_error(script, "Array index % was out of bounds! Max index is %.", index_as_s64, array_count-1, node = node);
             return false;
         }
         
