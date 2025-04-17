@@ -976,4 +976,3 @@ multiple returns is nicer from user side though, so we will just adapt with wrap
 simplify error messages, don't format with location in error string, just attach location to Error object.
 if user then prints error later, then format location with error message
 
-

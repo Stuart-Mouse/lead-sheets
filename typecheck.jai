@@ -29,7 +29,6 @@ typecheck_node_or_return :: (
     return result;
 }
 
-// For internal use, returns a result object for easier internal error handling and reporting.
 typecheck_node :: (
     using script:   *Script, 
     node:           *Node, 
@@ -60,9 +59,10 @@ typecheck_node :: (
     }
     check_flags &= ~.IS_STATEMENT_ROOT;
     
-    // TODO: callback here to manually typecheck node
-    // return type and error separately
-    // if type is set, skip the below
+    if script.typecheck_callback {
+        result := script.typecheck_callback(script, node, check_flags, hint_type);
+        if result  return result;
+    }
     
     if node.node_type == {
       case Node_Directive;       typecheck_directive       (script, xx node, check_flags, hint_type);

@@ -9,10 +9,10 @@ Name_And_Type :: struct {
     type:   *Type_Info;
 }
 
-// Typecheck_Callback :: type_of(typecheck_node);
-// Execute\ _Callback :: type_of(execute_node);
-// Evaluate\_Callback :: type_of(evaluate_node);
-// Serialize_Callback :: type_of(serialize_node);
+Typecheck_Callback :: type_of(typecheck_node);
+Execute\ _Callback :: type_of(execute_node);
+Evaluate\_Callback :: type_of(evaluate_node);
+Serialize_Callback :: type_of(sprint_node);
 
 Script :: struct {
     ast_root:               *Node_Block;
@@ -42,10 +42,10 @@ Script :: struct {
     current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
     
     // callbacks for handling custom node types
-    // typecheck_callback:     Typecheck_Callback;
-    // execute\ _callback:     Execute\ _Callback;
-    // evaluate\_callback:     Evaluate\_Callback;
-    // serialize_callback:     Serialize_Callback;
+    typecheck_callback:     Typecheck_Callback;
+    execute\ _callback:     Execute\ _Callback;
+    evaluate\_callback:     Evaluate\_Callback;
+    serialize_callback:     Serialize_Callback;
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -70,10 +70,8 @@ init_script :: (script: *Script, stack_size := 1024) {
     script.allocator = get_pool_allocator(*script.pool);
     
     script.stack_size = stack_size;
-    script.stack_base = get(*script.pool, script.stack_size + size_of(type_of(STACK_SENTINEL_VALUE)));
+    script.stack_base = get(*script.pool, script.stack_size);
     script.stack_ptr  = script.stack_base;
-    sentinel := (script.stack_base + script.stack_size).(*type_of(STACK_SENTINEL_VALUE));
-    sentinel.* = STACK_SENTINEL_VALUE;
     
     // allocate dyncall vm that will be reused
     script.dyncall_vm = dcNewCallVM(2048);
@@ -117,9 +115,6 @@ get_named_block :: (script: *Script, name: string) -> *Node_Block {
 
 
 // STACK STUFF
-
-// TODO: instead of having this goofy sentinel value thing on the stack, we should just assert that stack_ptr < stack_base + stack_size after pushing to stack
-STACK_SENTINEL_VALUE: u64 : 0x0123_4567_89AB_CDEF;
 
 PTR_SIZE :: size_of(*void);
 

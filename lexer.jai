@@ -146,7 +146,7 @@ get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
 }
 
 // consumes a token
-get_token :: inline (using lexer: *Lexer) -> Token {
+get_token :: (using lexer: *Lexer) -> Token {
     return_token := token_buffer[next_token_index];
     if return_token.type == .ERROR 
     || return_token.type == .EOF {
@@ -162,7 +162,7 @@ get_token :: inline (using lexer: *Lexer) -> Token {
 }
 
 // peeks next_token, but does not consume it
-peek_token :: inline (using t: *Lexer, peek_index := 0) -> Token {
+peek_token :: (using t: *Lexer, peek_index := 0) -> Token {
     assert(peek_index >= 0 && peek_index < TOKEN_BUFFER_COUNT-1);
     index := (next_token_index + peek_index) % TOKEN_BUFFER_COUNT;
     return token_buffer[index];
