@@ -377,7 +377,10 @@ parse_leaf :: (using script: *Script) -> *Node {
                 directive.directive_index = it_index;
             }
         }
-        if directive.directive_index == -1  return null;
+        if directive.directive_index == -1 {
+            set_parse_error(script, "%: Unable to resolve directive '%'\n", directive.location, directive.name);
+            return null;
+        }
         
         open_paren_token := get_token(*lexer);
         if open_paren_token.type != .OPEN_PAREN {

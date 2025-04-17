@@ -9,6 +9,7 @@ Name_And_Type :: struct {
     type:   *Type_Info;
 }
 
+// typechecking callbcak allows additional return value for replacement node
 Typecheck_Callback :: type_of(typecheck_node);
 Execute\ _Callback :: type_of(execute_node);
 Evaluate\_Callback :: type_of(evaluate_node);

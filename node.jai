@@ -243,7 +243,7 @@ alloc_node :: (script: *Script, $T_Node: Type, scope: *Node = null, loc := #call
 #modify {
     return is_subclass_of(T_Node.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
-    node := New(T_Node,, script.allocator);
+    node := New(T_Node,, get_pool_allocator(*script.pool));
     node.node_type = T_Node;
     node.scope     = ifx scope else script.current_scope;
     node.location  = loc;
