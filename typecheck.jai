@@ -473,7 +473,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         //       that way if hint type is accepted, then it can also use value_pointer 
         //       for its backing value instead of allocating its own space for value
         literal.value_type = ti_struct;
-        literal.aggr.value_pointer = Dynamic_New(literal.value_type,, script.allocator);
+        literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
         dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
     }
     
@@ -612,7 +612,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         }
         
         if is_aggr(operation.value_type) {
-            operation.return_ptr = Dynamic_New(operation.value_type,, script.allocator);
+            operation.return_ptr = Dynamic_New(operation.value_type,, get_pool_allocator(*script.pool));
             // dprint("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
         }
         
@@ -624,8 +624,8 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     procedure_call.procedure_expression = make_identifier(script, operation.name);
     
     if operation.operator_type == .UNARY 
-        then procedure_call.arguments = array_copy((*Node).[ operation.left ],, script.allocator);
-        else procedure_call.arguments = array_copy((*Node).[ operation.left, operation.right ],, script.allocator);
+        then procedure_call.arguments = array_copy((*Node).[ operation.left ],, get_pool_allocator(*script.pool));
+        else procedure_call.arguments = array_copy((*Node).[ operation.left, operation.right ],, get_pool_allocator(*script.pool));
     operation.overload_procedure    = procedure_call;
     operation.flags                |= .OVERLOAD;
     
@@ -740,7 +740,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
     }
     
     if is_aggr(procedure_call.value_type) {
-        procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, script.allocator);
+        procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, get_pool_allocator(*script.pool));
         // dprint("allocating variable of type % at % for node %\n", as_type(procedure_call.value_type), procedure_call.return_ptr, procedure_call);
     }
     assert(procedure_call.value_type != null);
@@ -986,7 +986,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     print("right_type: %\n", right_type);
     
     declaration.value_type    = ifx explicit_type else right_type;
-    declaration.value_pointer = Dynamic_New(declaration.value_type,, script.allocator);
+    declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
     // dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
     
     if declaration.flags & .MACRO {

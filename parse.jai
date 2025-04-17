@@ -15,7 +15,7 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     
     statements, ok := parse_statements(script,, temp);
     if !ok  return false;
-    script.ast_root.statements = array_copy(statements,, script.allocator);
+    script.ast_root.statements = array_copy(statements,, get_pool_allocator(*script.pool));
     
     assert(script.current_scope == script.ast_root);
     
@@ -134,7 +134,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         expressions, ok := parse_comma_separated_expressions(script,, temp);
         if !ok  return null;
         
-        for_loop.list = array_copy(expressions,, script.allocator);
+        for_loop.list = array_copy(expressions,, get_pool_allocator(*script.pool));
         for_loop.control_type = .LIST;
         
         close_paren := get_token(*lexer);
@@ -158,7 +158,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         statements, ok := parse_statements(script, .CLOSE_BRACE);
         if !ok  return null;
-        block.statements = array_copy(statements,, script.allocator);
+        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
         
         current_scope = block.scope; 
         return block;
@@ -391,7 +391,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         if !expect_token_type(*lexer, .CLOSE_PAREN) {
             expressions, ok := parse_comma_separated_expressions(script,, temp);
             if !ok  return null;
-            directive.arguments = array_copy(expressions,, script.allocator);
+            directive.arguments = array_copy(expressions,, get_pool_allocator(*script.pool));
             
             close_paren_token := get_token(*lexer);
             if close_paren_token.type != .CLOSE_PAREN {
@@ -441,9 +441,9 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
     
-    prev_allocator := script.allocator;
-    defer script.allocator = prev_allocator;
-    if allocator  script.allocator = allocator;
+    prev_allocator := get_pool_allocator(*script.pool);
+    defer get_pool_allocator(*script.pool) = prev_allocator;
+    if allocator  get_pool_allocator(*script.pool) = allocator;
     
     // we have to reinit lexer for every statement
     init_lexer(*script.lexer, statement);
@@ -460,9 +460,9 @@ parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
     
-    prev_allocator := script.allocator;
-    defer script.allocator = prev_allocator;
-    if allocator  script.allocator = allocator;
+    prev_allocator := get_pool_allocator(*script.pool);
+    defer get_pool_allocator(*script.pool) = prev_allocator;
+    if allocator  get_pool_allocator(*script.pool) = allocator;
     
     // we have to reinit lexer for every expression
     // TODO: set the lexer source location based on dom node?
@@ -605,7 +605,7 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
         return .[], false;
     }
     
-    return array_copy(expressions,, script.allocator), true;
+    return array_copy(expressions,, get_pool_allocator(*script.pool)), true;
 }
 
 parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
@@ -620,5 +620,5 @@ parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
         return .[], false;
     }
     
-    return array_copy(expressions,, script.allocator), true;
+    return array_copy(expressions,, get_pool_allocator(*script.pool)), true;
 }

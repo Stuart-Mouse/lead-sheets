@@ -29,7 +29,6 @@ Script :: struct {
     global_declarations:    [..] *Node_Declaration;
     
     pool:                   Flat_Pool;
-    allocator:              Allocator;
     
     error:                  Error;
     
@@ -68,8 +67,6 @@ free_script :: (using script: *Script) {
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
-    script.allocator = get_pool_allocator(*script.pool);
-    
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size);
     script.stack_ptr  = script.stack_base;
