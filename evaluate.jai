@@ -10,7 +10,7 @@
 */
 
 evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
-    root := parse_expression(script, expr);
+    root := parse_expression_string(script, expr);
     if root == null  return Any.{}, false;
     
     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
@@ -55,6 +55,12 @@ evaluate_node :: (
             ret.value_pointer = Dynamic_New(node.value_type,, temp);
         }
         return ret;
+    }
+    
+    if script.evaluate_callback {
+        result, ok := script.evaluate_callback(script, node, hint_storage, explicit_call);
+        if !ok  return Any.{}, false;
+        if result.value_pointer  return result, true;
     }
     
     if node.node_type == {

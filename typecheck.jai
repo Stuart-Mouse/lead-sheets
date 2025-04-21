@@ -63,6 +63,7 @@ typecheck_node :: (
         result := script.typecheck_callback(script, node, check_flags, hint_type);
         maybe_return_error(script, null);
         if result  return result;
+        print("result was %\n", result);
     }
     
     if node.node_type == {
@@ -418,7 +419,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         literal.value_type = type_info(string);
         
       case .NUMBER;
-        if hint_type && (hint_type.type == .INTEGER || hint_type.type == .FLOAT) {
+        if is_numeric_type(hint_type) {
             // dprint("returning hinted type: %\n", as_type(hint_type));
             
             // NOTE: we now remap to value_type just once here, so that we don't have to do it each time in execute

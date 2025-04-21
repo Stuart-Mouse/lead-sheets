@@ -73,7 +73,7 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
 ];
 
 
-Operator_Type  :: enum { BINARY; UNARY; ASSIGNMENT; };
+Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
 
 
 BUILTIN_OPERATIONS :: (
@@ -201,7 +201,7 @@ execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *vo
         append(*builder, "}\n");
         
         return builder_to_string(*builder);
-    }
+    };
     
     assert(false, "Called execute_builtin_operation with an invalid operation index.");
     return false;

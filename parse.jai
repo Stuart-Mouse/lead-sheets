@@ -55,7 +55,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         current_scope = if_statement; 
         
         dprint("CONDITION\n"); dprint_push_indent();
-        if_statement.condition = parse_expression(script, 0);
+        if_statement.condition = my_parse_expression(script, 0);
         if if_statement.condition == null  return null;
         
         dprint("STATEMENT\n"); dprint_push_indent();
@@ -72,7 +72,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         current_scope = while_loop; 
         
         dprint("CONDITION\n");
-        while_loop.condition = parse_expression(script, 0);
+        while_loop.condition = my_parse_expression(script, 0);
         if while_loop.condition == null  return null;
         
         dprint("STATEMENT\n");
@@ -89,7 +89,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION\n");
-        expr := parse_expression(script, 0);
+        expr := my_parse_expression(script, 0);
         if !expr  return null;
         
         // TODO: maybe allow comma separated list of elements to iterate over instead of array literals? 
@@ -98,7 +98,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             dprint("CONTROL TYPE IS RANGE\n");
             for_loop.control_type = .RANGE;
             for_loop.range.lower  = expr;
-            for_loop.range.upper  = parse_expression(script, 0);
+            for_loop.range.upper  = my_parse_expression(script, 0);
             if !for_loop.range.upper  return null;
         } else {
             dprint("CONTROL TYPE IS ARRAY\n");
@@ -179,7 +179,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     
     dprint("EXPRESSION...\n");
     
-    left := parse_expression(script, 0);
+    left := my_parse_expression(script, 0);
     if left == null  return null;
     
     if expect_token_type(*lexer, .COLON) {
@@ -220,7 +220,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         next_token_type := peek_token(*lexer).type;
         if next_token_type != .ASSIGN_EQUAL && next_token_type != .COLON {
             dprint("WITH EXPLICIT TYPE\n");
-            declaration.type_expression = parse_expression(script, 999); // @Hack 
+            declaration.type_expression = my_parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
                 set_parse_error(script, "%: type expression of a declaration must be an identifier. (was %)", get_location(left), declaration.type_expression.node_type);
@@ -241,7 +241,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         if do_assignment {
             dprint("WITH ASSIGNMENT\n");
-            declaration.init_expression = parse_expression(script, 0);
+            declaration.init_expression = my_parse_expression(script, 0);
             if declaration.init_expression == null  return null;
             if is_macro_declaration then declaration.flags |= .MACRO;
         }
@@ -317,7 +317,7 @@ parse_leaf :: (using script: *Script) -> *Node {
     is_operator, operator_type, precedence := token_is_operator(token, expect_unary = true);
     if is_operator && operator_type == .UNARY {
         dprint("UNARY OPERATOR (%)\n", token.text);
-        left := parse_expression(script, precedence);
+        left := my_parse_expression(script, precedence);
         if left == null  return null;
         return make_unary_operation(script, token, left);
     }
@@ -344,7 +344,7 @@ parse_leaf :: (using script: *Script) -> *Node {
       case .OPEN_PAREN;
         open_paren_location := token.location;
         
-        expression := parse_expression(script, 0);
+        expression := my_parse_expression(script, 0);
         if expression == null  return null;
         expression.flags |= .PARENTHESIZED;
         
@@ -384,7 +384,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         open_paren_token := get_token(*lexer);
         if open_paren_token.type != .OPEN_PAREN {
-            dprint("%: Error, expected an open paren after directive name!\n", open_paren_token.location);
+            set_parse_error(script, "%: Error, expected an open paren after directive name!\n", open_paren_token.location);
             return null;
         }
         
@@ -455,7 +455,7 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
 
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
+parse_expression_string :: (script: *Script, expr: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
@@ -467,20 +467,20 @@ parse_expression :: (script: *Script, expr: string, allocator: *Allocator = null
     // we have to reinit lexer for every expression
     // TODO: set the lexer source location based on dom node?
     init_lexer(*script.lexer, expr);
-    expression := parse_expression(script, 0);
+    expression := my_parse_expression(script, 0);
     
     if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
     return expression, script.lexer.char_after_last_token;
 }
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {
-    left := parse_leaf(script);
+    left := my_parse_leaf(script);
     if left == null  return null;
     
     // going iteratively, precedence can only decrease
     while true {
         // but going only recursively, precedence will only increase
-        node := parse_binary(script, left, min_prec);
+        node := my_parse_binary(script, left, min_prec);
         if node == null  return null;
         if node == left  break;
         left = node;
@@ -493,7 +493,7 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 parse_comma_separated_expressions :: (using script: *Script) -> ([] *Node, bool) {
     expressions: [..] *Node;
     while true {
-        expr := parse_expression(script, 0);
+        expr := my_parse_expression(script, 0);
         if expr == null {
             array_reset(*expressions);
             return .[], false;
@@ -539,19 +539,17 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         if token_after_dot.type == {
           case .OPEN_PAREN;
             dprint("CAST\n");
-            type_expr := parse_expression(script, 0);
+            type_expr := my_parse_expression(script, 0);
             close_paren := get_token(*lexer);
             if close_paren.type != .CLOSE_PAREN {
                 set_parse_error(script, "%: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
                 return null;
             }
             return make_cast(script, dot_token, left, type_expr);
-
             
           case .IDENTIFIER;
             identifier := make_identifier(script, token_after_dot);
             return make_dot(script, dot_token, left, identifier);
-            
             
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
@@ -563,11 +561,12 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         set_parse_error(script, "%: unexpected % token '%' after dot.", token.location, token.type, token.text);
         return null;
         
+        
       case .OPEN_BRACKET;
         open_bracket_token := get_token(*lexer);
         dprint("ARRAY SUBSCRIPT\n");
         
-        indexing_expr := parse_expression(script, 0);
+        indexing_expr := my_parse_expression(script, 0);
         if indexing_expr == null  return null;
         if !expect_token_type(*lexer, .CLOSE_BRACKET)  return null;
         
@@ -580,7 +579,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         dprint("% OPERATION (%)\n", operator_type, token.text);
         operator_token := get_token(*lexer);
         
-        right := parse_expression(script, precedence);
+        right := my_parse_expression(script, precedence);
         if right == null  return null;
         
         operation := make_operation(script, operator_token, operator_type, left, right);

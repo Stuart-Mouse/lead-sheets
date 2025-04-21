@@ -47,6 +47,11 @@ Script :: struct {
     evaluate\_callback:     Evaluate\_Callback;
     serialize_callback:     Serialize_Callback;
     
+    // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
+    my_parse_expression := parse_expression;
+    my_parse_binary     := parse_binary;
+    my_parse_leaf       := parse_leaf;
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
@@ -294,7 +299,6 @@ common_types: [..] struct { name: string; type: *Type_Info; } = .[
 register_common_types :: (script: *Script) {
     for common_types  register_type(script, it.name, it.type);
 }
-
 
 
 #module_parameters ()(DEBUG := false);
