@@ -337,7 +337,7 @@ print_node :: (
         return true;
     }
     
-    log("Error: Invalid node type '%' in print_node().", node.node_type);
+    assert(false, "Invalid node type '%' in print_node().", node.node_type);
     return false;
 }
 

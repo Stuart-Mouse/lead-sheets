@@ -766,11 +766,8 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
             set_general_error(script, "%: Error: Type expression in cast must be constant.", get_location(type_expression));
             return;
         }
-        type_any, ok := evaluate_node(script, type_expression);
-        if !ok {
-            set_general_error(script, "%: Error: failed to evaluate type expression in cast!", get_location(type_expression));
-            return;
-        }
+        type_any := evaluate_node(script, type_expression);
+        maybe_return_error(script);
         node_cast.value_type = type_any.value_pointer.(**Type_Info).*;
     }
     
@@ -839,11 +836,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                 set_general_error(script, "%: Error: Type expression on left-hand side of dot operator must be constant.", get_location(dot));
                 return;
             }
-            left_any, ok := evaluate_node(script, dot.left);
-            if !ok {
-                set_general_error(script, ""); // TODO:
-                return;
-            }
+            left_any := evaluate_node(script, dot.left);
+            maybe_return_error(script);
             namespace = left_any.value_pointer.(**Type_Info).*;
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
@@ -959,11 +953,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_general_error(script, "%: Error: Type expression in declaration must be constant.", get_location(declaration));
             return;
         }
-        type_any, ok := evaluate_node(script, type_expression);
-        if !ok {
-            set_general_error(script, ""); // TODO:
-            return;
-        }
+        type_any := evaluate_node(script, type_expression);
+        maybe_return_error(script);
         explicit_type = type_any.value_pointer.(**Type_Info).*;
     }
     
@@ -995,11 +986,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_general_error(script, "%: Error: macro declarations can only be made to simple literals at this time.", get_location(declaration));
             return;
         }
-        value, ok := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
-        if !ok {
-            set_general_error(script, "%: Error: failed to evaulate init expression of macro declaration. We do this during typechecking at the moment as a hack to make malleable literals work, and I'm not fixing this until we really make macros actually a thing.", get_location(declaration));
-            return;
-        }
+        value := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
+        maybe_return_error(script);
     }
     
     return;

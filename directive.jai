@@ -163,13 +163,10 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
     // NOTE: we have to iterate by pointer here, otherwise we get a bug when trying to take an Any of the iterator value.
     for *directive.arguments {
         if ti_proc.argument_types[it_index + min_arg_index] == type_info(*Node) {
-            print("arguments_anys[%] = %\n", it_index, it);  
             arguments_anys[it_index] = it.*; // pass *Node itself
-            print("arguments_anys: %\n", arguments_anys);
         } else {
-            arg_any, ok := evaluate_node(script, it.*);
-            if !ok  return false;
-            arguments_anys[it_index] = arg_any;
+            arguments_anys[it_index] = evaluate_node(script, it.*);
+            maybe_return_error(script, false);
         }
     }
     

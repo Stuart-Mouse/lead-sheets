@@ -6,29 +6,28 @@
     As an alternative to execute_node, which pushes results on the script stack, evalaute_node will allocate the intermediate values in temproary storage.
     In the future, it may be ideal to re-implement execute_node in terms of evaluate_node, using hint_storage to stick the results on the script stack instead of doing so by default
     Ultimately, this should simplify execute_node while also offering multiple ways of interfacing with lead sheets expressions.
-    
 */
 
 evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
     root := parse_expression_string(script, expr);
-    if root == null  return Any.{}, false;
+    if root == null  return Null_Any, false;
     
-    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Null_Any, false;
     
-    value, ok := evaluate_node(script, root);
-    if !ok  return Any.{}, false;
+    value := evaluate_node(script, root);
+    if !!script.error  return Null_Any, false;
     
     return value, true;
 }
 
 evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
     root := parse_statement(script, expr);
-    if root == null  return Any.{}, false;
+    if root == null  return Null_Any, false;
     
-    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Any.{}, false;
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Null_Any, false;
     
-    value, ok := evaluate_node(script, root);
-    if !ok  return Any.{}, false;
+    value := evaluate_node(script, root);
+    if !!script.error  return Null_Any, false;
     
     if store_global_declarations {
         if root.node_type == Node_Declaration {
@@ -44,33 +43,29 @@ evaluate_node :: (
     node:           *Node,
     hint_storage:   *void    = null,
     explicit_call := false
-) -> Any, bool {
+) -> Any {
     dprint("evaluating node %: %\n", node, node.node_type);
     dprint_push_indent();
     
-    // only allocates space for the return value if hint_storage was null (TODO?: or hint_type did not match node.value_type)
-    make_return_value :: () -> Any #expand {
-        ret := Any.{ node.value_type, hint_storage };
-        if ret.value_pointer == null {
-            ret.value_pointer = Dynamic_New(node.value_type,, temp);
-        }
-        return ret;
+    if script.evaluate_callback {
+        result := script.evaluate_callback(script, node, hint_storage, explicit_call);
+        maybe_return_error(script, Null_Any);
+        if result.type != null  return result;
     }
     
-    if script.evaluate_callback {
-        result, ok := script.evaluate_callback(script, node, hint_storage, explicit_call);
-        if !ok  return Any.{}, false;
-        if result.value_pointer  return result, true;
+    // If no hint_storage is provided, then we allocate in temp storage.
+    // The caller should always be aware of this and call the function accordingly!
+    result := Any.{ node.value_type, hint_storage };
+    if result.value_pointer == null {
+        result.value_pointer = Dynamic_New(node.value_type,, temp);
     }
     
     if node.node_type == {
       case Node_Directive;
         directive := node.(*Node_Directive);
         if directive.runtime_node {
-            ret, ok := evaluate_node(script, directive.runtime_node, hint_storage);
-            return ret, ok;
+            result = evaluate_node(script, directive.runtime_node, hint_storage);
         }
-        return Any.{}, true;
         
         
       case Node_Literal;
@@ -78,44 +73,18 @@ evaluate_node :: (
         if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         
         if #complete literal.literal_type == {
-          case .ANY;
-            ret := literal.any;
-            if hint_storage {
-                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
-                ret.value_pointer = hint_storage;
-            }
-            return ret, true;
-            
-          case .STRING;
-            ret: Any = literal.text;
-            if hint_storage {
-                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
-                ret.value_pointer = hint_storage;
-            }
-            return ret, true;
-            
-          case .NUMBER;
-            ret := to_any(*literal.number);
-            if hint_storage {
-                memcpy(hint_storage, ret.value_pointer, ret.type.runtime_size);
-                ret.value_pointer = hint_storage;
-            }
-            return ret, true;
-            
+          case .ANY;     result = literal.any;
+          case .STRING;  result = literal.text;
+          case .NUMBER;  result = to_any(*literal.number);
           case .STRUCT;
-            ret := make_return_value();
-            member_ptr := ret.value_pointer;
+            ti_struct := literal.value_type.(*Type_Info_Struct);
+            assert(ti_struct.type == .STRUCT);
             for literal.aggr.expressions {
-                member := literal.value_type.(*Type_Info_Struct).members[it_index];
-                member_any, ok := evaluate_node(script, it, hint_storage = member_ptr);
-                if member_any.value_pointer != member_ptr {
-                    memcpy(member_ptr, member_any.value_pointer, member.type.runtime_size);
-                }
-                member_ptr += member.type.runtime_size;
+                member     := ti_struct.members[it_index];
+                member_ptr := result.value_pointer + member.offset_in_bytes;
+                member_any := evaluate_node(script, it, member_ptr);
             }
-            return ret, true;
         }
-        return Any.{}, false;
         
         
       case Node_Identifier;
@@ -123,84 +92,78 @@ evaluate_node :: (
         if #complete identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
-            variable_any := Any.{ identifier.value_type, declaration.value_pointer };
-            dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
-            return variable_any, true;
+            result = Any.{ identifier.value_type, declaration.value_pointer };
+            dprint("returning internal variable with value % at %\n", result, result.value_pointer);
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
-            dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
-            return variable.binding, true;
+            result = variable.binding;
+            dprint("returning external variable with value % at %\n", result, result.value_pointer);
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
-            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.pointer);
+            result = Any.{ procedure.type, *procedure.pointer };
+            // dprint("returning external procedure with type % at %\n", as_type(result.type), procedure.pointer);
             assert(identifier.flags & .IS_LVALUE == 0);
-            return Any.{ procedure.type, *procedure.pointer }, true;
             
           case .LITERAL;
-            ret, ok := evaluate_node(script, identifier.literal, hint_storage);
-            return ret, ok;
+            result = evaluate_node(script, identifier.literal, hint_storage);
             
+          case .TYPE;
+            result = script.type_table[identifier.index].type;
             
+          case; #through; 
           case .STRUCT_MEMBER; #through; // we don't evaluate this case since the parent Node_Dot will just grab the struct member offset manually.
           case .UNRESOLVED;
             assert(false, "invalid case %", identifier.identifier_type);
-          
-          case .TYPE;
-            return script.type_table[identifier.index].type, true;
         }
-        return Any.{}, false;
-
+        
         
       case Node_Operation;
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
-            any, ok := evaluate_node(script, operation.overload_procedure, hint_storage);
-            return any, ok;
+            result = evaluate_node(script, operation.overload_procedure, hint_storage);
+        } else {
+            left_any := evaluate_node(script, operation.left);
+            maybe_return_error(script, Null_Any);
+            
+            right_any: Any;
+            if operation.operator_type != .UNARY {
+                right_any = evaluate_node(script, operation.right);
+                maybe_return_error(script, Null_Any);
+            }
+            
+            if operation.name == "=" {
+                // special case: operator = is always a simple memcpy
+                assert(operation.left.flags & .IS_LVALUE != 0);
+                memcpy(left_any.value_pointer, right_any.value_pointer, right_any.type.runtime_size);
+                result = left_any;
+            } else {
+                assert(operation.value_type == result.type);
+                if !execute_builtin_operation(operation.operator_index, left_any.value_pointer, right_any.value_pointer, result.value_pointer) {
+                    set_general_error(script, "Failed while trying to execute builtin operation, operator index: %", operation.operator_index);
+                    return Null_Any;
+                }
+            }
+            
+            dprint("returning result of binary operation % % % -> % %\n", left_any, operation.name, right_any, as_type(result.type), result);
         }
-        
-        left_any, ok := evaluate_node(script, operation.left, hint_storage);
-        if !ok  return Any.{}, false;
-        
-        right_any: Any;
-        if operation.operator_type != .UNARY {
-            right_any, ok = evaluate_node(script, operation.right, hint_storage);
-            if !ok  return Any.{}, false;
-        }
-        
-        // special case: operator = is always a simple memcpy
-        if operation.name == "=" {
-            assert(operation.left.flags & .IS_LVALUE != 0);
-            memcpy(left_any.value_pointer, right_any.value_pointer, right_any.type.runtime_size);
-            return left_any, true;
-        }
-        
-        ret := make_return_value();
-        
-        ok = execute_builtin_operation(operation.operator_index, left_any.value_pointer, right_any.value_pointer, ret.value_pointer);
-        if !ok  return Any.{}, false;
-        
-        dprint("returning result of binary operation: % %\n", as_type(operation.value_type), ret);
-        return ret, true;
         
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
         
-        ret := make_return_value();
+        proc_any := evaluate_node(script, procedure_call.procedure_expression);
+        maybe_return_error(script, Null_Any);
         
-        proc_any, ok := evaluate_node(script, procedure_call.procedure_expression);
-        if !ok  return Any.{}, false;
         assert(proc_any.type.type == .PROCEDURE);
         dprint("proc_type: %\n", as_type(proc_any.type));
         
         arguments_anys := NewArray(procedure_call.arguments.count, Any,, temp);
         for procedure_call.arguments {
-            arg_any, ok := evaluate_node(script, it);
-            if !ok  return Any.{}, false;
-            arguments_anys[it_index] = arg_any;
+            arguments_anys[it_index] = evaluate_node(script, it);
+            maybe_return_error(script, Null_Any);
         }
         
         proc_ptr := proc_any.value_pointer.(**void).*;
@@ -219,26 +182,24 @@ evaluate_node :: (
             
             for arguments_anys 
                 if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
-                    return Any.{}, false;
+                    return Null_Any;
             
             if return_type != type_info(void) {
-                dcArgPointer(script.dyncall_vm, ret.value_pointer);
+                dcArgPointer(script.dyncall_vm, result.value_pointer);
             }
             dcCallVoid(script.dyncall_vm, xx proc_ptr);
         }
-        
-        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, ret.value_pointer });
-        return ret, true;
+        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, result.value_pointer });
         
         
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
-        ret := make_return_value();
-        left_any, ok := evaluate_node(script, node_cast.value);
-        if !remap_data(ret, left_any)  return Any.{}, false;
-        
-        return ret, true;
+        left_any := evaluate_node(script, node_cast.value);
+        if !remap_data(result, left_any) {
+            set_general_error(script, "Failed while trying to remap_data in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
+            return Null_Any;
+        }
         
         
       case Node_Dot;
@@ -246,140 +207,115 @@ evaluate_node :: (
         
         if dot.left == null {
             assert(node.value_type.type == .ENUM || node.value_type.type == .STRUCT);
-            ret, ok := evaluate_node(script, dot.right);
-            return ret, ok;
-        }
-        
-        if dot.left.value_type.type == {
-          case .STRUCT;
-            struct_any, ok := evaluate_node(script, dot.left);
-            if !ok  return Any.{}, false;
-            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
-            
-            dprint("struct value ptr: %\n", struct_any.value_pointer);
-            dprint("member value ptr: %\n", member_any.value_pointer);
-            
-            return member_any, true;
-            
-          case .TYPE;
-            ret, ok := evaluate_node(script, dot.right, hint_storage);
-            return ret, ok;
+            result = evaluate_node(script, dot.right);
+        } else {
+            if dot.left.value_type.type == {
+              case .STRUCT;
+                struct_any := evaluate_node(script, dot.left);
+                maybe_return_error(script, Null_Any);
+                
+                result = Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+                dprint("struct value ptr: %\n", struct_any.value_pointer);
+                dprint("member value ptr: %\n", result.value_pointer);
+                
+              case .TYPE;
+                result = evaluate_node(script, dot.right, hint_storage);
+                maybe_return_error(script, Null_Any);
+            }
         }
         
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         
-        base_any,   ok := evaluate_node(script, subscript.base_expression);
-        index_any:, ok  = evaluate_node(script, subscript.indexing_expression);
+        base_any  := evaluate_node(script, subscript.base_expression);
+        maybe_return_error(script, Null_Any);
+        index_any := evaluate_node(script, subscript.indexing_expression);
+        maybe_return_error(script, Null_Any);
         
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
         
         // get index as s64
         // TODO: maybe improve this. for bytecode, could do an instruction for inplace type cast
-        index_as_s64:, ok = remap_to(s64, index_any);  assert(ok);
+        index_as_s64, ok := remap_to(s64, index_any);  assert(ok);
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
         if index_as_s64 < 0 || index_as_s64 >= array_count {
-            log("Runtime Error: array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
-            return Any.{}, false;
+            set_general_error(script, "Array index '%' was out of bounds! Max index is %.", index_as_s64, array_count-1);
+            return Null_Any;
         }
         
-        element_any := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        dprint("returning result of indexing operation: %\n", element_any);
-        return element_any, true;
+        result = Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
+        dprint("returning result of indexing operation: %\n", result);
         
     
       case Node_Declaration;
+        assert(hint_storage == null);
         declaration := node.(*Node_Declaration);
-        // if declaration.declaration_type != .INTERNAL_VARIABLE {
-        //     log("Error: cannot execute a declaration node with declaration type of %", declaration.declaration_type);
-        //     return false;
-        // }
         
-        // TODO: we need to check that the identifier  not refer to a previously declared variable
-        l_value: Any;
+        l_value := Any.{ declaration.value_type, declaration.value_pointer };
         if declaration.init_expression {
-            r_value, ok := evaluate_node(script, declaration.init_expression);
-            if !ok {
-                log("%: Runtime Error: failed to evaluate init expression of declaration statement!\n", get_location(declaration));
-                return Any.{}, false;
-            }
-            l_value = Any.{ declaration.value_type, declaration.value_pointer };
-            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
+            evaluate_node(script, declaration.init_expression, l_value.value_pointer);
+            maybe_return_error(script, Null_Any);
         } else {
-            l_value = Any.{ declaration.value_type, declaration.value_pointer };
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
-        return l_value, true;
         
         
       case Node_Block;
+        assert(hint_storage == null);
         block := node.(*Node_Block);
-        if block.name && !explicit_call  return Any.{}, true;
+        if block.name && !explicit_call  return Null_Any;
         
         for block.statements {
             dprint("executing statement #%\n", it_index);
-            _, ok := evaluate_node(script, it);
-            if !ok  return Any.{}, false;
+            evaluate_node(script, it);
+            maybe_return_error(script, Null_Any);
         }
-        return Any.{}, true;
         
         
       case Node_If_Statement;
+        assert(hint_storage == null);
         if_statement := node.(*Node_If_Statement);
-        condition, ok := evaluate_node(script, if_statement.condition);
-        if !ok {
-            dprint("failed to evaluate left side of assignment statement!\n");
-            return Any.{}, false;
-        }
+        condition := evaluate_node(script, if_statement.condition);
+        maybe_return_error(script, Null_Any);
+        
         dprint("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
-            _, ok := evaluate_node(script, if_statement.statement);
-            if !ok {
-                dprint("failed to evaluate left side of assignment statement!\n");
-                return Any.{}, false;
-            }
+            evaluate_node(script, if_statement.statement);
+            maybe_return_error(script, Null_Any);
         }
-        return Any.{}, true;
         
         
       case Node_While_Loop;
+        assert(hint_storage == null);
         while_loop := node.(*Node_While_Loop);
         while loop := true {
-            condition, ok := evaluate_node(script, while_loop.condition);
-            if !ok {
-                dprint("failed to evaluate left side of assignment statement!\n");
-                return Any.{}, false;
-            }
+            condition := evaluate_node(script, while_loop.condition);
+            maybe_return_error(script, Null_Any);
+            
             dprint("condition: % %\n", as_type(condition.type), condition);
             
             condition_as_bool: bool;
             any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
-            _, ok = evaluate_node(script, while_loop.statement);
-            if !ok {
-                dprint("failed to evaluate left side of assignment statement!\n");
-                return Any.{}, false;
-            }
+            evaluate_node(script, while_loop.statement);
+            maybe_return_error(script, Null_Any);
         }
-        return Any.{}, true;
         
         
       case Node_For_Loop;
+        assert(hint_storage == null);
         for_loop := node.(*Node_For_Loop);
         if for_loop.control_type == {
           case .ARRAY;
-            array, ok := evaluate_node(script, for_loop.array_expression);
-            if !ok {
-                dprint("failed to evaluate for loop control node!\n");
-                return Any.{}, false;
-            }
+            array := evaluate_node(script, for_loop.array_expression);
+            maybe_return_error(script, Null_Any);
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
             
@@ -396,25 +332,15 @@ evaluate_node :: (
                     it_index += 1;
                 }
                 
-                _, ok := evaluate_node(script, for_loop.statement);
-                if !ok {
-                    dprint("failed to evaluate left side of assignment statement!\n");
-                    return Any.{}, false;
-                }
+                evaluate_node(script, for_loop.statement);
+                maybe_return_error(script, Null_Any);
             }
-            return Any.{}, true;
             
           case .RANGE;
-            lower, ok := evaluate_node(script, for_loop.range.lower);
-            if !ok {
-                dprint("failed to evaluate for_loop.range.lower!\n");
-                return Any.{}, false;
-            }
-            upper:, ok = evaluate_node(script, for_loop.range.upper);
-            if !ok {
-                dprint("failed to evaluate for_loop.range.upper!\n");
-                return Any.{}, false;
-            }
+            lower := evaluate_node(script, for_loop.range.lower);
+            maybe_return_error(script, Null_Any);
+            upper := evaluate_node(script, for_loop.range.upper);
+            maybe_return_error(script, Null_Any);
             
             control_type := for_loop.range.lower.value_type;
             upper_as_s64: int;
@@ -430,36 +356,36 @@ evaluate_node :: (
                 // TODO: for now we just don't set it_index. 
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
-                _, ok := evaluate_node(script, for_loop.statement);
-                if !ok {
-                    dprint("failed to evaluate left side of assignment statement!\n");
-                    return Any.{}, false;
-                }
+                evaluate_node(script, for_loop.statement);
+                maybe_return_error(script, Null_Any);
             }
-            return Any.{}, true;
             
           case .LIST;
             _it_index: int;
             for_loop.it_index_decl.value_pointer = *_it_index;
             for for_loop.list {
                 _it_index = it_index;
-                it_any, ok := evaluate_node(script, it);
-                if !ok  return Any.{}, false;
+                it_any := evaluate_node(script, it);
+                maybe_return_error(script, Null_Any);
+
                 for_loop.it_decl.value_pointer = it_any.value_pointer;
-                _, ok = evaluate_node(script, for_loop.statement);
-                if !ok {
-                    dprint("failed to evaluate for loop statement!\n");
-                    return Any.{}, false;
-                }
+                evaluate_node(script, for_loop.statement);
+                maybe_return_error(script, Null_Any);
             }
-            return Any.{}, true;
         }
         
-        return Any.{}, false;
+        
+      case;
+        set_general_error(script, "Unhandled node type '%' in evaluate_node.", node.node_type);
     }
     
-    assert(false);
-    return Any.{}, false;
+    // copy result to hint_storage if need be
+    // this may occur for certain small values where we just set result from another Any
+    // doing it this way just prevents us having to do the memcpy in each individual case
+    if hint_storage != null && result.value_pointer != hint_storage {
+        memcpy(hint_storage, result.value_pointer, result.type.runtime_size);
+    }
+    return result;
 }
 
 

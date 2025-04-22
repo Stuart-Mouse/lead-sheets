@@ -92,8 +92,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         expr := my_parse_expression(script, 0);
         if !expr  return null;
         
-        // TODO: maybe allow comma separated list of elements to iterate over instead of array literals? 
-        //       may jive better with lack of pointers, since lvalue-ness can be implicit
         if expect_token_type(*lexer, .SPREAD) {
             dprint("CONTROL TYPE IS RANGE\n");
             for_loop.control_type = .RANGE;
@@ -312,7 +310,7 @@ parse_number :: (s: string) -> Small_Any, bool {
 parse_leaf :: (using script: *Script) -> *Node {
     dprint("parse_leaf()\n");
     dprint_push_indent();
-    token := get_token_or_return(*lexer, null);
+    token := get_token(*lexer);
     
     is_operator, operator_type, precedence := token_is_operator(token, expect_unary = true);
     if is_operator && operator_type == .UNARY {
@@ -506,9 +504,6 @@ parse_comma_separated_expressions :: (using script: *Script) -> ([] *Node, bool)
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
-    // dprint("parse_increasing_precedence(left_i = %, min_prec = %)\n", left, min_prec); 
-    // dprint_push_indent();
-    
     token := peek_token(*lexer);
     
     if token.type == .QUESTION_MARK {
@@ -520,8 +515,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         left.(*Node_Literal).flags |= .IS_MALLEABLE;
     }
     
-    // should this go here or up in main loop of parse_expression?
-    // will require some refactoring to hoist up there
+    // In addition to normal binary operators, we have a few binary-operator-like constructs that have essentially infinite operator precedence.
+    // These are open parenthesis for procedure calls, dot for struct member access and cast, and open bracket for array indexing.
     if token.type == {
       case .OPEN_PAREN;
         get_token(*lexer);
@@ -573,6 +568,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         return make_subscript(script, open_bracket_token, left, indexing_expr);
     }
     
+    // We only consume the binary operator here if it is of a higher precedence than the previous binary operator.
+    // If we hit a binary operator but its precedence is too low, we return left back to caller.
     is_operator, operator_type, precedence := token_is_operator(token);
     if is_operator && operator_type != .UNARY {
         if precedence <= min_prec  return left;

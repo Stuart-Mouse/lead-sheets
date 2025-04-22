@@ -332,10 +332,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     
       case Node_Declaration;
         declaration := node.(*Node_Declaration);
-        // if declaration.declaration_type != .INTERNAL_VARIABLE {
-        //     log("Error: cannot execute a declaration node with declaration type of %", declaration.declaration_type);
-        //     return false;
-        // }
         
         // early return on macro for now so that we don't overwrite value of malleable literal
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl

@@ -136,14 +136,6 @@ init_lexer :: (lexer: *Lexer, file := "", location := Source_Code_Location.{ "",
     }
 }
 
-// convenience macro 
-// TODO: reconsider whether we want to keep this around...
-get_token_or_return :: (lexer: *Lexer, code: Code) -> Token #expand {
-    token := get_token(lexer);
-    if token.type == .ERROR  `return #insert code;
-    return token;
-}
-
 // consumes a token
 get_token :: (using lexer: *Lexer) -> Token {
     return_token := token_buffer[next_token_index];
