@@ -166,7 +166,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
             arguments_anys[it_index] = it.*; // pass *Node itself
         } else {
             arguments_anys[it_index] = evaluate_node(script, it.*);
-            maybe_return_error(script, false);
+            if !!script.error  return false;
         }
     }
     

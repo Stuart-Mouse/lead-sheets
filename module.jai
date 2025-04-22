@@ -348,12 +348,3 @@ dprint_push_indent :: () #expand {
     }
 }
 
-maybe_return_error :: (script: *Script, value: $R) #expand {
-    if script.error.type != .NO_ERROR then `return value;
-}
-
-maybe_return_error :: (script: *Script) #expand {
-    if script.error.type != .NO_ERROR then `return;
-}
-
-

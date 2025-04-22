@@ -49,7 +49,7 @@ evaluate_node :: (
     
     if script.evaluate_callback {
         result := script.evaluate_callback(script, node, hint_storage, explicit_call);
-        maybe_return_error(script, Null_Any);
+        if !!script.error  return Null_Any;
         if result.type != null  return result;
     }
     
@@ -126,12 +126,12 @@ evaluate_node :: (
             result = evaluate_node(script, operation.overload_procedure, hint_storage);
         } else {
             left_any := evaluate_node(script, operation.left);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
             
             right_any: Any;
             if operation.operator_type != .UNARY {
                 right_any = evaluate_node(script, operation.right);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
             }
             
             if operation.name == "=" {
@@ -155,7 +155,7 @@ evaluate_node :: (
         procedure_call := node.(*Node_Procedure_Call);
         
         proc_any := evaluate_node(script, procedure_call.procedure_expression);
-        maybe_return_error(script, Null_Any);
+        if !!script.error  return Null_Any;
         
         assert(proc_any.type.type == .PROCEDURE);
         dprint("proc_type: %\n", as_type(proc_any.type));
@@ -163,7 +163,7 @@ evaluate_node :: (
         arguments_anys := NewArray(procedure_call.arguments.count, Any,, temp);
         for procedure_call.arguments {
             arguments_anys[it_index] = evaluate_node(script, it);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
         }
         
         proc_ptr := proc_any.value_pointer.(**void).*;
@@ -212,7 +212,7 @@ evaluate_node :: (
             if dot.left.value_type.type == {
               case .STRUCT;
                 struct_any := evaluate_node(script, dot.left);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
                 
                 result = Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
                 dprint("struct value ptr: %\n", struct_any.value_pointer);
@@ -220,7 +220,7 @@ evaluate_node :: (
                 
               case .TYPE;
                 result = evaluate_node(script, dot.right, hint_storage);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
             }
         }
         
@@ -229,9 +229,9 @@ evaluate_node :: (
         subscript := node.(*Node_Subscript);
         
         base_any  := evaluate_node(script, subscript.base_expression);
-        maybe_return_error(script, Null_Any);
+        if !!script.error  return Null_Any;
         index_any := evaluate_node(script, subscript.indexing_expression);
-        maybe_return_error(script, Null_Any);
+        if !!script.error  return Null_Any;
         
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
         
@@ -257,7 +257,7 @@ evaluate_node :: (
         l_value := Any.{ declaration.value_type, declaration.value_pointer };
         if declaration.init_expression {
             evaluate_node(script, declaration.init_expression, l_value.value_pointer);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
         } else {
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
@@ -271,7 +271,7 @@ evaluate_node :: (
         for block.statements {
             dprint("executing statement #%\n", it_index);
             evaluate_node(script, it);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
         }
         
         
@@ -279,7 +279,7 @@ evaluate_node :: (
         assert(hint_storage == null);
         if_statement := node.(*Node_If_Statement);
         condition := evaluate_node(script, if_statement.condition);
-        maybe_return_error(script, Null_Any);
+        if !!script.error  return Null_Any;
         
         dprint("condition: % %\n", as_type(condition.type), condition);
         
@@ -287,7 +287,7 @@ evaluate_node :: (
         any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
             evaluate_node(script, if_statement.statement);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
         }
         
         
@@ -296,7 +296,7 @@ evaluate_node :: (
         while_loop := node.(*Node_While_Loop);
         while loop := true {
             condition := evaluate_node(script, while_loop.condition);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
             
             dprint("condition: % %\n", as_type(condition.type), condition);
             
@@ -305,7 +305,7 @@ evaluate_node :: (
             if !condition_as_bool  break loop;
             
             evaluate_node(script, while_loop.statement);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
         }
         
         
@@ -315,7 +315,7 @@ evaluate_node :: (
         if for_loop.control_type == {
           case .ARRAY;
             array := evaluate_node(script, for_loop.array_expression);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
             
@@ -333,14 +333,14 @@ evaluate_node :: (
                 }
                 
                 evaluate_node(script, for_loop.statement);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
             }
             
           case .RANGE;
             lower := evaluate_node(script, for_loop.range.lower);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
             upper := evaluate_node(script, for_loop.range.upper);
-            maybe_return_error(script, Null_Any);
+            if !!script.error  return Null_Any;
             
             control_type := for_loop.range.lower.value_type;
             upper_as_s64: int;
@@ -357,7 +357,7 @@ evaluate_node :: (
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
                 evaluate_node(script, for_loop.statement);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
             }
             
           case .LIST;
@@ -366,11 +366,11 @@ evaluate_node :: (
             for for_loop.list {
                 _it_index = it_index;
                 it_any := evaluate_node(script, it);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
 
                 for_loop.it_decl.value_pointer = it_any.value_pointer;
                 evaluate_node(script, for_loop.statement);
-                maybe_return_error(script, Null_Any);
+                if !!script.error  return Null_Any;
             }
         }
         
