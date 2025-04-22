@@ -63,7 +63,6 @@ typecheck_node :: (
         result := script.typecheck_callback(script, node, check_flags, hint_type);
         if !!script.error  return null;
         if result  return result;
-        print("result was %\n", result);
     }
     
     if node.node_type == {

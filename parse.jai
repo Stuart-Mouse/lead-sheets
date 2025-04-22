@@ -434,14 +434,10 @@ parse_leaf :: (using script: *Script) -> *Node {
 
 // will parse a single string as a statement, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_statement :: (script: *Script, statement: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
+parse_statement_string :: (script: *Script, statement: string, expect_eof := true) -> *Node, *u8 {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
-    
-    prev_allocator := get_pool_allocator(*script.pool);
-    defer get_pool_allocator(*script.pool) = prev_allocator;
-    if allocator  get_pool_allocator(*script.pool) = allocator;
     
     // we have to reinit lexer for every statement
     init_lexer(*script.lexer, statement);
@@ -453,14 +449,10 @@ parse_statement :: (script: *Script, statement: string, allocator: *Allocator = 
 
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_expression_string :: (script: *Script, expr: string, allocator: *Allocator = null, expect_eof := true) -> *Node, *u8 {
+parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -> *Node, *u8 {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
-    
-    prev_allocator := get_pool_allocator(*script.pool);
-    defer get_pool_allocator(*script.pool) = prev_allocator;
-    if allocator  get_pool_allocator(*script.pool) = allocator;
     
     // we have to reinit lexer for every expression
     // TODO: set the lexer source location based on dom node?

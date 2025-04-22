@@ -1,5 +1,5 @@
 
-LS :: #import "Lead_Sheets"(DEBUG = true);
+LS :: #import "Lead_Sheets"()(DEBUG = true);
 
 #load "imgui_sdl_gl_docking.jai";
 #load "imgui_extras.jai";
@@ -272,7 +272,7 @@ main :: () {
                     imgui.Text(it.name);
                     
                     imgui.TableNextColumn();
-                    imgui.Text("%", it.ptr);
+                    imgui.Text("%", it.procedure.pointer);
                     
                     imgui.TableNextColumn();
                     imgui.Text("%", (*it.type).(*Type).*);
