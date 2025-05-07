@@ -22,7 +22,8 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     script.flags |= .PARSED;
     
     if !typecheck_script(script) {
-        log("Error: failed to typecheck script.\n");
+        log("Error: failed to typecheck script:\n");
+        log(format_error(script.error));
         return false;
     }
     
@@ -328,6 +329,10 @@ parse_leaf :: (using script: *Script) -> *Node {
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
             literal := make_struct_literal(script, token_after_dot, struct_contents);
+            // @Hack: should have better means of checking for question mark after a struct literal
+            if expect_token_type(*lexer, .QUESTION_MARK) {
+                literal.flags |= .IS_MALLEABLE;
+            }
             return make_dot(script, token, null, literal);
         }
         else if token_after_dot.type == .IDENTIFIER {
@@ -505,6 +510,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             return null;
         }
         left.(*Node_Literal).flags |= .IS_MALLEABLE;
+        
+        token = peek_token(*lexer);
     }
     
     // In addition to normal binary operators, we have a few binary-operator-like constructs that have essentially infinite operator precedence.
@@ -542,6 +549,10 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok  return null;
             literal := make_struct_literal(script, token_after_dot, struct_contents);
+            // @Hack: should have better means of checking for question mark after a struct literal
+            if expect_token_type(*lexer, .QUESTION_MARK) {
+                literal.flags |= .IS_MALLEABLE;
+            }
             return make_dot(script, dot_token, left, literal);
         }
         

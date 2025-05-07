@@ -981,7 +981,14 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     // dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
     
     if declaration.flags & .MACRO {
-        if declaration.init_expression.node_type != Node_Literal {
+        is_acceptable_init_expression := declaration.init_expression.node_type == Node_Literal;
+        if !is_acceptable_init_expression && declaration.init_expression.node_type == Node_Dot {
+            dot := declaration.init_expression.(*Node_Dot);
+            if dot.right.node_type == Node_Literal {
+                is_acceptable_init_expression = true;
+            }
+        }
+        if !is_acceptable_init_expression {
             set_general_error(script, "%: Error: macro declarations can only be made to simple literals at this time.", get_location(declaration));
             return;
         }

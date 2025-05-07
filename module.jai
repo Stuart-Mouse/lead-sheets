@@ -88,12 +88,15 @@ init_script :: (script: *Script, stack_size := 1024) {
 }
 
 // ensures no name conflicts
-set_variable :: (script: *Script, name: string, any: Any) {
+set_variable :: (script: *Script, name: string, any: Any, replacement_value := false) {
     for *script.variables {
         if it.name == name {
             it.binding = any;
             return;
         }
+    }
+    if replacement_value {
+        log("Called set_variable with replacement_value flag, but no such pre-existing variable '%'.", name);
     }
     array_add(*script.variables, .{ name, any });
 }
