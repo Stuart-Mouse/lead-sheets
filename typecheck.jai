@@ -544,7 +544,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     }
     
     // NOTE: we don't attach an error message here
-    set_error(script, .UNRESOLVED_IDENTIFIER, "");
+    set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
     return;
 }
 

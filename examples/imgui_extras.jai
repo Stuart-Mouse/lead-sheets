@@ -2,11 +2,11 @@
 // TODO: optionally pass *Context to callback?
 InputTextDynamicCallbackUserData :: struct {
     buf:                    *[..] u8;
-    ChainCallback:          ImGui.InputTextCallback;
+    ChainCallback:          InputTextCallback;
     ChainCallbackUserData:  *void;
 }
 
-InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCallbackData) -> s32 #c_call {
+InputTextDynamicCallback : InputTextCallback : (data: *InputTextCallbackData) -> s32 #c_call {
     new_context: #Context;
     push_context new_context {
         user_data := cast(*InputTextDynamicCallbackUserData) data.UserData;
@@ -28,12 +28,16 @@ InputTextDynamicCallback : ImGui.InputTextCallback : (data: *ImGui.InputTextCall
     return 0;
 }
 
+InputText :: inline (label: *u8, buf: []u8, flags: InputTextFlags = .None, callback: InputTextCallback = null, user_data: *void = null) -> bool {
+    return InputText(label, buf.data, xx buf.count, flags, callback, user_data);
+}
+
 InputTextDynamic :: (
     label:      *u8, 
     buf:        *[..] u8, 
-    flags:      ImGui.InputTextFlags    = .None, 
-    callback:   ImGui.InputTextCallback = null, 
-    user_data:  *void                   = null
+    flags:      InputTextFlags    = .None, 
+    callback:   InputTextCallback = null, 
+    user_data:  *void             = null
 ) -> bool {
     if !buf.data || !buf.count {
         array_reserve(buf, 8);
@@ -44,15 +48,15 @@ InputTextDynamic :: (
         ChainCallback         = callback,
         ChainCallbackUserData = user_data,
     };
-    return ImGui.InputText(label, buf.data, buf.allocated.(u64), flags | .CallbackResize, InputTextDynamicCallback, *cb_user_data);
+    return InputText(label, buf.data, buf.allocated.(u64), flags | .CallbackResize, InputTextDynamicCallback, *cb_user_data);
 }
 
 // InputTextWithHintDynamic :: (
 //     label     : *u8, 
 //     hint      : *u8, 
 //     buf       : *[..] u8, 
-//     flags     : ImGui.InputTextFlags    = xx 0, 
-//     callback  : ImGui.InputTextCallback = null, 
+//     flags     : InputTextFlags    = xx 0, 
+//     callback  : InputTextCallback = null, 
 //     user_data : *void                   = null
 // ) -> bool {
 //     cb_user_data : InputTextDynamicCallbackUserData = .{
@@ -67,8 +71,8 @@ InputTextDynamic :: (
 //     label     : *u8, 
 //     buf       : *[..] u8, 
 //     size      : Vector2                 = .{}, 
-//     flags     : ImGui.InputTextFlags    = xx 0, 
-//     callback  : ImGui.InputTextCallback = null, 
+//     flags     : InputTextFlags    = xx 0, 
+//     callback  : InputTextCallback = null, 
 //     user_data : *void                   = null
 // ) -> bool {
 //     cb_user_data : InputTextDynamicCallbackUserData = .{
@@ -80,15 +84,15 @@ InputTextDynamic :: (
 // }
 
 ComboTypes :: (
-    label            : *u8,
-    value            : *Type,
-    types            : [] Type, 
-    combo_flags      : ImGui.ComboFlags      = xx 0, 
-    selectable_flags : ImGui.SelectableFlags = xx 0
+    label:             *u8,
+    value:             *Type,
+    types:             [] Type, 
+    combo_flags:       ComboFlags      = .None, 
+    selectable_flags:  SelectableFlags = .None
 ) {
-    if ImGui.BeginCombo(label, tprint("%\0", value).data, combo_flags) {
+    if BeginCombo(label, tprint("%\0", value).data, combo_flags) {
         for types {
-            if ImGui.Selectable(
+            if Selectable(
                 label    = tprint("%\0", it).data, 
                 selected = value.* == it, 
                 flags    = selectable_flags
@@ -96,145 +100,157 @@ ComboTypes :: (
                 value.* = it;
             }
         }
-        ImGui.EndCombo();
+        EndCombo();
     }
 }
 
+// returns true if value was changed
 ComboEnum :: (
-    label            : *u8,
-    value            : *$T, 
-    combo_flags      : ImGui.ComboFlags      = xx 0, 
-    selectable_flags : ImGui.SelectableFlags = xx 0
-) #modify {
-    return (cast(*Type_Info)T).type == .ENUM;
+    label:              *u8,
+    value:              *$T, 
+    selectable_values:  ..T,
+    combo_flags:        ComboFlags      = .None, 
+    selectable_flags:   SelectableFlags = .None
+) -> bool #modify {
+    return T.(*Type_Info).type == .ENUM;
 } {
-    enum_ti := cast(*Type_Info_Enum) type_info(T);
+    enum_ti := T.(*Type_Info_Enum);
     
     current_value_index := 0;
     for enum_ti.values {
-        if value.* == xx it {
+        if value.* == it.(T) {
             current_value_index = it_index;
             break;
         }
     }
     current_value_name := enum_ti.names[current_value_index];
     
-    if ImGui.BeginCombo(label, current_value_name.data, combo_flags) {
+    new_value := value.*;
+    if BeginCombo(label, current_value_name.data, combo_flags) {
         for name: enum_ti.names {
-            if ImGui.Selectable(
+            if selectable_values && !array_find(selectable_values, enum_ti.values[it_index].(T)) then continue;
+            if Selectable(
                 label    = name.data, 
-                selected = value.* == xx enum_ti.values[it_index], 
+                selected = value.* == enum_ti.values[it_index].(T), 
                 flags    = selectable_flags
             ) {
-                value.* = xx enum_ti.values[it_index];
+                new_value = enum_ti.values[it_index].(T);
             }
         }
-        ImGui.EndCombo();
+        EndCombo();
     }
+    
+    // set value to new value after evaluating return value condition
+    defer value.* = new_value;
+    return value.* != new_value;
 }
 
 
 ComboEnumDynamic :: (
-    label            : *u8,
-    value            : Any, 
-    combo_flags      : ImGui.ComboFlags      = xx 0, 
-    selectable_flags : ImGui.SelectableFlags = xx 0
-) {
-    if value.type.type != .ENUM  return;
-    ti_enum := cast(*Type_Info_Enum) value.type;
+    label:              *u8,
+    value:              Any, 
+    combo_flags:        ComboFlags      = .None, 
+    selectable_flags:   SelectableFlags = .None
+) -> bool {
+    if value.type.type != .ENUM  return false;
+    ti_enum := value.type.(*Type_Info_Enum);
     
     s64_value: s64;
     dynamic_int_cast(s64_value, value);
+    s64_value_before := s64_value;
     
     found, current_value_index := array_find(ti_enum.values, s64_value);
     if !found then current_value_index = 0;
     
     current_value_name  := ti_enum.names[current_value_index];
     
-    if ImGui.BeginCombo(label, current_value_name.data, combo_flags) {
+    if BeginCombo(label, current_value_name.data, combo_flags) {
         for name: ti_enum.names {
-            if ImGui.Selectable(
+            if Selectable(
                 label    = name.data, 
-                selected = s64_value == xx ti_enum.values[it_index], 
+                selected = s64_value == ti_enum.values[it_index], 
                 flags    = selectable_flags
             ) {
-                s64_value = xx ti_enum.values[it_index];
+                s64_value = ti_enum.values[it_index];
             }
         }
-        ImGui.EndCombo();
+        EndCombo();
     }
     
     dynamic_int_cast(value, s64_value);
+    return s64_value == s64_value_before;
 }
 
 
 TreeNodeAny :: (
     label: *u8,
     value: Any,
-    flags: ImGui.TreeNodeFlags = .None
+    flags: TreeNodeFlags = .None
 ) {
     if value.type.type == {
       case .STRUCT;
-        if ImGui.TreeNodeEx(label, flags) {
-            ti_struct := cast(*Type_Info_Struct) value.type;
+        if TreeNodeEx(label, flags) {
+            ti_struct := value.type.(*Type_Info_Struct);
             last_member_offset := -1;
             for ti_struct.members {
                 if it.flags & .CONSTANT  continue;
-                if it.offset_in_bytes <= last_member_offset  continue;
+                if it.offset_in_bytes <= last_member_offset  continue; // skips #place members
                 last_member_offset = it.offset_in_bytes;
-                TreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
+                TreeNodeAny(it.name.data, Any.{ it.type, value.value_pointer + it.offset_in_bytes }, flags);
             }
-            ImGui.TreePop();
-        } else {
-            ImGui.SameLine();
-            ImGui.Text("%", value);
+            TreePop();
         }
         
       case .ARRAY;
-        if ImGui.TreeNodeEx(label, flags) {
-            ti_array := cast(*Type_Info_Array) value.type;
-            count, data := get_array_count_and_data(value.value_pointer, xx value.type);
+        count, data := get_array_count_and_data(value.value_pointer, xx value.type);
+        is_open := TreeNodeEx(label, flags);
+        SameLine();
+        TextDisabled("% elements", count);
+        if is_open {
+            ti_array := value.type.(*Type_Info_Array);
             member_any := Any.{ ti_array.element_type, data };
             for 0..count-1 {
-                TreeNodeAny(tprint("[%]\0", it).data, flags);
-                member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
+                TreeNodeAny(tprint("[%]\0", it).data, member_any, flags);
+                member_any.value_pointer += ti_array.element_type.runtime_size;
             }
-            ImGui.TreePop();
-        } else {
-            ImGui.SameLine();
-            ImGui.Text("%", value);
+            TreePop();
         }
         
       case .ENUM;
         ComboEnumDynamic(label, value);
         
       case .INTEGER;
-        s32_value: s32;
-        dynamic_int_cast(s32_value, value);
-        ImGui.InputInt(label, *s32_value);
-        dynamic_int_cast(value, s32_value);
-        return;
+        data_type: DataType;
+        if value.type.(*Type_Info_Integer).signed {
+            if value.type.runtime_size == {
+                case 1; data_type = .S8;
+                case 2; data_type = .S16;
+                case 4; data_type = .S32;
+                case 8; data_type = .S64;
+            }
+        } else {
+            if value.type.runtime_size == {
+                case 1; data_type = .U8;
+                case 2; data_type = .U16;
+                case 4; data_type = .U32;
+                case 8; data_type = .U64;
+            }
+        }
+        InputScalar(tprint("%_value\0", label).data, data_type, value.value_pointer);
         
       case .FLOAT;
-        f32_value: float32;
-        dynamic_float_cast(f32_value, value);
-        ImGui.InputFloat(label, *f32_value);
-        dynamic_float_cast(value, f32_value);
-        return;
+        data_type: DataType;
+        if value.type.runtime_size == {
+            case 4; data_type = .Float;
+            case 8; data_type = .Double;
+        }
+        InputScalar(tprint("%_value\0", label).data, data_type, value.value_pointer);
         
       case .BOOL;
-        bool_value: bool;
-        dynamic_int_cast(bool_value, value);
-        if (ImGui.RadioButton(label, bool_value)) { 
-            bool_value = !bool_value;
-        } 
-        dynamic_int_cast(value, bool_value);
-        return;
+        Checkbox(label, xx value.value_pointer);
         
       case;
-        ImGui.BulletText("%: \"%\"", label, value);
-        return;
-
+        BulletText("%: \"%\"", label, value);
     }
 }
 
@@ -242,22 +258,22 @@ TreeNodeAny :: (
 TableTreeNodeAny :: (
     label: string,
     value: Any,
-    flags: ImGui.TreeNodeFlags = .None
+    flags: TreeNodeFlags = .None
 ) {
-    name_column :: inline (label: string, flags: ImGui.TreeNodeFlags) {  
-        ImGui.TreeNodeEx(temp_c_string(label), flags);
+    name_column :: inline (label: string, flags: TreeNodeFlags) {  
+        TreeNodeEx(temp_c_string(label), flags);
     }
     type_column :: inline (value: Any) {  
-        ImGui.TableNextColumn();
-        ImGui.Text("%", (*value.type).(*Type).*);
+        TableNextColumn();
+        Text("%", (*value.type).(*Type).*);
     }
     
-    ImGui.TableNextRow(); ImGui.TableNextColumn();
+    TableNextRow(); TableNextColumn();
     if value.type.type == {
       case .STRUCT;
-        is_open := ImGui.TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        if !is_open  ImGui.Text("%", value);
+        is_open := TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
+        TableNextColumn();
+        if !is_open  Text("%", value);
         type_column(value);
         if is_open {
             ti_struct := value.type.(*Type_Info_Struct);
@@ -266,69 +282,79 @@ TableTreeNodeAny :: (
                 if it.flags & .CONSTANT  continue;
                 if it.offset_in_bytes <= last_member_offset  continue;
                 last_member_offset = it.offset_in_bytes;
-                TableTreeNodeAny(it.name, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
+                TableTreeNodeAny(it.name, Any.{ it.type, value.value_pointer + it.offset_in_bytes }, flags);
             }
-            ImGui.TreePop();
+            TreePop();
         }
         
       case .ARRAY;
-        is_open := ImGui.TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        if !is_open  ImGui.Text("%", value);
+        count, data := get_array_count_and_data(value.value_pointer, xx value.type);
+        is_open := TreeNodeEx(temp_c_string(label), flags | .SpanFullWidth);
+        TableNextColumn();
+        if !is_open  TextDisabled("% elements", count);
         type_column(value);
         if is_open {
             ti_array := value.type.(*Type_Info_Array);
-            count, data := get_array_count_and_data(value.value_pointer, xx value.type);
             member_any := Any.{ ti_array.element_type, data };
             for 0..count-1 {
-                TableTreeNodeAny(tprint("[%]\0", it), flags);
-                member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
+                TableTreeNodeAny(tprint("[%]\0", it), member_any, flags);
+                member_any.value_pointer += ti_array.element_type.runtime_size;
             }
-            ImGui.TreePop();
+            TreePop();
         }
         
       case .ENUM;
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        imgui.SetNextItemWidth(-FLOAT32_MIN);
+        TableNextColumn();
+        SetNextItemWidth(-FLOAT32_MIN);
         ComboEnumDynamic(tprint("%_value\0", label).data, value);
         type_column(value);
         
       case .INTEGER;
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        s32_value: s32;
-        dynamic_int_cast(s32_value, value);
-        imgui.SetNextItemWidth(-FLOAT32_MIN);
-        ImGui.InputInt(tprint("%_value\0", label).data, *s32_value);
-        dynamic_int_cast(value, s32_value);
+        TableNextColumn();
+        SetNextItemWidth(-FLOAT32_MIN);
+        data_type: DataType;
+        if value.type.(*Type_Info_Integer).signed {
+            if value.type.runtime_size == {
+                case 1; data_type = .S8;
+                case 2; data_type = .S16;
+                case 4; data_type = .S32;
+                case 8; data_type = .S64;
+            }
+        } else {
+            if value.type.runtime_size == {
+                case 1; data_type = .U8;
+                case 2; data_type = .U16;
+                case 4; data_type = .U32;
+                case 8; data_type = .U64;
+            }
+        }
+        InputScalar(tprint("%_value\0", label).data, data_type, value.value_pointer);
         type_column(value);
         
       case .FLOAT;
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        f32_value: float32;
-        dynamic_float_cast(f32_value, value);
-        imgui.SetNextItemWidth(-FLOAT32_MIN);
-        ImGui.InputFloat(tprint("%_value\0", label).data, *f32_value);
-        dynamic_float_cast(value, f32_value);
+        TableNextColumn();
+        SetNextItemWidth(-FLOAT32_MIN);
+        data_type: DataType;
+        if value.type.runtime_size == {
+            case 4; data_type = .Float;
+            case 8; data_type = .Double;
+        }
+        InputScalar(tprint("%_value\0", label).data, data_type, value.value_pointer);
         type_column(value);
         
       case .BOOL;
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        bool_value: bool;
-        dynamic_int_cast(bool_value, value);
-        if (ImGui.RadioButton(tprint("%_value\0", label).data, bool_value)) {
-            bool_value = !bool_value;
-        } 
-        dynamic_int_cast(value, bool_value);
+        TableNextColumn();
+        RadioButton(tprint("%_value\0", label).data, xx value.value_pointer);
         type_column(value);
         
       case;
         name_column(label, flags | .Leaf | .Bullet | .NoTreePushOnOpen | .SpanFullWidth);
-        ImGui.TableNextColumn();
-        ImGui.Text("%", value);
+        TableNextColumn();
+        Text("%", value);
         type_column(value);
     }
 }
@@ -336,23 +362,23 @@ TableTreeNodeAny :: (
 // TreeNodePoly :: (
 //     label : *u8,
 //     value : Any,
-//     flags : ImGui.TreeNodeFlags = .None
+//     flags : TreeNodeFlags = .None
 // ) {
 //     TI :: type_info(T);
     
 //     #if value.type.type == {
 //       case .STRUCT;
-//         if ImGui.TreeNodeEx(label, flags) {
+//         if TreeNodeEx(label, flags) {
 //             ti_struct := cast(*Type_Info_Struct) value.type;
 //             for ti_struct.members {
 //                 if it.flags & .CONSTANT  continue;
 //                 TreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
 //             }
-//             ImGui.TreePop();
+//             TreePop();
 //         }
         
 //       case .ARRAY;
-//         if ImGui.TreeNodeEx(label, flags) {
+//         if TreeNodeEx(label, flags) {
 //             ti_array := cast(*Type_Info_Array) value.type;
             
 //             data       : *void = ---;
@@ -372,7 +398,7 @@ TableTreeNodeAny :: (
 //                 TreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
 //                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
 //             }
-//             ImGui.TreePop();
+//             TreePop();
 //         }
         
 //       case .ENUM;
@@ -381,36 +407,42 @@ TableTreeNodeAny :: (
 //       case .INTEGER;
 //         s32_value: s32;
 //         dynamic_int_cast(s32_value, value);
-//         ImGui.InputInt(label, *s32_value);
+//         InputInt(label, *s32_value);
 //         dynamic_int_cast(value, s32_value);
 //         return;
         
 //       case .FLOAT;
 //         f32_value: float32;
 //         dynamic_int_cast(f32_value, value);
-//         ImGui.InputFloat(label, *f32_value);
+//         InputFloat(label, *f32_value);
 //         dynamic_int_cast(value, f32_value);
 //         return;
         
 //       case .BOOL;
 //         bool_value: bool;
 //         dynamic_int_cast(bool_value, value);
-//         if (ImGui.RadioButton(label, bool_value)) { 
+//         if (RadioButton(label, bool_value)) { 
 //             bool_value = !bool_value;
 //         } 
 //         dynamic_int_cast(value, bool_value);
 //         return;
         
 //       case;
-//         ImGui.BulletText("%: \"%\"", label, value);
+//         BulletText("%: \"%\"", label, value);
 //         return;
 
 //     }
 // }
 
 
+InputInt64 :: (label: *u8, value: *int) {
+    InputScalar(label, .S64, value);
+}
+
 
 #scope_file
+
+using ImGui;
 
 next_power_of_2 :: (num: u32) -> u32 {
     if num != 0 {
@@ -464,34 +496,5 @@ dynamic_int_cast :: (dst: Any, src: Any, enforce_size: bool = false) -> bool {
     return true;
 }
 
-dynamic_float_cast :: (dst: Any, src: Any) -> bool {
-    if dst.type.type != .FLOAT  return false;
-    
-    f64_value: float64;
-    
-    if src.type.type == {
-        case .FLOAT;
-            if src.type.runtime_size == {
-                case 4; f64_value = src.value_pointer.(*float32).*.(float64);
-                case 8; f64_value = src.value_pointer.(*float64).*.(float64);
-            }
-        case .INTEGER;
-            if src.type.runtime_size == {
-                case 1; f64_value = src.value_pointer.(*s8 ).*.(float64);
-                case 2; f64_value = src.value_pointer.(*s16).*.(float64);
-                case 4; f64_value = src.value_pointer.(*s32).*.(float64);
-                case 8; f64_value = src.value_pointer.(*s64).*.(float64);
-            }
-        case;
-            return false;
-    }
-    
-    if dst.type.runtime_size == {
-        case 4; dst.value_pointer.(*float32).* = f64_value.(float32);
-        case 8; dst.value_pointer.(*float64).* = f64_value.(float64);
-    }
-    
-    return true;
-}
-
 #import "Reflection";
+

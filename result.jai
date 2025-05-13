@@ -145,7 +145,15 @@ format_error :: (builder: *String_Builder, error: Error) {
         
       case .TYPECHECK_ERROR;
         node := error.typecheck.node;
-        print_to_builder(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+        if node {
+            print_to_builder(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+            if error.type == {
+              case .UNRESOLVED_IDENTIFIER;
+                print(builder, "Unresolved identifier: '%'", node.(*Node_Identifier).name);
+            }
+        } else {
+            print(builder, "[node is null! error type is %] ", error.type);
+        }
         append(builder, error.message);
         
       case; #through; // temporary, until other cases are implemented
@@ -175,10 +183,12 @@ set_parse_error :: (script: *Script, format: string, args: ..Any, loc := #caller
 
 set_typecheck_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+    script.error.typecheck.node = node;
 } @PrintLike
 
 set_exec_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.EXEC_ERROR, loc := #caller_location) {
     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+    // script.error.exec.node = node;
 } @PrintLike
 
 
