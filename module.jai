@@ -332,7 +332,7 @@ using,except(next_power_of_two) Hash_Table :: #import "Hash_Table";
 #import "Compiler";     // for 'is_subclass_of'
 
 #import "Utils";
-#import "Data_Packer";  // for 'remap_data'
+#import "Convert";
 #import "dyncall";
 
 

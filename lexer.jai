@@ -219,7 +219,8 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         };
     }
     
-    str := try_lex_number(lexer);
+    str:, ok = try_lex_number(lexer);
+    if !ok  return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing number");;
     if str  return .{ .NUMBER, str, location, trivia, .NO_ERROR };
     
     if file.count >= 2 {

@@ -902,6 +902,41 @@ other thoughts:
             I wonder if I still have my old notes on this somewhere...
             
         
+        
+I've had this idea floating around in my head for a while, but curious to see what others think. 
+It's sort of related to the potential macro refactoring that iirc is still under consideration. 
+Basically the idea is to make handling code nodes more intuitive with `#code` and `#insert` operators that are syntactically and semantically similar to `*` and `.*` respectively. 
+Say just for example that we were to use `?` and `.?`. 
+Then inserting a block of code with some parameters looks like `code.?(scope=caller_code);`, where the insert parameters are attached like so. 
+I think this syntax could make it easier to add new parameters on code insertion over time. 
+
+Maybe a trivial convenience, but using the `?` in place of `#code` could make calling many macros with Code arguments more compact:
+```
+elem := array_find_where(foo, ?{ it.bar == baz });
+```
+
+More importantly, this syntax could provide an intuitive way to attach a second parameter list to a macro call, which makes it clear that some code is being inserted at the callsite:
+```
+foo := some_macro().?;
+```
+This second parameter list could allow the user to do things like renaming backticked identifiers, 
+which could potentially be useful in a case where one wants to call a macro which exports an identifier in this manner twice in the same block, 
+but wants the exported identifier to be different in each case.
+Contrived example incoming: 
+```
+declare_int :: (value: int) #expand {
+    `number := value;
+}
+
+main :: () {
+    declare_int(3).?(number=x);
+    declare_int(5).?(number=y);
+    print("%, %\n", x, y);  // "3, 5"
+}
+```
+
+I think it would be quite in line with the language's design to make handling code as intuitive as dealing with pointers, and having some syntax similarity 
+    
     
     
 AST regex:

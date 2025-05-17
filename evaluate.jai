@@ -196,8 +196,8 @@ evaluate_node :: (
         node_cast := node.(*Node_Cast);
         
         left_any := evaluate_node(script, node_cast.value);
-        if !remap_data(result, left_any) {
-            set_general_error(script, "Failed while trying to remap_data in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
+        if !any_to_any(result, left_any) {
+            set_general_error(script, "Failed while trying to convert any_to_any in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
             return Null_Any;
         }
         
@@ -237,7 +237,7 @@ evaluate_node :: (
         
         // get index as s64
         // TODO: maybe improve this. for bytecode, could do an instruction for inplace type cast
-        index_as_s64, ok := remap_to(s64, index_any);  assert(ok);
+        index_as_s64, ok := any_to(s64, index_any);  assert(ok);
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
@@ -345,12 +345,12 @@ evaluate_node :: (
             control_type := for_loop.range.lower.value_type;
             upper_as_s64: int;
             lower_as_s64: int;
-            remap_int(upper_as_s64, upper);
-            remap_int(lower_as_s64, lower);
+            any_to_int(upper_as_s64, upper);
+            any_to_int(lower_as_s64, lower);
             
             for lower_as_s64..upper_as_s64 {
                 _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
-                remap_data(Any.{ control_type, *_it }, it);
+                any_to_any(Any.{ control_type, *_it }, it);
                 
                 for_loop.it_decl.value_pointer = *_it;
                 // TODO: for now we just don't set it_index. 
