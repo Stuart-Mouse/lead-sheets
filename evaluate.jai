@@ -196,8 +196,8 @@ evaluate_node :: (
         node_cast := node.(*Node_Cast);
         
         left_any := evaluate_node(script, node_cast.value);
-        if !any_to_any(result, left_any) {
-            set_general_error(script, "Failed while trying to convert any_to_any in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
+        if !Convert.any_to_any(result, left_any) {
+            set_general_error(script, "Failed in call to Convert.any_to_any in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
             return Null_Any;
         }
         
@@ -237,7 +237,7 @@ evaluate_node :: (
         
         // get index as s64
         // TODO: maybe improve this. for bytecode, could do an instruction for inplace type cast
-        index_as_s64, ok := any_to(s64, index_any);  assert(ok);
+        index_as_s64, ok := Convert.any_to(s64, index_any);  assert(ok);
         
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
@@ -284,7 +284,7 @@ evaluate_node :: (
         dprint("condition: % %\n", as_type(condition.type), condition);
         
         condition_as_bool: bool;
-        any_to_bool(condition_as_bool, condition);
+        Convert.any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
             evaluate_node(script, if_statement.statement);
             if !!script.error  return Null_Any;
@@ -301,7 +301,7 @@ evaluate_node :: (
             dprint("condition: % %\n", as_type(condition.type), condition);
             
             condition_as_bool: bool;
-            any_to_bool(condition_as_bool, condition);
+            Convert.any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
             evaluate_node(script, while_loop.statement);
@@ -345,12 +345,12 @@ evaluate_node :: (
             control_type := for_loop.range.lower.value_type;
             upper_as_s64: int;
             lower_as_s64: int;
-            any_to_int(upper_as_s64, upper);
-            any_to_int(lower_as_s64, lower);
+            Convert.any_to_int(upper_as_s64, upper);
+            Convert.any_to_int(lower_as_s64, lower);
             
             for lower_as_s64..upper_as_s64 {
                 _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
-                any_to_any(Any.{ control_type, *_it }, it);
+                Convert.any_to_any(Any.{ control_type, *_it }, it);
                 
                 for_loop.it_decl.value_pointer = *_it;
                 // TODO: for now we just don't set it_index. 
