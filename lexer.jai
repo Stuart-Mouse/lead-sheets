@@ -103,28 +103,20 @@ Token :: struct {
         using the temporary allocator, depending on the use case.
 */
 Lexer :: struct {
-    file: string;
+    using #as scanner: Scanner;
     
     lexer_proc := lex_next_token;
     
     TOKEN_BUFFER_COUNT :: 4;
     token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
     next_token_index: int;
-    
-    // TODO: probably replace with just file/line structure, then convert that to proper source location in caller
-    //       the lexer really shouldn't even have to hold the state of file path. just another potential area to introduce a big
-    cursor_location: Source_Code_Location;
-    
-    // tacked on for the sake of GON, so that it can pick up where this lexer actually left off
-    // always points to the character after then end of the last token consumed
-    char_after_last_token: *u8;
 }
 
 
 init_lexer :: (lexer: *Lexer, file := "", location := Source_Code_Location.{ "", 1, 1 }) {
     lexer.* = .{};
     lexer.file = file;
-    lexer.cursor_location = location;
+    lexer.location = location;
     
     // lex first few tokens into token buffer
     for 0..lexer.TOKEN_BUFFER_COUNT-1 {
@@ -141,7 +133,6 @@ get_token :: (using lexer: *Lexer) -> Token {
     return_token := token_buffer[next_token_index];
     if return_token.type == .ERROR 
     || return_token.type == .EOF {
-        char_after_last_token = null;
         return return_token;
     }
     
@@ -168,45 +159,13 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
     return false;
 }
 
-try_lex_number :: (using lexer: *Lexer) -> (string, bool) {
-    if is_digit(file[0]) || (file.count > 1 && file[0] == #char "-" && is_digit(file[1])) {
-        str: string = .{ 1, file.data };
-        advance(lexer);
-        
-        after_dot    := false;
-        accept_alpha := false;
-        if file && is_any(file[0], "bhx") {
-            str.count += 1;
-            if !advance(lexer)  
-                return "", false;
-                // return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing number");
-            after_dot = true;   // so that we don't accept a dot in a integer literal
-            accept_alpha = true;
-        }
-        
-        while file {
-            // we can only allow one decimal point in a number, and it cannot be followed consecutively by a second decimal point
-            if !(is_digit(file[0]) || (accept_alpha && is_alpha(file[0]))) {
-                if file[0] != #char "." || after_dot       break;
-                if file.count > 1 && file[1] == #char "."  break;
-                after_dot = true;
-            }
-            str.count += 1;
-            advance(lexer);
-        }
-        
-        return str, true;
-    }
-    return "", true;
-}
-
 lex_next_token :: (using lexer: *Lexer) -> Token {
     trivia, ok := skip_whitespace_and_comments(lexer);
-    if !ok    return make_error_token(cursor_location, .UNEXPECTED_EOF, message = "in the middle of a comment");
-    if !file  return .{ type = .EOF, location = cursor_location };
+    if !ok    return make_error_token(location, .UNEXPECTED_EOF, message = "in the middle of a comment");
+    if !file  return .{ type = .EOF, location = location };
     
     // we grab cursor location at top so that it points to start of token
-    location := cursor_location;
+    token_location := lexer.location;
     
     // convenience macro for short tokens
     make_token :: (type: Token_Type, len: int) -> Token #expand {
@@ -214,14 +173,13 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         return .{
             type       = type,
             text       = slice(file, 0, len),
-            location   = location,
+            location   = token_location,
             trivia     = trivia, 
         };
     }
     
-    str:, ok = try_lex_number(lexer);
-    if !ok  return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing number");;
-    if str  return .{ .NUMBER, str, location, trivia, .NO_ERROR };
+    token_text := try_lex_number(lexer);
+    if token_text  return .{ .NUMBER, token_text, token_location, trivia, .NO_ERROR };
     
     if file.count >= 2 {
         if slice(file, 0, 2) == {
@@ -242,49 +200,51 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         return make_token(xx file[0], 1);
     }
     
-    str = try_lex_identifier(lexer);
-    if str {
+    token_text = try_lex_identifier(lexer);
+    if token_text {
         type := Token_Type.IDENTIFIER;
         // TODO: can abstract this to a lookup table if we want
-        if str == {
+        if token_text == {
           case "if";        type = .IF;
           case "for";       type = .FOR;
           case "foreach";   type = .FOREACH;
           case "while";     type = .WHILE;
         }
-        return .{ type, str, location, trivia, .NO_ERROR };
+        return .{ type, token_text, token_location, trivia, .NO_ERROR };
     }
     
     // TODO: perhaps this should not be a token in itself, and should be handled on a higher level by the parser
     // parse a directive
     if file[0] == #char "#" {
         advance(lexer);
-        str = try_lex_identifier(lexer);
-        if str  return .{ .DIRECTIVE, str, location, trivia, .NO_ERROR };
-        return make_error_token(location, .UNEXPECTED_CHARACTER, string.{1,file.data}, "while attempting to parse a directive name.");
+        token_text = try_lex_identifier(lexer);
+        if token_text  return .{ .DIRECTIVE, token_text, token_location, trivia, .NO_ERROR };
+        return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{1,file.data}, "while attempting to parse a directive name.");
     }
     
     // parse string or backticked identifier
     if file[0] == #char "\"" || file[0] == #char "`" { 
         quote_char := file[0];
         
-        if !advance(lexer)  return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing string.");
-        str := string.{ 0, file.data };
+        if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+        token_text := string.{ 0, file.data };
         
         while file[0] != quote_char {
-            // TODO: handle escape sequences more properly
-            adv := 1 + (file[0] == #char "\\").(int); 
-            str.count += adv;
-            if !advance(lexer, adv)  
-                return make_error_token(location, .UNEXPECTED_EOF, message = "while parsing string.");
+            if file[0] == #char "\\" {
+                _, ok := parse_escape_sequence(lexer);
+                if !ok  return make_error_token(token_location, .UNEXPECTED_CHARACTER, "invalid escape sequence encountered while parsing string");
+            } else {
+                if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+            }
         }
-        advance(lexer);
         
+        token_text.count = lexer.file.data - token_text.data;
+        advance(lexer);
         is_identifier := quote_char == #char "`";
-        return .{ ifx is_identifier then .IDENTIFIER else .STRING, str, location, trivia, .NO_ERROR };
+        return .{ ifx is_identifier then .IDENTIFIER else .STRING, token_text, token_location, trivia, .NO_ERROR };
     }
     
-    return make_error_token(location, .UNEXPECTED_CHARACTER, string.{1,file.data});
+    return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{1,file.data});
 }
 
 // NOTE: we use the trivia string to attach some additional context to error tokens
@@ -382,24 +342,4 @@ is_whitespace :: inline (char: u8) -> bool {
       || char == #char "\t"
       || char == #char "\r"
       || char == #char "\n";
-}
-
-
-#scope_module
-
-advance :: inline (using lexer: *Lexer, amount := 1) -> bool {
-    _amount := min(amount, file.count);
-    
-    for 0.._amount-1 {
-        if file[it] == #char "\n" {
-            cursor_location.line_number += 1;
-            cursor_location.character_number = 0;
-        }
-        cursor_location.character_number += 1;
-    }
-    
-    file.data  += _amount;
-    file.count -= _amount;
-    
-    return file.count > 0; // return false when we hit EOF
 }

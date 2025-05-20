@@ -973,8 +973,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         }
     }
     
-    print("explicit_type: %\n", explicit_type);
-    print("right_type: %\n", right_type);
+    dprint("explicit_type: %\n", explicit_type);
+    dprint("right_type: %\n", right_type);
     
     declaration.value_type    = ifx explicit_type else right_type;
     declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));

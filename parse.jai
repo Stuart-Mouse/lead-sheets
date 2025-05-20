@@ -260,54 +260,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
 }
 
 
-/*
-    This procedure is kinda incomplete and doesn't do everything yet, but here's the plan...
-    will return float64, u64, or s64 as a sort of 'preferred type' to represent the number
-    we can then recast from this preferred type to 
-    obviously any number with a fractional component will use float64
-    any base 10 number that can fit in an s64 will use an s64
-    if the number is larger than s64 max, then we'll try to use u64 instead
-    any number encoded as hexadecimal, octal, binary, etc. will use u64
-    and then maybe also we could support the hexadecimal float thing, but I don't really care about that unless it's trivial to do
-    
-    TODO: figure out how to better log the errors from this procedure with the source location info.
-*/
-parse_number :: (s: string) -> Small_Any, bool {
-    if !s {
-        log("Empty string in parse_number!");
-        return .{}, false;
-    }
-    
-    // if number begins with 0b, 0h, 0x, etc..
-    if s[0] == #char "0" && s.count >= 2 {
-        base: int = -1;
-        if s[1] == {
-          case #char "b"; base = 2;
-          case #char "h"; base = 8;
-          case #char "x"; base = 16;
-        }
-        if base != -1 {
-            str := advance(s, 2);
-            val, ok, remainder := string_to_int(str, base, s64);
-            if !ok || remainder  log("Failed to parse int with base % from '%'.", base, str);
-            return Small_Any.from(val), ok;
-        }
-    }
-    
-    
-    // if we've got a decimal point in there, we will prefer float64
-    if contains(s, #char ".") {
-        val, ok := string_to_float64(s);
-        if !ok  log("Failed to parse float from '%'.", s);
-        return Small_Any.from(val), ok;
-    }
-    
-    // else we parse and store it as an integer
-    val, ok := string_to_int(s, 10, s64);
-    if !ok  log("Failed to parse integer from '%'.", s);
-    return Small_Any.from(val), ok;
-}
-
 parse_leaf :: (using script: *Script) -> *Node {
     dprint("parse_leaf()\n");
     dprint_push_indent();
@@ -439,7 +391,7 @@ parse_leaf :: (using script: *Script) -> *Node {
 
 // will parse a single string as a statement, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_statement_string :: (script: *Script, statement: string, expect_eof := true) -> *Node, *u8 {
+parse_statement_string :: (script: *Script, statement: string, expect_eof := true) -> *Node {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
@@ -448,13 +400,13 @@ parse_statement_string :: (script: *Script, statement: string, expect_eof := tru
     init_lexer(*script.lexer, statement);
     node := parse_statement(script, expect_semicolon = false);
     
-    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
-    return node, script.lexer.char_after_last_token;
+    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null;
+    return node;
 }
 
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
-parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -> *Node, *u8 {
+parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -> *Node {
     // just in case, we will backup current lexer and just attach a temporary one to the script
     prev_lexer := script.lexer;
     defer script.lexer = prev_lexer;
@@ -464,8 +416,8 @@ parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -
     init_lexer(*script.lexer, expr);
     expression := my_parse_expression(script, 0);
     
-    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null, null;
-    return expression, script.lexer.char_after_last_token;
+    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null;
+    return expression;
 }
 
 parse_expression :: (using script: *Script, min_prec: int) -> *Node {
