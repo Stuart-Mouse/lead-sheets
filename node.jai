@@ -143,7 +143,7 @@ Node_Literal :: struct {
     using #as node_base: Node;
     literal_type: enum { STRING; NUMBER; STRUCT; ANY; };
     union {
-        number:  Small_Any;
+        number:  Any_Number;
         text:    string;
         aggr: struct {
             value_pointer:      *void;      // once type is resolved, we store pointer to allocated value here
@@ -361,7 +361,7 @@ make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_
     }
     else if value.type.type == .ENUM || is_numeric_type(value.type) {
         literal.literal_type = .NUMBER;
-        literal.number = Small_Any.from(value);
+        literal.number = Any_Number.from(value);
     } else {
         // @Hack: doing this temporarily so that we can at least return structs and 
         //        such from directives and still insert them as literals.
@@ -377,7 +377,7 @@ make_number_literal :: (script: *Script, number: $T, loc := #caller_location) ->
 } {
     literal := alloc_node(script, Node_Literal);
     literal.literal_type = .NUMBER;
-    literal.number = Small_Any.from(number);
+    literal.number = Any_Number.from(number);
     return literal;
 }
 

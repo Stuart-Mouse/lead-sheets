@@ -281,7 +281,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
     if literal.literal_type == {
       case .NUMBER;
         if !is_numeric_type(type)  return false;
-        new_number := Small_Any.{ type };
+        new_number := Any_Number.{ type = type };
         Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
         literal.number = new_number;
         return true;
@@ -425,14 +425,14 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             // TODO: think about rules around automatic casting here...
             //       maybe we don't want to automatically go float -> int, 
             //       since we will now only get float here when the literal had a decimal part
-            new_number := Small_Any.{ type = hint_type };
+            new_number := Any_Number.{ type = hint_type };
             Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
             literal.number = new_number;
         } else {
             // NOTE: also doing a little remap here in default case, 
             //       since we actually want the default float type to be float32
             // if literal.number.type == type_info(float64) {
-                new_number := Small_Any.{ type = type_info(float32) };
+                new_number := Any_Number.{ type = type_info(float32) };
                 Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
                 literal.number = new_number;
             // }
