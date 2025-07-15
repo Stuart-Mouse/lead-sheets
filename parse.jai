@@ -499,7 +499,10 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
-            if !ok  return null;
+            if !ok {
+                set_parse_error(script, "Failed in parse_contents_of_struct_literal.");
+                return null;
+            }
             literal := make_struct_literal(script, token_after_dot, struct_contents);
             // @Hack: should have better means of checking for question mark after a struct literal
             if expect_token_type(*lexer, .QUESTION_MARK) {

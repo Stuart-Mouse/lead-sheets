@@ -82,7 +82,7 @@ register_directive :: (script: *Script, name: string, procedure: Any, user_data:
         return false, -1;
     }
     if ti_proc.argument_types[0] != type_info(*Directive_Call) {
-        log("Error: directive must take a *Script as the first argument.");
+        log("Error: directive must take a *Directive_Call as the first argument.");
         return false, -1;
     }
     if ti_proc.argument_types.count < user_data.count + 1 {
@@ -134,12 +134,12 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         return false;
     }
     
-    print("directive.arguments: %\n", directive.arguments);
+    // print("directive.arguments: %\n", directive.arguments);
     
     for directive.arguments {
         // skip typechecking node if argument type intends to receive *Node
         expected_type := ti_proc.argument_types[it_index + min_arg_index];
-        print("expecting: %\n", as_type(expected_type));
+        // print("expecting: %\n", as_type(expected_type));
         if expected_type == type_info(*Node)  continue;
         
         argument_type := typecheck_node(script, it);
@@ -170,7 +170,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         }
     }
     
-    print("arguments_anys: %\n", arguments_anys);
+    // print("arguments_anys: %\n", arguments_anys);
     
     
     // ===== perform call =====
