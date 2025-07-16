@@ -3,7 +3,7 @@
 #import "Math";
 #import "String";
 #import "Hash_Table";
-#import "Lead_Sheets"()(DEBUG = true);
+#import "Lead_Sheets"()(DEBUG = true, USING_DYNCALL = false);
 #import "File";
 
 Fruits :: enum {

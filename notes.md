@@ -1011,3 +1011,47 @@ multiple returns is nicer from user side though, so we will just adapt with wrap
 simplify error messages, don't format with location in error string, just attach location to Error object.
 if user then prints error later, then format location with error message
 
+
+
+## Removing dependency on dyncall
+
+Due to the nature of WASM as a target, I don't think dyncall can ever really be used in that environment.
+I mean, maybe it's possible in some really cryptic way, but that's probably out of my paygrade!
+So in order to be able to use lead sheets on the web, 
+    (and maybe it's kind of questionable if that is even a good idea, 
+    but let's pout that aside for the moment)
+    we need some way to register and call procedures without using dyncall.
+
+The plan(s?): 
+    Allow user to either mark procedures with some note, and collect those using a metaprogram
+        This is the most simple option, but does not allow for renaming procedures when exposing them to a script
+    Alternatively, we just replace register_procedure with a macro that does some extra jazz at compile-time to add the procedure to a static table
+        This preserves the ability to rename procedures when exposing them to a script
+        after compilation is TYPECHECKED_ALL_WE_CAN we generate a huge switch statement that does the work of calling any registered procedure and marshalling the return value(s).
+    Ideally, we can actually keep the interface basically the same while supporting either the switch/case or dyncall mode of dispatch
+    
+
+we can also have a register_global_procedure proc which will make a procedure accessible from any script in the entire program
+
+while we are doing all this work, we should probably also go ahead and make c_call procedures work with Lead Sheets
+
+
+
+if !try_call_procedure() {
+    if using dyncall { 
+        // try with dyncall
+    } else {
+        // report error
+    }
+}
+
+
+try_calling_procedure :: (procedure: Any_Proc, arguments: [] Any, return_values: [] Any) -> bool {
+    for procedure_call_wrappers {
+        if it.type == procedure.type {
+            return it.pointer()
+        }
+    }
+    
+    
+}

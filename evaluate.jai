@@ -160,27 +160,27 @@ evaluate_node :: (
         assert(proc_any.type.type == .PROCEDURE);
         dprint("proc_type: %\n", as_type(proc_any.type));
         
-        arguments_anys := NewArray(procedure_call.arguments.count, Any,, temp);
+        arguments := NewArray(procedure_call.arguments.count, Any,, temp);
         for procedure_call.arguments {
-            arguments_anys[it_index] = evaluate_node(script, it);
+            arguments[it_index] = evaluate_node(script, it);
             if !!script.error  return Null_Any;
         }
         
-        proc_ptr := proc_any.value_pointer.(**void).*;
-        ti_proc  := proc_any.type.(*Type_Info_Procedure);
+        proc_ptr  := proc_any.value_pointer.(**void).*;
+        proc_info := proc_any.type.(*Type_Info_Procedure);
         
         // TODO: we really should support #c_call procedures in Lead Sheets, kind surprised I never got around to that tbh...
-        {
+        #if USING_DYNCALL {
             dcReset(script.dyncall_vm);
-            if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
+            if !(proc_info.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
-            return_type := ifx ti_proc.return_types 
-                then ti_proc.return_types[0]
+            return_type := ifx proc_info.return_types 
+                then proc_info.return_types[0]
                 else type_info(void);
             
-            for arguments_anys 
+            for arguments 
                 if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
                     return Null_Any;
             
@@ -188,13 +188,20 @@ evaluate_node :: (
                 dcArgPointer(script.dyncall_vm, result.value_pointer);
             }
             dcCallVoid(script.dyncall_vm, xx proc_ptr);
+        } else {
+            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ result ]) {
+                log("Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                return Null_Any;
+            }
+            log("We did it reddit!");
         }
-        dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, result.value_pointer });
+        dprint("returning result of procedure call: %\n", result);
         
         
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
+        // TODO: I don't like that this is called left_any, since that strongly implies that it's the result when in fact it is the value we have yet to convert.
         left_any := evaluate_node(script, node_cast.value);
         if !Convert.any_to_any(result, left_any) {
             set_general_error(script, "Failed in call to Convert.any_to_any in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));

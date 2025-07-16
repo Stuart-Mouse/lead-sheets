@@ -304,7 +304,7 @@ register_common_types :: (script: *Script) {
 }
 
 
-#module_parameters ()(DEBUG := false);
+#module_parameters ()(DEBUG := false, USING_DYNCALL := true);
 
 #load "node.jai";
 #load "lexer.jai";

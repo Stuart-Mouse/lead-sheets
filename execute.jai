@@ -202,11 +202,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // TODO: this will have to be refactored later for bytecode (to push result ptr after popping args)
         
         if !execute_node(script, procedure_call.procedure_expression)  return false;
-        proc_type  := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
-        assert(proc_type.type == .PROCEDURE);
-        dprint("proc_type: %\n", as_type(proc_type));
+        proc_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
+        assert(proc_info.type == .PROCEDURE);
+        dprint("proc_info: %\n", as_type(proc_info));
         
-        procedure  := stack_pop_any(script, proc_type); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
+        procedure  := stack_pop_any(script, proc_info); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
         proc_ptr   := procedure.value_pointer.(**void).*;
         return_ptr := script.stack_ptr;
@@ -222,19 +222,19 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
-        {
+        #if USING_DYNCALL {
             dcReset(script.dyncall_vm);
             jai_call :: true;
-            if jai_call || !(proc_type.procedure_flags & .HAS_NO_CONTEXT) {
+            if jai_call || !(proc_info.procedure_flags & .HAS_NO_CONTEXT) {
                 dcArgPointer(script.dyncall_vm, *context);
             }
             
-            return_type := ifx proc_type.return_types 
-                then proc_type.return_types[0]
+            return_type := ifx proc_info.return_types 
+                then proc_info.return_types[0]
                 else type_info(void);
             
             arg_ptr := arg_ptr_start;
-            for arg_type: proc_type.argument_types {
+            for arg_type: proc_info.argument_types {
                 value_pointer := arg_ptr;
                 if is_aggr(arg_type)  value_pointer = value_pointer.(**void).*;
                 if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
@@ -245,6 +245,21 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 dcArgPointer(script.dyncall_vm, return_ptr);
             }
             dcCallVoid(script.dyncall_vm, xx proc_ptr);
+        } else {
+            arguments := NewArray(proc_info.argument_types.count, Any,, temp);
+            arg_ptr := arg_ptr_start;
+            for proc_info.argument_types {
+                value_pointer := arg_ptr;
+                if is_aggr(it)  value_pointer = value_pointer.(**void).*;
+                arguments[it_index] = Any.{ it, value_pointer };
+                arg_ptr += size_of(*void);
+            }
+            
+            return_any := Any.{ procedure_call.value_type, return_ptr };
+            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ return_any ]) {
+                log("Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                return false;
+            }
         }
         
         script.stack_ptr = arg_ptr_start;

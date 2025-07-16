@@ -4,15 +4,38 @@ External_Procedure :: struct {
     name:   string;
 }
 
-// adds a procedure to the given script's context
-register_procedure :: (script: *Script, name: string, procedure: Any) {
-    assert(procedure.type.type == .PROCEDURE);
+can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
+    return (proc_info.return_types.count <= 1)
+        && (proc_info.procedure_flags & .IS_C_CALL == 0);
+}
+
+// To start with, I'm completely separating the dyncall and non-dyncall methods of calling procedures
+// in the future I will try to re-integrate them, though that may be slightly tricky because of how Any is preferred over polymorphic parameters when doing overload resolution
+// we might have to do some weird thing where we investiage #caller_code to check if 'procedure' is a constant and manually add the call for register_procedure_type
+#if USING_DYNCALL {
+    register_procedure :: (script: *Script, name: string, procedure: Any) {
+        assert(procedure.type.type == .PROCEDURE && can_register_procedure(xx procedure.type));
+        array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
+    }
+} else {
+    register_procedure :: inline (script: *Script, name: string, procedure: $P) #modify {
+        proc_info := P.(*Type_Info_Procedure);
+        if proc_info.type != .PROCEDURE  return false, "'procedure' must be a procedure! What are you stupid?";
+        if !can_register_procedure(proc_info)  return false, tprint("Unable to register procedure of type: %", P);
+        return true;
+    } {
+        register_procedure_type(P);
+        array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
+    }
     
-    ti_proc := procedure.type.(*Type_Info_Procedure);
-    assert(ti_proc.return_types.count <= 1);
-    assert(ti_proc.procedure_flags & .IS_C_CALL == 0);
-    
-    array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
+    register_procedure_type :: inline ($P: Type) #modify {
+        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type."; 
+    } {
+        for procedure_wrappers if it.type == xx P  return;
+        
+        p: P : null; // This is stupid, but we need a dummy instance of P for #procedure_of_call.
+        array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure(p, .[], .[]) });
+    }
 }
 
 Procedure_Overload :: struct {
@@ -185,4 +208,73 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
     
     return -1, false;
 }
+
+#scope_module
+
+#if !USING_DYNCALL {
+    /*
+        All things considered, this is actually relatively simple. 
+        Getting the argument and return types could be simplified, but other than that it's not too bad to generate the calling code for any given procedure type.
+        If the compiler never gets built-in dyncall functionality, but does one day get a runtime "compile and link" sort of system, I could probably get by with using this code in addition to a few other little helper procs.
+        Although, I still think it would be dumb for the compiler to do all that and not have a simple dyncall-like facility which is exposed to the user.
+        If we can compile and link in arbitrary code, we should certainly be able to generate some simple procedure-calling code.
+        
+        NOTE: This doesn't perform any type checking on its own. 
+              That can be done generically, so it's not included in the generated procedure body.
+    */
+    call_procedure :: (procedure: $P, arguments: [] Any, return_values: [] Any) #modify {
+        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type.";
+    } {
+        proc_info :: type_info(P);
+        
+        #insert -> string {
+            builder: String_Builder;
+            
+            // Because we don't want to rely on simply printing types into the generated code (which won't work for procedure types),
+            //   we need to first do some nonsense to unpack the types as constants we can easily reference.
+            // Perhaps this sort of thing would be a lot easier to do if the compiler just collapsed the distinction between `Type` and `*Type_Info`, 
+            //   or allowed casting between the two to be an implicitly comptime operation. 
+            
+            for 0..proc_info.argument_types.count-1 {
+                print(*builder, "Ta%1 :: #run (*proc_info.argument_types[%1]).(*Type).*;\n", it);
+            }
+            for 0..proc_info.return_types.count-1 {
+                print(*builder, "Tr%1 :: #run (*proc_info.return_types[%1]).(*Type).*;\n", it);
+            }
+            
+            for 0..proc_info.return_types.count-1 {
+                if it != 0  append(*builder, ", ");
+                print(*builder, "return_values[%1].value_pointer.(*Tr%1).*", it);
+            }
+            if proc_info.return_types.count > 0 {
+                append(*builder, " = ");
+            }
+            
+            append(*builder, "procedure(");
+            for 0..proc_info.argument_types.count-1 {
+                if it != 0  append(*builder, ", ");
+                print(*builder, "arguments[%1].value_pointer.(*Ta%1).*", it);
+            }
+            append(*builder, ");");
+            
+            return builder_to_string(*builder);
+        }
+    }
+    
+    Wrapped_Procedure_Call :: #type (pointer: *void, arguments: [] Any, return_values: [] Any);
+    
+    procedure_wrappers: [..] struct { type: *Type_Info; wrapper: Wrapped_Procedure_Call; };
+    
+    try_calling_procedure_with_wrapper :: (proc_info: *Type_Info_Procedure, proc_ptr: *void, arguments: [] Any, return_values: [] Any) -> bool {
+        for procedure_wrappers {
+            if it.type == proc_info {
+                it.wrapper(proc_ptr, arguments, return_values);
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+
 

@@ -1,5 +1,5 @@
 
-LS :: #import "Lead_Sheets"()(DEBUG = true);
+LS :: #import "Lead_Sheets"()(DEBUG = true, USING_DYNCALL = false);
 
 #load "imgui_sdl_gl_docking.jai";
 #load "imgui_extras.jai";
