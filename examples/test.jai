@@ -53,7 +53,7 @@ main :: () {
     }
     register_directive(*script, "declare", add_named_value, *named_values);
     
-    make_binary :: (using call: *Directive_Call, left: *Node, right: *Node) -> (*Node, bool) {
+    make_binary :: (using call: *Directive_Call, left: *Node, right: *Node) -> bool, *Node {
         if phase == .TYPECHECK {
             node := alloc_node(script, Node_Operation);
             node.name          = "+";
@@ -63,9 +63,9 @@ main :: () {
             print("left : %\n", left);
             print("right: %\n", right);
             print("Creating operation node: % + %\n", sprint_node(script, left), sprint_node(script, right));
-            return node, true;
+            return true, node;
         }
-        return null, true;
+        return true, null;
     }
     register_directive(*script, "add", make_binary);
     

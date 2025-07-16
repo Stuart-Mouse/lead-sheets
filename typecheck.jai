@@ -295,8 +295,8 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
 }
 
 can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
-    ti_ptr := type.(*Type_Info_Pointer);
-    if ti_ptr.type != .POINTER || ti_ptr.pointer_to != node.value_type  return false;
+    ptr_info := type.(*Type_Info_Pointer);
+    if ptr_info.type != .POINTER || ptr_info.pointer_to != node.value_type  return false;
     
     // TODO: put more logic in here to allow implicit dereference one using #as members?
     return true;
@@ -633,7 +633,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
 }
 
 typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    ti_proc := typecheck_node(script, procedure_call.procedure_expression, .IS_PROCEDURE_EXPRESSION).(*Type_Info_Procedure);
+    proc_info := typecheck_node(script, procedure_call.procedure_expression, .IS_PROCEDURE_EXPRESSION).(*Type_Info_Procedure);
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
     && procedure_call.procedure_expression.node_type == Node_Identifier {
@@ -664,7 +664,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         identifier.identifier_type = .EXTERNAL_PROCEDURE;
         identifier.index           = procedure_index;
         identifier.flags          |= .TYPECHECKED;
-        ti_proc:, identifier.value_type = procedures[procedure_index].type;
+        proc_info:, identifier.value_type = procedures[procedure_index].proc_info;
         
         /*
             For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that failed due to a missing type hint.
@@ -673,7 +673,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         for 0..procedure_call.arguments.count-1 {
             node_ptr_ptr  := *procedure_call.arguments[it];
             node          := node_ptr_ptr.*;
-            expected_type := ti_proc.argument_types[it];
+            expected_type := proc_info.argument_types[it];
             if node.value_type == null {
                 dprint("re-typechecking argument with hint_type %", as_type(expected_type));
                 type := typecheck_node(script, node, hint_type = expected_type);
@@ -700,32 +700,32 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             }
         }
         
-        procedure_call.value_type = ifx ti_proc.return_types 
-            then ti_proc.return_types[0] 
+        procedure_call.value_type = ifx proc_info.return_types 
+            then proc_info.return_types[0] 
             else type_info(void);
     }
     // procedure was the result of some larger expression, so it already has a strict type
     else {
-        if ti_proc == null {
+        if proc_info == null {
             set_general_error(script, "%: Error: failed to typecheck procedure_expression.", get_location(procedure_call));
             return;
         }
-        if ti_proc.type != .PROCEDURE {
+        if proc_info.type != .PROCEDURE {
             set_general_error(script, "%: Error: attempt to call a non-procedure type as if it were a procedure.", get_location(procedure_call));
             return;
         }
-        if ti_proc.return_types.count > 1 {
+        if proc_info.return_types.count > 1 {
             set_general_error(script, "%: Error: attempt to call a procedure which returns more than one value. This is not currently supported.", get_location(procedure_call));
             return;
         }
         
         // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
-        if ti_proc.argument_types.count != procedure_call.arguments.count {
-            set_general_error(script, "%: Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", get_location(procedure_call), ti_proc.argument_types.count, procedure_call.arguments.count);
+        if proc_info.argument_types.count != procedure_call.arguments.count {
+            set_general_error(script, "%: Error: incorrect number of arguments provided for procedure call. Expected %, got %.\n", get_location(procedure_call), proc_info.argument_types.count, procedure_call.arguments.count);
             return;
         }
         for procedure_call.arguments {
-            expected_type := ti_proc.argument_types[it_index];
+            expected_type := proc_info.argument_types[it_index];
             argument_type := typecheck_node(script, it, hint_type = expected_type);
             if !!script.error  return;
             if argument_type != expected_type {
@@ -734,8 +734,8 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             }
         }
         
-        procedure_call.value_type = ifx ti_proc.return_types 
-            then ti_proc.return_types[0] 
+        procedure_call.value_type = ifx proc_info.return_types 
+            then proc_info.return_types[0] 
             else type_info(void);
     }
     

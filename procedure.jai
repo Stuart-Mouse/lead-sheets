@@ -5,8 +5,7 @@ External_Procedure :: struct {
 }
 
 can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
-    return (proc_info.return_types.count <= 1)
-        && (proc_info.procedure_flags & .IS_C_CALL == 0);
+    return (proc_info.return_types.count <= 1);
 }
 
 // To start with, I'm completely separating the dyncall and non-dyncall methods of calling procedures
@@ -26,15 +25,6 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
     } {
         register_procedure_type(P);
         array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
-    }
-    
-    register_procedure_type :: inline ($P: Type) #modify {
-        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type."; 
-    } {
-        for procedure_wrappers if it.type == xx P  return;
-        
-        p: P : null; // This is stupid, but we need a dummy instance of P for #procedure_of_call.
-        array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure(p, .[], .[]) });
     }
 }
 
@@ -76,14 +66,13 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
     tied_for_best           := 0;
     
     for *overloads {
-        proc    := *script.procedures[it.proc_index];
-        ti_proc := proc.type.(*Type_Info_Procedure);
+        proc := *script.procedures[it.proc_index];
         
         // typecheck arguments
-        if ti_proc.argument_types.count != arguments.count {
+        if proc.argument_types.count != arguments.count {
             it.reject_reason = .ARG_COUNT;
             it.reject_details.arg_count = .{ 
-                expected = ti_proc.argument_types.count, 
+                expected = proc.argument_types.count, 
                 provided = arguments.count 
             };
             continue;
@@ -120,14 +109,14 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
             return true;
         }
         
-        ok := typecheck_arguments(it, ti_proc.argument_types, arguments);
+        ok := typecheck_arguments(it, proc.argument_types, arguments);
         
         // fallback case to try reordering args for symmetric case
-        if !ok && is_operator && (ti_proc.procedure_flags & .IS_SYMMETRIC) {
-            assert(ti_proc.argument_types.count == 2);
+        if !ok && is_operator && (proc.procedure_flags & .IS_SYMMETRIC) {
+            assert(proc.argument_types.count == 2);
             assert(arguments.count == 2);
             it.swap_args = true;
-            ok = typecheck_arguments(it, ti_proc.argument_types, .[ arguments[1], arguments[0] ]);
+            ok = typecheck_arguments(it, proc.argument_types, .[ arguments[1], arguments[0] ]);
         }
         if !ok  continue;
         
@@ -156,9 +145,7 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
                 then continue;
                 
             print("%(", name);
-            proc := script.procedures[it.proc_index];
-            ti_proc := proc.type.(*Type_Info_Procedure);
-            for ti_proc.argument_types {
+            for script.procedures[it.proc_index].argument_types {
                 if it_index != 0  print(", ");
                 print("%", as_type(it));
             }
@@ -172,9 +159,7 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
             if it.reject_reason == .NONE  continue;
             
             print("%(", name);
-            proc := script.procedures[it.proc_index];
-            ti_proc := proc.type.(*Type_Info_Procedure);
-            for ti_proc.argument_types {
+            for script.procedures[it.proc_index].argument_types {
                 if it_index != 0  print(", ");
                 print("%", as_type(it));
             }
@@ -213,6 +198,15 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
 
 #if !USING_DYNCALL {
     /*
+        call_procedure is used to provide a generic interface for calling any type of procedure, 
+            where arguments and return values are provided as `[] Any`.
+        Using `#procedure_of_call call_procedure(null.(P), .[], .[])` we can generate a thin wrapper proc 
+            that will handle the marshaling of arguments and return types from/to the provided Anys.
+        This generated procedure will match the interface of a `Wrapped_Procedure_Call`,
+            allowing us to store all the generated wrapper procs in a single array.
+        We need only generate one such wrapper for each type of procedure, so if two procedures have the same exact signature,
+            then we will not add bloat the code by baking the target procedure's specific pointer.
+        
         All things considered, this is actually relatively simple. 
         Getting the argument and return types could be simplified, but other than that it's not too bad to generate the calling code for any given procedure type.
         If the compiler never gets built-in dyncall functionality, but does one day get a runtime "compile and link" sort of system, I could probably get by with using this code in addition to a few other little helper procs.
@@ -259,6 +253,14 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
             
             return builder_to_string(*builder);
         }
+    }
+    
+    
+    register_procedure_type :: inline ($P: Type) #modify {
+        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type."; 
+    } {
+        for procedure_wrappers if it.type == xx P  return;
+        array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure(null.(P), .[], .[]) });
     }
     
     Wrapped_Procedure_Call :: #type (pointer: *void, arguments: [] Any, return_values: [] Any);

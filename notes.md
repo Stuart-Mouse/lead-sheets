@@ -1015,43 +1015,40 @@ if user then prints error later, then format location with error message
 
 ## Removing dependency on dyncall
 
-Due to the nature of WASM as a target, I don't think dyncall can ever really be used in that environment.
-I mean, maybe it's possible in some really cryptic way, but that's probably out of my paygrade!
-So in order to be able to use lead sheets on the web, 
-    (and maybe it's kind of questionable if that is even a good idea, 
-    but let's pout that aside for the moment)
-    we need some way to register and call procedures without using dyncall.
+Using dyncall in lead sheets is now optional, and there are both benefits and drawbacks that the user should be aware of when choosing whether or not to use dyncall.
+By not using dyncall, you lose a little bit of functionality / flexibility, but gain the ability to compile to targets that dyncall does not support.
 
-The plan(s?): 
-    Allow user to either mark procedures with some note, and collect those using a metaprogram
-        This is the most simple option, but does not allow for renaming procedures when exposing them to a script
-    Alternatively, we just replace register_procedure with a macro that does some extra jazz at compile-time to add the procedure to a static table
-        This preserves the ability to rename procedures when exposing them to a script
-        after compilation is TYPECHECKED_ALL_WE_CAN we generate a huge switch statement that does the work of calling any registered procedure and marshalling the return value(s).
-    Ideally, we can actually keep the interface basically the same while supporting either the switch/case or dyncall mode of dispatch
+Calling Jai procedures with dyncall currently only works with the LLVM backend 
+    this is because the calling convention for Jai is not precisely defined, and so it really only works as a sort of hack
+    Hopefully when Jai gets an official release, it will also have a well-defined calling convention so that I can properly support it going forward.
+
+dyncall does not work at compile-time
+    There may be some way around this if I could only compile a dyncall dll, but I haven't put in the time to figure that out quite yet.
+    Now of course, there's probably no reasonable use case for running dyncall at compile-time, but I still feel this is a restriction worth mentioning.
     
-
-we can also have a register_global_procedure proc which will make a procedure accessible from any script in the entire program
-
-while we are doing all this work, we should probably also go ahead and make c_call procedures work with Lead Sheets
-
-
-
-if !try_call_procedure() {
-    if using dyncall { 
-        // try with dyncall
-    } else {
-        // report error
-    }
-}
-
-
-try_calling_procedure :: (procedure: Any_Proc, arguments: [] Any, return_values: [] Any) -> bool {
-    for procedure_call_wrappers {
-        if it.type == procedure.type {
-            return it.pointer()
-        }
-    }
+dyncall does not work when compiling to web assembly
+    If you want to target wasm, then you will have to disable use of dyncall.
+    There are also other platforms that dyncall does not support, which you can just check on their website.
+    It *could* be possible to simulate dyncall-like functionality on the web by doing something crazy like generating JavaScript that calls back into Jai,
+    but that is not very practical nor is it something I want to figure out at the moment.
     
+without dyncall, function pointers are mostly unusable inside of scripts
+    The user does have the option to manually register proceudre types so that wrappers can be generated,
+    however this obviously requires that the user know the types of the function pointers that may be used in a script ahead of time.
     
-}
+without dyncall, the wrapper procedures which are generated to marshal arguments and return values
+    will probably add a littel bit of code bloat, though it should not be too severe.
+
+
+
+TODO:
+    replace #procedure_of_call with #bake_arguments, add type as separate parameter like before
+    check what the function signature looks like after baking
+        maybe we can remove the need for the cast when storing proc ptr to procedure_wrappers?
+    
+    make c call procedures work 
+    
+    in dyncall
+        replace MAKE_C_CALL with something more like call_procedure
+            try to make it so that we can separately bake procedure type and specific procedure pointer
+        

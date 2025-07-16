@@ -275,7 +275,7 @@ main :: () {
                     imgui.Text("%", it.procedure.pointer);
                     
                     imgui.TableNextColumn();
-                    imgui.Text("%", (*it.type).(*Type).*);
+                    imgui.Text("%", (*it.proc_info).(*Type).*);
                 }
                 imgui.EndTable();
             }

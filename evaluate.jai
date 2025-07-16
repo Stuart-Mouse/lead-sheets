@@ -102,7 +102,7 @@ evaluate_node :: (
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
-            result = Any.{ procedure.type, *procedure.pointer };
+            result = to_any(procedure);
             // dprint("returning external procedure with type % at %\n", as_type(result.type), procedure.pointer);
             assert(identifier.flags & .IS_LVALUE == 0);
             
@@ -169,31 +169,16 @@ evaluate_node :: (
         proc_ptr  := proc_any.value_pointer.(**void).*;
         proc_info := proc_any.type.(*Type_Info_Procedure);
         
-        // TODO: we really should support #c_call procedures in Lead Sheets, kind surprised I never got around to that tbh...
         #if USING_DYNCALL {
-            dcReset(script.dyncall_vm);
-            if !(proc_info.procedure_flags & .HAS_NO_CONTEXT) {
-                dcArgPointer(script.dyncall_vm, *context);
-            }
-            
-            return_type := ifx proc_info.return_types 
-                then proc_info.return_types[0]
-                else type_info(void);
-            
-            for arguments 
-                if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  
-                    return Null_Any;
-            
-            if return_type != type_info(void) {
-                dcArgPointer(script.dyncall_vm, result.value_pointer);
-            }
-            dcCallVoid(script.dyncall_vm, xx proc_ptr);
-        } else {
-            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ result ]) {
-                log("Unable to find wrapper for procedure of type: %", as_type(proc_info));
+            if !make_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+                set_general_error(script, "Failed while trying to make dyncall.");
                 return Null_Any;
             }
-            log("We did it reddit!");
+        } else {
+            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ result ]) {
+                set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                return Null_Any;
+            }
         }
         dprint("returning result of procedure call: %\n", result);
         

@@ -130,7 +130,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
-            dprint("returning external procedure with type % at %\n", as_type(procedure.type), procedure.pointer);
+            dprint("returning external procedure with type % at %\n", as_type(procedure.proc_info), procedure.pointer);
             assert(identifier.flags & .IS_LVALUE == 0);
             if !stack_push_any(script, procedure.pointer)  return false;
             return true;
@@ -222,39 +222,21 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
+        arguments := NewArray(proc_info.argument_types.count, Any,, temp);
+        arg_ptr := arg_ptr_start;
+        for proc_info.argument_types {
+            value_pointer := arg_ptr;
+            if is_aggr(it)  value_pointer = value_pointer.(**void).*;
+            arguments[it_index] = Any.{ it, value_pointer };
+            arg_ptr += size_of(*void);
+        }
+        
         #if USING_DYNCALL {
-            dcReset(script.dyncall_vm);
-            jai_call :: true;
-            if jai_call || !(proc_info.procedure_flags & .HAS_NO_CONTEXT) {
-                dcArgPointer(script.dyncall_vm, *context);
+            if !make_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+                set_general_error(script, "Failed while trying to make dyncall.");
+                return Null_Any;
             }
-            
-            return_type := ifx proc_info.return_types 
-                then proc_info.return_types[0]
-                else type_info(void);
-            
-            arg_ptr := arg_ptr_start;
-            for arg_type: proc_info.argument_types {
-                value_pointer := arg_ptr;
-                if is_aggr(arg_type)  value_pointer = value_pointer.(**void).*;
-                if !push_argument(script.dyncall_vm, arg_type, value_pointer, true)  return false;
-                arg_ptr += size_of(*void);
-            }
-            
-            if return_type != type_info(void) {
-                dcArgPointer(script.dyncall_vm, return_ptr);
-            }
-            dcCallVoid(script.dyncall_vm, xx proc_ptr);
         } else {
-            arguments := NewArray(proc_info.argument_types.count, Any,, temp);
-            arg_ptr := arg_ptr_start;
-            for proc_info.argument_types {
-                value_pointer := arg_ptr;
-                if is_aggr(it)  value_pointer = value_pointer.(**void).*;
-                arguments[it_index] = Any.{ it, value_pointer };
-                arg_ptr += size_of(*void);
-            }
-            
             return_any := Any.{ procedure_call.value_type, return_ptr };
             if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ return_any ]) {
                 log("Unable to find wrapper for procedure of type: %", as_type(proc_info));

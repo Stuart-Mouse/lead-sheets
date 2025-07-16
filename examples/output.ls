@@ -32,7 +32,7 @@ local += 5;
 echo(local);
 
 // range-based for loops and unary operators
-for -5..9  echo(it);
+for-5..9  echo(it);
 
 // strings
 print(str);
@@ -109,7 +109,7 @@ echo(v2);
 {
    a := 5;
    b := 96;
-   c := -8;
+   c :=-8;
    foreach(a, b, c)  echo(it);
 }
 

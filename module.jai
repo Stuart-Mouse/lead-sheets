@@ -36,7 +36,9 @@ Script :: struct {
     stack_size:             int;
     stack_ptr:              *void;
     
-    dyncall_vm:             *DCCallVM;
+    #if USING_DYNCALL {
+        dyncall_vm:             *DCCallVM;
+    }
     
     lexer:                  Lexer;
     current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
@@ -66,8 +68,9 @@ free_script :: (using script: *Script) {
     array_free(type_table);
     array_free(global_declarations);
     fini(*pool);
-    if script.dyncall_vm  dcFree(script.dyncall_vm);
-    
+    #if USING_DYNCALL {
+        if script.dyncall_vm  dcFree(script.dyncall_vm);
+    }
     script.* = .{};
 }
 
@@ -77,9 +80,11 @@ init_script :: (script: *Script, stack_size := 1024) {
     script.stack_ptr  = script.stack_base;
     
     // allocate dyncall vm that will be reused
-    script.dyncall_vm = dcNewCallVM(2048);
-    dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
-    dcReset(script.dyncall_vm);
+    #if USING_DYNCALL {
+        script.dyncall_vm = dcNewCallVM(2048);
+        dcMode(script.dyncall_vm, DC_CALL_C_DEFAULT);
+        dcReset(script.dyncall_vm);
+    }
     
     script.ast_root = alloc_node(script, Node_Block);
     script.current_scope = script.ast_root;
@@ -333,8 +338,10 @@ using,except(next_power_of_two) Hash_Table :: #import "Hash_Table";
 
 #import "Utils";
 Convert :: #import "Convert";
-#import "dyncall";
 
+#if USING_DYNCALL {
+    #import "dyncall";
+}
 
 #if DEBUG { #add_context dprint_indent: int; }
 

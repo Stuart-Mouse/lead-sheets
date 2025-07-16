@@ -38,11 +38,6 @@
         option to sub-out or reset directive user_data if need be
             user can do this manually if they're getting that technical
         
-        
-        maybe directives should accept both a parse and typecheck procedure
-            for example, a directive may want to wait until typechecking to execute so that it has access to the full AST
-            instead, will pass an enum value in Directive_Call representing which phase of parsing/typechecking we are in
-            
         consider if we should just remove the extra complication around return types setting the replacement node and just let the user do that manually in the directive body
             since the user is given a pointer to the directive node, he can just set it himself...
 */
@@ -61,85 +56,108 @@ Directive_Call :: struct {
     directive_node: *Node_Directive;
 }
 
-register_directive :: (script: *Script, name: string, procedure: Any, user_data: ..Any) -> bool, int {
-    for script.directives {
-        if it.name == name {
-            log("Error: directives do not support overloading.");
-            return false, -1;
-        }
-    }
-    ti_proc := procedure.type.(*Type_Info_Procedure);
-    if ti_proc.type != .PROCEDURE {
-        log("Error: procedure provided was not actually a procedure.");
-        return false, -1;
-    }
-    if ti_proc.procedure_flags & .IS_C_CALL {
+
+can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
+    if proc_info.procedure_flags & .IS_C_CALL {
         log("Error: #c_call procedures are not currently supported as directives.");
-        return false, -1;
+        return false;
     }
-    if ti_proc.argument_types.count < 1 {
+    if proc_info.argument_types.count < 1 {
         log("Error: directive must take at least 1 argument for Script pointer.");
-        return false, -1;
+        return false;
     }
-    if ti_proc.argument_types[0] != type_info(*Directive_Call) {
+    if proc_info.argument_types[0] != type_info(*Directive_Call) {
         log("Error: directive must take a *Directive_Call as the first argument.");
-        return false, -1;
+        return false;
     }
-    if ti_proc.argument_types.count < user_data.count + 1 {
-        log("Error: too many user_data values provided to directive.");
-        return false, -1;
+    if proc_info.return_types.count < 1
+    || proc_info.return_types.count > 2
+    || proc_info.return_types[0] != type_info(bool) {
+        log("Error: directive must return a bool signifying success as first return value.");
+        return false;
     }
-    for user_data {
-        // TODO: allow using #as, maybe also coerce integers/floats
-        // if ti_proc.argument_types[it_index + 1] != type_info(Any)
-        // && it.type != ti_proc.argument_types[it_index + 1] {
-        if it.type != ti_proc.argument_types[it_index + 1] {
-            log("Error: type of user_data value % does not match type of corresponding directive argument. % vs %", it_index + 1, as_type(it.type), as_type(ti_proc.argument_types[it_index + 1]));
-            return false, -1;
+    return true;
+}
+
+#if USING_DYNCALL {
+    register_directive :: (script: *Script, name: string, procedure: Any, user_data: ..Any) {
+        assert(procedure.type == .PROCEDURE && can_register_directive(xx procedure.type));
+        
+        for script.directives {
+            if it.name == name {
+                assert(false, "Error: directives do not support overloading.");
+            }
         }
-    }
-    if ti_proc.return_types.count < 1
-    || ti_proc.return_types.count > 2
-    || ti_proc.return_types[ti_proc.return_types.count-1] != type_info(bool) {
-        log("Error: directive must return a bool signifying success as last return value.");
-        return false, -1;
-    }
-    for script.directives {
-        if it.name == name {
-            log("Error: directives do not support overloading.");
-            return false, -1;
+        
+        proc_info := procedure.type.(*Type_Info_Procedure);
+        if proc_info.argument_types.count < user_data.count + 1 {
+            log("Error: too many user_data values provided to directive.");
+            return false;
         }
+        for user_data {
+            // TODO: allow using #as, maybe also coerce integers/floats
+            // if proc_info.argument_types[it_index + 1] != type_info(Any)
+            // && it.type != proc_info.argument_types[it_index + 1] {
+            if it.type != proc_info.argument_types[it_index + 1] {
+                assert(false, "Error: type of user_data value % does not match type of corresponding directive argument. % vs %", it_index + 1, as_type(it.type), as_type(proc_info.argument_types[it_index + 1]));
+            }
+        }
+        
+        array_add(*script.directives, .{
+            name      = name,
+            procedure = Any_Proc.from(procedure),
+            user_data = user_data
+        });
     }
-    array_add(*script.directives, .{
-        name      = name,
-        procedure = Any_Proc.from(procedure),
-        user_data = user_data
-    });
-    return true, script.directives.count-1;
+} else {
+    // TODO: could use #caller_code or soemthing to statically check that user_data arguments are of proper types
+    register_directive :: inline (script: *Script, name: string, procedure: $P, user_data: ..Any) #modify {
+        proc_info := P.(*Type_Info_Procedure);
+        if proc_info.type != .PROCEDURE  return false, "'procedure' must be a procedure! What are you stupid?";
+        if !can_register_directive(proc_info)  return false, tprint("Unable to register procedure of type: %", P);
+        return true;
+    } {
+        for script.directives {
+            if it.name == name {
+                assert(false, "Error: directives do not support overloading.");
+            }
+        }
+        
+        proc_info := P.(*Type_Info_Procedure);
+        for user_data {
+            // TODO: allow using #as, maybe also coerce integers/floats
+            // if proc_info.argument_types[it_index + 1] != type_info(Any)
+            // && it.type != proc_info.argument_types[it_index + 1] {
+            if it.type != proc_info.argument_types[it_index + 1] {
+                assert(false, "Error: type of user_data value % does not match type of corresponding directive argument. % vs %", it_index + 1, as_type(it.type), as_type(proc_info.argument_types[it_index + 1]));
+            }
+        }
+        
+        register_procedure_type(P);
+        array_add(*script.directives, .{
+            procedure = Any_Proc.from(procedure),
+            name      = name,
+            user_data = user_data
+        });
+    }
 }
 
 
 evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Script_Phase) -> bool {
     procedure := script.directives[directive.directive_index];
-    ti_proc   := procedure.type;
+    directive_call := Directive_Call.{ phase, script, directive };
     
     // ===== typecheck call =====
-
-    // index of first argument to procedure which is not already filled in by *Script and user user_data values
-    min_arg_index := 1 + procedure.user_data.count;
     
-    // TODO: provide a better error message here, explaining that X number of arguments were filled in by the user_data, etc.
-    if ti_proc.argument_types.count != directive.arguments.count + min_arg_index {
-        log("Error: incorrect number of arguments provided for directive call. Expected %, got %.\n", ti_proc.argument_types.count - min_arg_index, directive.arguments.count);
+    first_arg_index := 1 + procedure.user_data.count;
+    if procedure.argument_types.count != directive.arguments.count + first_arg_index {
+        log("Error: Incorrect number of arguments provided for directive call. Expected % total, % were pre-filled by user_data, got %.\n", procedure.argument_types.count, procedure.user_data.count, directive.arguments.count);
         return false;
     }
     
-    // print("directive.arguments: %\n", directive.arguments);
-    
     for directive.arguments {
         // skip typechecking node if argument type intends to receive *Node
-        expected_type := ti_proc.argument_types[it_index + min_arg_index];
-        // print("expecting: %\n", as_type(expected_type));
+        expected_type := procedure.argument_types[it_index + first_arg_index];
         if expected_type == type_info(*Node)  continue;
         
         argument_type := typecheck_node(script, it);
@@ -153,57 +171,68 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         }
     }
     
-    return_value:   Any;
-    return_success: bool;
-    if ti_proc.return_types.count > 1 {
-        return_value = New_Any(ti_proc.return_types[0],, temp);
-    }
     
-    arguments_anys := NewArray(directive.arguments.count, Any,, temp);
-    // NOTE: we have to iterate by pointer here, otherwise we get a bug when trying to take an Any of the iterator value.
-    for *directive.arguments {
-        if ti_proc.argument_types[it_index + min_arg_index] == type_info(*Node) {
-            arguments_anys[it_index] = it.*; // pass *Node itself
-        } else {
-            arguments_anys[it_index] = evaluate_node(script, it.*);
-            if !!script.error  return false;
+    // ===== prepare arguments =====
+    
+    arguments := NewArray(procedure.argument_types.count, Any,, temp);
+    {
+        arguments[0] = *directive_call;
+        argument_index := 1;
+        
+        // NOTE: we have to iterate by pointer here, otherwise we get a bug when trying to take an Any of the iterator value.
+        for procedure.user_data {
+            arguments[argument_index] = it;
+            argument_index += 1;
+        }
+        
+        for *directive.arguments {
+            if procedure.argument_types[it_index + first_arg_index] == type_info(*Node) {
+                arguments[argument_index] = it.*; // pass *Node itself
+            } else {
+                arguments[argument_index] = evaluate_node(script, it.*);
+                if !!script.error  return false;
+            }
+            argument_index += 1;
         }
     }
     
-    // print("arguments_anys: %\n", arguments_anys);
+    
+    // ===== prepare return values =====
+    
+    // TODO: allow multiple user return values?
+    return_success: bool;
+    return_value:   Any;
+    return_values:  [] Any;
+    
+    if procedure.return_types.count > 1 {
+        return_value = New_Any(procedure.return_types[1],, temp);
+        return_values = Any.[ return_success, return_value ];
+    } else {
+        return_values = Any.[ return_success ];
+    }
     
     
     // ===== perform call =====
     
-    directive_call := Directive_Call.{ phase, script, directive };
-    
-    dcReset(script.dyncall_vm);
-    if !(ti_proc.procedure_flags & .HAS_NO_CONTEXT) {
-        dcArgPointer(script.dyncall_vm, *context);
+    #if USING_DYNCALL {
+        if !make_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+            set_general_error(script, "Failed while trying to make dyncall.");
+            return Null_Any;
+        }
+    } else {
+        if !try_calling_procedure_with_wrapper(procedure.proc_info, procedure.pointer, arguments, return_values) {
+            log("Error: Unable to find wrapper for procedure of type: %", as_type(procedure.proc_info));
+            return false;
+        }
     }
     
-    if !push_argument(script.dyncall_vm, type_info(Directive_Call), *directive_call)  return false;
     
-    for procedure.user_data {
-        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  return false;
-    }
-    for arguments_anys {
-        if !push_argument(script.dyncall_vm, it.type, it.value_pointer, true)  return false;
-    }
-    
-    if return_value.type != null {
-        dcArgPointer(script.dyncall_vm, return_value.value_pointer);
-    }
-    dcArgPointer(script.dyncall_vm, *return_success);
-    dcCallVoid(script.dyncall_vm, procedure.pointer);
-    
-    
-    // ===== handle returns =====
+    // ===== handle return values =====
     
     if return_success {
         if return_value.type == {
           case null; // do nothing!
-          
+            
           case type_info(*Node);
             // NOTE: node being pointed to is already assumed to be in the script's pool and have valid storage duration
             directive.runtime_node = return_value.value_pointer.(**Node).*;
