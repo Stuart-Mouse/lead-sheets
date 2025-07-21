@@ -1,5 +1,5 @@
 
-LS :: #import "Lead_Sheets"()(DEBUG = true, USING_DYNCALL = false);
+LS :: #import "Lead_Sheets"()(DEBUG = true, USING_DYNCALL = true);
 
 #load "imgui_sdl_gl_docking.jai";
 #load "imgui_extras.jai";
@@ -80,7 +80,9 @@ main :: () {
     LS.register_procedure(*script, "length", #procedure_of_call length(Vector2.{}));
     LS.register_procedure(*script, "scale", (vec: *Vector2, scale: float) { vec.* *= scale; });
     LS.register_procedure(*script, "print", (value: string) { print("%\n", value); });
-
+    
+    LS.register_procedure(*script, "add", (a: int, b: int) -> int #c_call { return a + b; });
+    
     a := 3;
     b := 5;
     LS.set_variable(*script, "a", a);

@@ -170,7 +170,7 @@ evaluate_node :: (
         proc_info := proc_any.type.(*Type_Info_Procedure);
         
         #if USING_DYNCALL {
-            if !make_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+            if !do_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
                 set_general_error(script, "Failed while trying to make dyncall.");
                 return Null_Any;
             }

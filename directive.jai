@@ -215,9 +215,9 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
     // ===== perform call =====
     
     #if USING_DYNCALL {
-        if !make_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+        if !do_dyncall(script.dyncall_vm, to_any(procedure), arguments, return_values) {
             set_general_error(script, "Failed while trying to make dyncall.");
-            return Null_Any;
+            return false;
         }
     } else {
         if !try_calling_procedure_with_wrapper(procedure.proc_info, procedure.pointer, arguments, return_values) {
