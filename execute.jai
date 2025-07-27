@@ -207,6 +207,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         dprint("proc_info: %\n", as_type(proc_info));
         
         procedure  := stack_pop_any(script, proc_info); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
+        
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
         proc_ptr   := procedure.value_pointer.(**void).*;
         return_ptr := script.stack_ptr;
@@ -215,7 +216,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             if !stack_push_any(script, Any.{ procedure_call.value_type, procedure_call.return_ptr })  return false;
             return_ptr = procedure_call.return_ptr;
         } else {
-            // stack_push_zeroes(script, procedure_call.value_type.runtime_size);
             stack_push_zeroes(script, 8);
         }
         arg_ptr_start := script.stack_ptr;
@@ -233,7 +233,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         return_any := Any.{ procedure_call.value_type, return_ptr };
         #if USING_DYNCALL {
-            if !do_dyncall(script.dyncall_vm, procedure, arguments, .[ return_any ]) {
+            if !do_dyncall(script.dyncall_vm, Any.{ proc_info, *proc_ptr }, arguments, .[ return_any ]) {
                 set_general_error(script, "Failed while trying to make dyncall.");
                 return false;
             }
