@@ -245,7 +245,10 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             if is_macro_declaration then declaration.flags |= .MACRO;
         }
         
-        if expect_semicolon && !expect_token_type(*lexer, .SEMICOLON)  return null;
+        if !expect_token_type(*lexer, .SEMICOLON) && expect_semicolon {
+            log("asdf");
+            return null;
+        }
         
         return declaration;
     }
@@ -256,6 +259,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return left;
     }
     
+    log("returning null");
     return null;
 }
 
@@ -400,7 +404,10 @@ parse_statement_string :: (script: *Script, statement: string, expect_eof := tru
     init_lexer(*script.lexer, statement);
     node := parse_statement(script, expect_semicolon = false);
     
-    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null;
+    if expect_eof && !expect_token_type(*script.lexer, .EOF) {
+        log("%", get_token(*script.lexer));
+        return null;
+    }
     return node;
 }
 

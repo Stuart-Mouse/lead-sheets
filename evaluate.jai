@@ -22,7 +22,10 @@ evaluate_expression :: (script: *Script, expr: string) -> (Any, bool) {
 
 evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
     root := parse_statement_string(script, expr);
-    if root == null  return Null_Any, false;
+    if root == null {
+        log("root was null");
+        return Null_Any, false;
+    }
     
     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return Null_Any, false;
     

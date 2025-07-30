@@ -213,7 +213,9 @@ main :: () {
                     str = copy_string(str);
                     value, ok := LS.evaluate_statement(*script, str, store_global_declarations = true);
                     if !ok {
-                        log("\tFailed to evaluate statement.");
+                        log("Error: Failed to evaluate statement.");
+                        log(LS.format_error(script.error));
+                        script.error = .{};
                     } else {
                         result: string;
                         if value.value_pointer then result = sprint("%", value);
