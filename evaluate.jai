@@ -172,13 +172,15 @@ evaluate_node :: (
         proc_ptr  := proc_any.value_pointer.(**void).*;
         proc_info := proc_any.type.(*Type_Info_Procedure);
         
+        result_array: [] Any; 
+        if result.type != xx void then result_array = .[ result ];
         #if USING_DYNCALL {
-            if !do_dyncall(script.dyncall_vm, proc_any, arguments, .[ result ]) {
+            if !do_dyncall(script.dyncall_vm, proc_any, arguments, result_array) {
                 set_general_error(script, "Failed while trying to make dyncall.");
                 return Null_Any;
             }
         } else {
-            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, .[ result ]) {
+            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, result_array) {
                 set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
                 return Null_Any;
             }

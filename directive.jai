@@ -81,7 +81,7 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
 
 #if USING_DYNCALL {
     register_directive :: (script: *Script, name: string, procedure: Any, user_data: ..Any) {
-        assert(procedure.type == .PROCEDURE && can_register_directive(xx procedure.type));
+        assert(procedure.type.type == .PROCEDURE && can_register_directive(xx procedure.type));
         
         for script.directives {
             if it.name == name {
@@ -92,7 +92,7 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
         proc_info := procedure.type.(*Type_Info_Procedure);
         if proc_info.argument_types.count < user_data.count + 1 {
             log("Error: too many user_data values provided to directive.");
-            return false;
+            return;
         }
         for user_data {
             // TODO: allow using #as, maybe also coerce integers/floats

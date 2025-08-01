@@ -75,6 +75,14 @@ free_script :: (using script: *Script) {
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
+    script.* = .{};
+    init(*script.pool);
+    
+    // TODO: move elsewhere. This is a hack to prevent the lookup table from getting initialized with the temporary allocator.
+    // if !DCaggr_lookup_table {
+    //     DCaggr_lookup_table.allocator = context.allocator;
+    // }
+    
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size);
     script.stack_ptr  = script.stack_base;
