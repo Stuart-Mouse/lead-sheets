@@ -801,7 +801,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         
         member_ti, member_offset := get_field(xx left_type, member_name);
         if member_ti == null {
-            set_general_error(script, ""); // TODO:
+            set_general_error(script, "%: Error: attempt to acces struct member which does not exist.", get_location(dot));
             return;
         }
         

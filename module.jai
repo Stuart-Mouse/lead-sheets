@@ -62,16 +62,19 @@ Script :: struct {
 }
 
 free_script :: (using script: *Script) {
-    array_free(variables);
-    array_free(procedures);
-    array_free(directives);
-    array_free(type_table);
-    array_free(global_declarations);
+    array_reset(*variables);
+    array_reset(*procedures);
+    array_reset(*directives);
+    array_reset(*type_table);
+    array_reset(*global_declarations);
     fini(*pool);
     #if USING_DYNCALL {
-        if script.dyncall_vm  dcFree(script.dyncall_vm);
+        if script.dyncall_vm {
+            dcFree(script.dyncall_vm);
+            script.dyncall_vm = null;
+        }
     }
-    script.* = .{};
+    // Don't zero out the entire script, since user still should be able to check and format the error.
 }
 
 init_script :: (script: *Script, stack_size := 1024) {

@@ -21,11 +21,7 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     
     script.flags |= .PARSED;
     
-    if !typecheck_script(script) {
-        log("Error: failed to typecheck script:\n");
-        log(format_error(script.error));
-        return false;
-    }
+    if !typecheck_script(script)  return false;
     
     success = true;
     return true;
