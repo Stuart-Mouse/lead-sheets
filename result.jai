@@ -125,10 +125,12 @@ operator ! :: inline (error: Error) -> bool { return error.type == .NO_ERROR; }
 
 get_class :: inline (error: Error) -> Error_Type { return error.type & .CLASS_MASK; }
 
-format_error :: (builder: *String_Builder, error: Error) {
+format_error :: (builder: *String_Builder, error: Error, append_jai_location := true) {
     if !error  return;
     
-    print_to_builder(builder, "%:%,%: ", error.location.fully_pathed_filename, error.location.line_number, error.location.character_number);
+    if append_jai_location {
+        print_to_builder(builder, "%:%,%: ", error.location.fully_pathed_filename, error.location.line_number, error.location.character_number);
+    }
     
     if get_class(error) == {
       case .LEXER_ERROR;
@@ -162,9 +164,9 @@ format_error :: (builder: *String_Builder, error: Error) {
     }
 }
 
-format_error :: (error: Error) -> string {
+format_error :: (error: Error, append_jai_location := true) -> string {
     builder: String_Builder; 
-    format_error(*builder, error);
+    format_error(*builder, error, append_jai_location);
     return builder_to_string(*builder); 
 }
 
