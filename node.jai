@@ -256,7 +256,6 @@ replace_node :: inline (original: **Node, new: *Node) {
     original.* = new;
 }
 
-// todo: remove
 get_location :: (node: Node) -> string {
     return tprint("%:%,%", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
 }

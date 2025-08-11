@@ -75,71 +75,97 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
 
 Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
 
+// this is dumb, but it must be done (for now)
+#insert -> string {
+    builder: String_Builder;
 
-BUILTIN_OPERATIONS :: (
-    struct { type: Operator_Type; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
-).[
-    // BINARY
-    .{ .BINARY, "+", int, int, int, false },
-    .{ .BINARY, "-", int, int, int, false },
-    .{ .BINARY, "*", int, int, int, false },
-    .{ .BINARY, "/", int, int, int, false },
+    append(*builder, #string JAI
+    BUILTIN_OPERATIONS :: (
+        struct { type: Operator_Type; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
+    ).[
+    JAI);
     
-    .{ .BINARY, ">",  int, int, bool, false },
-    .{ .BINARY, "<",  int, int, bool, false },
-    .{ .BINARY, "==", int, int, bool, false },
-    .{ .BINARY, ">=", int, int, bool, false },
-    .{ .BINARY, "<=", int, int, bool, false },
+    integer_template :: #string JAI
+    .{ .BINARY, "+", %1, %1, %1, false },
+    .{ .BINARY, "-", %1, %1, %1, false },
+    .{ .BINARY, "*", %1, %1, %1, false },
+    .{ .BINARY, "/", %1, %1, %1, false },
     
-    .{ .BINARY, "|", s64, s64, s64, false },
-    .{ .BINARY, "&", s64, s64, s64, false },
-    .{ .BINARY, "^", s64, s64, s64, false },
+    .{ .BINARY, ">",  %1, %1, bool, false },
+    .{ .BINARY, "<",  %1, %1, bool, false },
+    .{ .BINARY, "==", %1, %1, bool, false },
+    .{ .BINARY, ">=", %1, %1, bool, false },
+    .{ .BINARY, "<=", %1, %1, bool, false },
     
-    .{ .BINARY, "+", float, float, float, false },
-    .{ .BINARY, "-", float, float, float, false },
-    .{ .BINARY, "*", float, float, float, false },
-    .{ .BINARY, "/", float, float, float, false },
+    .{ .BINARY, "|", %1, %1, %1, false },
+    .{ .BINARY, "&", %1, %1, %1, false },
+    .{ .BINARY, "^", %1, %1, %1, false },
     
-    .{ .BINARY, ">",  float, float, bool, false },
-    .{ .BINARY, "<",  float, float, bool, false },
-    .{ .BINARY, "==", float, float, bool, false },
-    .{ .BINARY, ">=", float, float, bool, false },
-    .{ .BINARY, "<=", float, float, bool, false },
+    .{ .ASSIGNMENT, "+=", %1, %1, %1, false },
+    .{ .ASSIGNMENT, "-=", %1, %1, %1, false },
     
-    .{ .BINARY, "&&", bool, bool, bool, false },
-    .{ .BINARY, "||", bool, bool, bool, false },
+    .{ type = .UNARY, identifier = "~", left = %1,   ret = %1   },
+    JAI;
     
-    .{ .BINARY, "+", Vector2, Vector2, Vector2, false },
-    .{ .BINARY, "-", Vector2, Vector2, Vector2, false },
-    .{ .BINARY, "*", Vector2, Vector2, Vector2, false },
-    .{ .BINARY, "/", Vector2, Vector2, Vector2, false },
-    .{ .BINARY, "*", Vector2, float,   Vector2, true  },
-    .{ .BINARY, "/", Vector2, float,   Vector2, false },
-    
-    .{ .BINARY, "==", Vector2, Vector2, bool, false },
+    for (string.["u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64"]) {
+        print(*builder, integer_template, it);
+    }
     
     
-    // UNARY    (right type will be ignored)
-    .{ type = .UNARY, identifier = "-", left = int,   ret = int   },
-    .{ type = .UNARY, identifier = "-", left = float, ret = float },
-    .{ type = .UNARY, identifier = "~", left = s64,   ret = s64   },
+    signed_integer_template :: #string JAI
+    .{ type = .UNARY, identifier = "-", left = %1,   ret = %1   },
+    JAI;
     
+    for (string.["s8", "s16", "s32", "s64"]) {
+        print(*builder, signed_integer_template, it);
+    }
     
-    // ASSIGNMENT
-    // TODO: should we just assert that left and ret are the same type?
-    .{ .ASSIGNMENT, "+=", int, int, int, false },
-    .{ .ASSIGNMENT, "-=", int, int, int, false },
+    append(*builder, #string JAI
+        .{ .BINARY, "+", float, float, float, false },
+        .{ .BINARY, "-", float, float, float, false },
+        .{ .BINARY, "*", float, float, float, false },
+        .{ .BINARY, "/", float, float, float, false },
+        
+        .{ .BINARY, ">",  float, float, bool, false },
+        .{ .BINARY, "<",  float, float, bool, false },
+        .{ .BINARY, "==", float, float, bool, false },
+        .{ .BINARY, ">=", float, float, bool, false },
+        .{ .BINARY, "<=", float, float, bool, false },
+        
+        .{ .BINARY, "&&", bool, bool, bool, false },
+        .{ .BINARY, "||", bool, bool, bool, false },
+        
+        .{ .BINARY, "+", Vector2, Vector2, Vector2, false },
+        .{ .BINARY, "-", Vector2, Vector2, Vector2, false },
+        .{ .BINARY, "*", Vector2, Vector2, Vector2, false },
+        .{ .BINARY, "/", Vector2, Vector2, Vector2, false },
+        .{ .BINARY, "*", Vector2, float,   Vector2, true  },
+        .{ .BINARY, "/", Vector2, float,   Vector2, false },
+        
+        .{ .BINARY, "==", Vector2, Vector2, bool, false },
+        
+        
+        // UNARY    (right type will be ignored)
+        .{ type = .UNARY, identifier = "-", left = float, ret = float },
+        
+        
+        // ASSIGNMENT
+        // TODO: should we just assert that left and ret are the same type?
+        
+        .{ .ASSIGNMENT, "+=", float, float, float, false },
+        .{ .ASSIGNMENT, "-=", float, float, float, false },
+        
+        .{ .ASSIGNMENT, "+=", Vector2, Vector2, Vector2, false },
+        .{ .ASSIGNMENT, "-=", Vector2, Vector2, Vector2, false },
+        .{ .ASSIGNMENT, "*=", Vector2, Vector2, Vector2, false },
+        .{ .ASSIGNMENT, "/=", Vector2, Vector2, Vector2, false },
+        .{ .ASSIGNMENT, "*=", Vector2, float,   Vector2, false },
+        .{ .ASSIGNMENT, "/=", Vector2, float,   Vector2, false },
+    ];
+    JAI);
     
-    .{ .ASSIGNMENT, "+=", float, float, float, false },
-    .{ .ASSIGNMENT, "-=", float, float, float, false },
-    
-    .{ .ASSIGNMENT, "+=", Vector2, Vector2, Vector2, false },
-    .{ .ASSIGNMENT, "-=", Vector2, Vector2, Vector2, false },
-    .{ .ASSIGNMENT, "*=", Vector2, Vector2, Vector2, false },
-    .{ .ASSIGNMENT, "/=", Vector2, Vector2, Vector2, false },
-    .{ .ASSIGNMENT, "*=", Vector2, float,   Vector2, false },
-    .{ .ASSIGNMENT, "/=", Vector2, float,   Vector2, false },
-];
+    return builder_to_string(*builder);
+}
 
 // TODO: we should probably adapt some of the same ideas from the improved procedure overload resolution and adapt that to binary operators
 //       for example, if we know the type of one side of the operation, but not the other, then perhaps we can use the side we do know to intelligently hint a type for the other side?
