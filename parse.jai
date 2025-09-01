@@ -3,7 +3,7 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     if !(script.flags & .INITIALIZED)  return false;
     
     success: bool;
-    defer if !success  free_script(script);
+    // defer if !success  free_script(script);
     
     init_lexer(*script.lexer, source, location = .{ file_path, 1, 1 });
     

@@ -216,6 +216,7 @@ make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node 
     if node.flags & .TYPECHECKED {
         _cast.flags |= .TYPECHECKED;
     }
+    dprint("%: Info: created implicit cast from % to %", get_location(node), as_type(_cast.value.value_type), as_type(_cast.implicit_type));
     return _cast;
 }
 
@@ -550,65 +551,82 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
 
 
 typecheck_operation :: (using script: *Script, operation: *Node_Operation, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    left_check_flags := check_flags;
-    if operation.operator_type == .ASSIGNMENT {
-        left_check_flags |= .EXPECT_LVALUE;
-        hint_type = null; // just in case?
-    }
+    left_type, right_type: *Type_Info;
     
-    left_type := typecheck_node(script, operation.left, left_check_flags, hint_type);
-    if !!script.error  return;
-    
-    if operation.operator_type == .ASSIGNMENT {
-        hint_type = left_type; // so that we can hint right side based on left
-    }
-    
-    right_type: *Type_Info;
-    if operation.operator_type != .UNARY {
-        right_type = typecheck_node(script, operation.right, check_flags, hint_type);
+    if operation.operator_type == {
+      case .UNARY;
+        left_type = typecheck_node(script, operation.left, check_flags, hint_type);
         if !!script.error  return;
-    }
-    
-    // special case: operator = is always a simple memcpy
-    if operation.name == "=" {
-        if left_type != right_type {
-            ok, replacement := try_implicit_cast(script, operation.right, left_type); 
-            if !ok {
-                set_general_error(script, "%: Error: left and right types must match in a simple assignment statement!", get_location(operation));
-                return;
-            }
-            if replacement  replace_node(*operation.right, replacement);
+        
+      case .BINARY;
+        // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
+        left_type  = typecheck_node(script, operation.left,  check_flags, hint_type);
+        right_type = typecheck_node(script, operation.right, check_flags, hint_type);
+        
+        // If both come back null on first try, we return the upstream error.
+        if left_type == null && right_type == null {
+            assert(!!script.error);
+            return;
         }
-        operation.value_type = left_type;
-        return;
+        
+        script.error = .{}; // clear error so we can try again
+        
+        // Otherwise, try to typecheck whichever one previously failed with the type hint of the other side.
+        if left_type == null {
+            dprint("Info: Failed to typecheck left operand on first attempt, trying again with type hint: %", as_type(right_type));
+            left_type  = typecheck_node(script, operation.left,  check_flags, right_type);
+            if !!script.error  return;
+        }
+        if right_type == null {
+            dprint("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
+            right_type = typecheck_node(script, operation.right, check_flags, left_type);
+            if !!script.error  return;
+        }
+        
+      case .ASSIGNMENT;
+        // NOTE: we basically ignore hint_type in this case because assignment expressions must be used at statement-level anyhow.
+        left_type = typecheck_node(script, operation.left, check_flags | .EXPECT_LVALUE, null);
+        if !!script.error  return;
+        
+        right_type = typecheck_node(script, operation.right, check_flags, left_type);
+        if !!script.error  return;
+        
+        // special case: operator = is always a simple memcpy
+        if operation.name == "=" {
+            if left_type != right_type {
+                ok, replacement := try_implicit_cast(script, operation.right, left_type); 
+                if !ok {
+                    set_general_error(script, "%: Error: left and right types must match in a simple assignment statement!", get_location(operation));
+                    return;
+                }
+                if replacement  replace_node(*operation.right, replacement);
+            }
+            operation.value_type = left_type;
+            return;
+        }
     }
     
-    // TODO: figure out better casting system and remove this horrible hack
-    // enums are coerced to their underlying type for the purposes of binary operations, then will be cast back to proper type
-    // for now, we will just coerce all to s64/int 
-    // in order for this to be ok, the values being pointed to need to not have junk in the unused bytes... 
-    // and currently we don't do anything to really intentionally ensure this
-    coerce_enum_return_type: *Type_Info;
-    if left_type.type == .ENUM 
-    && left_type == right_type {
-        coerce_enum_return_type = left_type;
-        left_type  = type_info(s64);
-        right_type = type_info(s64);
-    }
+    // TODO: We could still use some smarter type coercion here, probably. 
+    //       Will have to see what specific cases come up later and try to fix those.
+    left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
+    right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    operator_index, _, swap_args := resolve_builtin_operation(operation.name, operation.operator_type, left_type, right_type);
+    operator_index, _, swap_args := resolve_builtin_operation(operation.name, operation.operator_type, left_underlying_type, right_underlying_type);
     if operator_index >= 0 {
         operation.operator_index = operator_index;
         
-        if swap_args {
-            operation.left, operation.right = operation.right, operation.left;
-        }
+        if swap_args { operation.left, operation.right = operation.right, operation.left; }
         
+        // NOTE: only uses the enum type if both left and right enums match, 
+        //       otherwise we set return type as the matching underlying type.
         operation.value_type = BUILTIN_OPERATIONS[operator_index].ret.(*Type_Info);
-        
-        // TODO: figure out better casting system and remove this horrible hack
-        if coerce_enum_return_type != null && operation.value_type == type_info(s64) {
-            operation.value_type = coerce_enum_return_type;
+        if left_type.type == .ENUM && left_type == right_type {
+            if operation.value_type != left_underlying_type {
+                set_general_error(script, "%: Error: I tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", get_location(operation), as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type));
+                return;
+            }
+            // dprint("Info: returning enum type from binary operation: %", as_type(left_type));
+            operation.value_type = left_type;
         }
         
         if is_aggr(operation.value_type) {
@@ -657,7 +675,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         procedure_name  := identifier.name;
         procedure_index := resolve_procedure_index(script, procedure_name, procedure_call.arguments, procedure_call.flags & .OVERLOAD == .OVERLOAD);
         if procedure_index == -1 {
-            set_general_error(script, ""); // error message is logged by resolve_procedure_index
+            set_general_error(script, "%", get_location(procedure_call)); // error message is logged by resolve_procedure_index
             return;
         }
         

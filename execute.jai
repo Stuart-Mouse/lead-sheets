@@ -24,7 +24,9 @@ execute_script :: (script: *Script) -> bool {
     }
     
     script.stack_ptr = script.stack_base;
-    for script.ast_root.statements {
+    
+    statements := script.ast_root.statements;
+    for statements {
         dprint("executing statement #%\n", it_index);
         if !execute_node(script, it)  return false;
     }
