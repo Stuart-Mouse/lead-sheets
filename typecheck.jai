@@ -919,7 +919,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         }
     }
     
-    set_general_error(script, "%: Error: left side of dot expression must be a struct or type.", get_location(dot));
+    set_general_error(script, "%: Error: left side of dot expression must be a struct or type. Got: %", get_location(dot), as_type(dot.left.value_type));
     return;
 }
 
