@@ -126,7 +126,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
-            dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
+            if variable.binding.type.runtime_size > 8
+                then dprint("returning external variable at %\n", variable.binding.value_pointer);
+                else dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
             if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
@@ -281,10 +283,30 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, dot.right);
         }
         
-        if dot.left.value_type.type == {
+        left_type := dot.left.value_type;
+        if left_type.type == {
+          case .POINTER;
+            pointer_info := left_type.(*Type_Info_Pointer);
+            assert(pointer_info.pointer_to.type == .STRUCT);
+            // override left type for struct case so that we we pop the correct type
+            dprint("override left_type: % -> %\n", as_type(left_type), as_type(pointer_info.pointer_to));
+            left_type = pointer_info.pointer_to;
+            
+            if !execute_node(script, dot.left)  return false;
+
+            struct_any, did_dereference := dereference_any_pointer(stack_pop_any(script, pointer_info, false));
+            assert(did_dereference);
+            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+            
+            dprint("struct value ptr: %\n", struct_any.value_pointer);
+            dprint("member value ptr: %\n", member_any.value_pointer);
+            
+            if !stack_push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            return true;
+            
           case .STRUCT;
-            if !execute_node(script, dot.left)  return false;  
-            struct_any := stack_pop_any(script, dot.left.value_type, true);
+            if !execute_node(script, dot.left)  return false;
+            struct_any := stack_pop_any(script, left_type, true);
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
             dprint("struct value ptr: %\n", struct_any.value_pointer);
@@ -327,10 +349,15 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
         if !stack_push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE)  return false;
-        dprint("returning result of indexing operation: %\n", element);
+        // dprint("returning result of indexing operation: %\n", element);
+        
+        if element.type.runtime_size > 8
+            then dprint("returning external variable at %\n", element.value_pointer);
+            else dprint("returning external variable with value % at %\n", element, element.value_pointer);
+
         return true;
         
-    
+        
       case Node_Declaration;
         declaration := node.(*Node_Declaration);
         

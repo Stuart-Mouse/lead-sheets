@@ -206,10 +206,22 @@ evaluate_node :: (
             assert(node.value_type.type == .ENUM || node.value_type.type == .STRUCT);
             result = evaluate_node(script, dot.right);
         } else {
-            if dot.left.value_type.type == {
+            left_type := dot.left.value_type;
+            
+            if left_type.type == {
+              case .POINTER;
+                // left side can only be a pointer if it is a pointer to a struct
+                // this is to allow implicit dereference on pointers to structs for member access
+                pointer_info := left_type.(*Type_Info_Pointer);
+                assert(pointer_info.pointer_to.type == .STRUCT);
+                #through;
+                
               case .STRUCT;
                 struct_any := evaluate_node(script, dot.left);
                 if !!script.error  return Null_Any;
+                
+                // do implicit dereference if needed
+                struct_any = dereference_any_pointer(struct_any);
                 
                 result = Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
                 dprint("struct value ptr: %\n", struct_any.value_pointer);

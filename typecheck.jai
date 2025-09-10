@@ -299,7 +299,7 @@ can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     ptr_info := type.(*Type_Info_Pointer);
     if ptr_info.type != .POINTER || ptr_info.pointer_to != node.value_type  return false;
     
-    // TODO: put more logic in here to allow implicit dereference one using #as members?
+    // TODO: put more logic in here to allow implicit dereference on using #as members?
     return true;
 }
 
@@ -805,13 +805,28 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     }
     
     if left_type.type == {
+      case .POINTER;
+        // if left type is a pointer to a struct, override left_type with the type info for struct being pointed at
+        // this is to allow implicit dereference on pointers to structs for member access
+        pointer_info := left_type.(*Type_Info_Pointer);
+        if pointer_info.pointer_to.type != .STRUCT {
+            set_general_error(script, "%: Error: if left side of struct member dot dereference expression is a pointer, then it must point to a struct type.", get_location(dot.left));
+            return;
+        }
+        struct_info := pointer_info.pointer_to.(*Type_Info_Struct);
+        left_type = struct_info; // override for below struct case
+        
+        // NOTE: we also need to remove the EXPECT_LVALUE flag if it was set for the pointer iself.
+        //       this is currently the only spot we ever do this, so its a bit weird!
+        dot.left.flags &= ~.IS_LVALUE;
+        #through;
+        
       case .STRUCT;
         if dot.right.node_type != Node_Identifier {
-            set_general_error(script, "%: Error: right side of struct member dot dereference expression must be an identifier.", get_location(dot));
+            set_general_error(script, "%: Error: right side of struct member dot dereference expression must be an identifier.", get_location(dot.right));
             return;
         }
         
-        // TODO: we should check that member offset is non-negative so as to prevent use of constants until we can properly support those
         member_identifier := dot.right.(*Node_Identifier);
         assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
         member_name := member_identifier.name;
@@ -819,7 +834,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         
         member_ti, member_offset := get_field(xx left_type, member_name);
         if member_ti == null {
-            set_general_error(script, "%: Error: attempt to access struct member which does not exist.", get_location(dot));
+            set_general_error(script, "%: Error: attempt to access struct member which does not exist.", get_location(dot.right));
             return;
         }
         
@@ -827,7 +842,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         // so we can't just set the left type to be a namespace.
         //      but we do still want to do this if left type is an identifier? or no, since it could be a type identifier? which maybe we want to leave as is?
         if member_ti.flags & .CONSTANT {
-            set_general_error(script, "%: Error: access of constant struct members is not yet allowed.", get_location(dot));
+            set_general_error(script, "%: Error: access of constant struct members is not yet allowed.", get_location(dot.right));
             return;
             // member_identifier.identifier_type = .LITERAL;
             // member_identifier.literal = alloc_node(script, Node_Literal);
