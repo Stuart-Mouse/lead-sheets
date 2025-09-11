@@ -310,6 +310,19 @@ parse_leaf :: (using script: *Script) -> *Node {
         }
         return expression;
         
+      case .TRUE;
+        dprint("TRUE\n");
+        literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
+        literal.literal_type = .BOOLEAN;
+        literal.number       = to_any_number(true);
+        return literal;
+        
+      case .FALSE;
+        dprint("FALSE\n");
+        literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
+        literal.literal_type = .BOOLEAN;
+        literal.number       = to_any_number(false);
+        return literal;
         
       case .NUMBER;
         dprint("NUMBER (%)\n", token.text);

@@ -59,8 +59,13 @@ Token_Type :: enum {
     
     
     IDENTIFIER      :: 256;
+    
+    TRUE;
+    FALSE;
+    
     STRING;
     NUMBER;
+    
     COMPARE_EQUAL;
     LESS_THAN_OR_EQUAL_TO;
     GREATER_THAN_OR_EQUAL_TO;
@@ -203,8 +208,9 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
     token_text = try_lex_identifier(lexer);
     if token_text {
         type := Token_Type.IDENTIFIER;
-        // TODO: can abstract this to a lookup table if we want
         if token_text == {
+          case "true";      type = .TRUE;
+          case "false";     type = .FALSE;
           case "if";        type = .IF;
           case "for";       type = .FOR;
           case "foreach";   type = .FOREACH;

@@ -141,7 +141,7 @@ Node_Directive :: struct {
 // TODO: figure out a better way to implement the ANY literal type
 Node_Literal :: struct {
     using #as node_base: Node;
-    literal_type: enum { STRING; NUMBER; STRUCT; ANY; };
+    literal_type: enum { BOOLEAN; STRING; NUMBER; STRUCT; ANY; };
     union {
         number:  Any_Number;
         text:    string;
@@ -156,10 +156,11 @@ Node_Literal :: struct {
 get_literal_value_as_any :: (literal: Node_Literal) -> Any {
     assert(literal.value_type != null);
     if #complete literal.literal_type == {
-      case .STRING; return Any.{ type_info(string), *literal.text };
-      case .NUMBER; return to_any(*literal.number);
-      case .STRUCT; return Any.{ literal.value_type, literal.aggr.value_pointer };
-      case .ANY;    return literal.any;
+      case .BOOLEAN; return to_any(*literal.number);
+      case .STRING;  return literal.text;
+      case .NUMBER;  return to_any(*literal.number);
+      case .STRUCT;  return Any.{ literal.value_type, literal.aggr.value_pointer };
+      case .ANY;     return literal.any;
     }
     unreachable();
 }
@@ -283,10 +284,10 @@ make_string_literal :: (script: *Script, source_token: Token) -> *Node_Literal {
 
 // NOTE: source_token here should be the open brace token
 make_struct_literal :: (script: *Script, source_token: Token, contents: [] *Node) -> *Node_Literal {
-    node := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
-    node.literal_type     = .STRUCT;
-    node.aggr.expressions = contents;
-    return node;
+    literal := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
+    literal.literal_type     = .STRUCT;
+    literal.aggr.expressions = contents;
+    return literal;
 }
 
 make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {

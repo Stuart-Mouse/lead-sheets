@@ -103,6 +103,9 @@ print_node :: (
           case .NUMBER;
             print_to_builder(builder, "%", to_any(*literal.number));
             
+          case .BOOLEAN;
+            print_to_builder(builder, "%", to_any(*literal.number));
+            
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);
             append(builder, ".{");

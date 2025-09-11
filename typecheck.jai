@@ -418,6 +418,9 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
       case .STRING;
         literal.value_type = type_info(string);
         
+      case .BOOLEAN;
+        literal.value_type = literal.number.type;
+        
       case .NUMBER;
         if is_numeric_type(hint_type) {
             // dprint("returning hinted type: %\n", as_type(hint_type));

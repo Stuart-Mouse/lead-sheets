@@ -78,6 +78,7 @@ evaluate_node :: (
         if #complete literal.literal_type == {
           case .ANY;     result = literal.any;
           case .STRING;  result = literal.text;
+          case .BOOLEAN; result = to_any(*literal.number);
           case .NUMBER;  result = to_any(*literal.number);
           case .STRUCT;
             ti_struct := literal.value_type.(*Type_Info_Struct);

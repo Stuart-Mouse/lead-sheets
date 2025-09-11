@@ -88,6 +88,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("returning literal with value %\n", literal.text);
             return true;
             
+          case .BOOLEAN; #through;
           case .NUMBER;
             if !stack_push_any(script, to_any(*literal.number), literal.flags & .IS_LVALUE != 0)  return false;
             dprint("returning literal with value %\n", to_any(*literal.number));
