@@ -315,7 +315,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bo
     trivia := string.{ 0, file.data };
     ok := true;
     
-    while loop := true {
+    while loop := file.count > 0 {
         while is_whitespace(file[0]) {
             if !advance(lexer)  break;
         }

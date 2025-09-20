@@ -64,6 +64,7 @@ Script :: struct {
 free_script :: (using script: *Script) {
     array_reset(*variables);
     array_reset(*procedures);
+    array_reset(*named_blocks);
     array_reset(*directives);
     array_reset(*type_table);
     array_reset(*global_declarations);
@@ -74,12 +75,13 @@ free_script :: (using script: *Script) {
             script.dyncall_vm = null;
         }
     }
-    // Don't zero out the entire script, since user still should be able to check and format the error.
 }
 
 init_script :: (script: *Script, stack_size := 1024) {
     script.* = .{};
     init(*script.pool);
+    
+    script.named_blocks.allocator = context.allocator;
     
     // TODO: move elsewhere. This is a hack to prevent the lookup table from getting initialized with the temporary allocator.
     // if !DCaggr_lookup_table {
@@ -102,6 +104,17 @@ init_script :: (script: *Script, stack_size := 1024) {
     
     script.flags |= .INITIALIZED;
 }
+
+// copy_script_static_variables :: (dst: *Script, src: *Script) {
+//     free_script(dst); // just in case data is already there...
+//     dst.* = .{};
+    
+//     init(*dst.pool);
+    
+//     // TODO: how to copy all of syntax tree...
+//     // this is annoying because we will have to clone the whole tree recursively and 
+    
+// }
 
 // ensures no name conflicts
 set_variable :: (script: *Script, name: string, any: Any, replacement_value := false) {

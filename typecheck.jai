@@ -1012,9 +1012,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     dprint("explicit_type: %\n", explicit_type);
     dprint("right_type: %\n", right_type);
     
-    declaration.value_type    = ifx explicit_type else right_type;
-    declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
-    // dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
+    declaration.value_type = ifx explicit_type else right_type;
     
     if declaration.flags & .MACRO {
         is_acceptable_init_expression := declaration.init_expression.node_type == Node_Literal;
@@ -1028,8 +1026,24 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_general_error(script, "%: Error: macro declarations can only be made to simple literals at this time.", get_location(declaration));
             return;
         }
+        
+        if declaration.init_expression.node_type == {
+          case Node_Literal;
+            declaration.value_pointer = get_literal_value_as_any(declaration.init_expression.(*Node_Literal)).value_pointer;
+            
+          case Node_Dot;
+            dot := declaration.init_expression.(*Node_Dot);
+            assert(dot.right.node_type == Node_Literal);
+            declaration.value_pointer = get_literal_value_as_any(dot.right.(*Node_Literal)).value_pointer;
+        }
+        
         value := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
+        
         if !!script.error  return;
+    }
+    else {
+        declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
+        // dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
     }
     
     return;

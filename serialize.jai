@@ -65,10 +65,11 @@ print_node :: (
 ) -> bool {
     if node == null {
         log("Tried to read from null pointer in print_node().");
-        // TODO: proabbly print call stack here...
+        print_stack_trace(context.stack_trace);
         return false;
     }
     
+    // TODO: why do we have this exception?
     if node.node_type != Node_Operation {
         append_trivia(builder, node);
     }
@@ -110,7 +111,10 @@ print_node :: (
             ti_struct := literal.value_type.(*Type_Info_Struct);
             append(builder, ".{");
             
-            if node.flags & .TYPECHECKED {
+            // NOTE: we only want to serialize a struct using its current value if it is a malleable literal
+            if (node.flags & .TYPECHECKED) && (node.flags & .IS_MALLEABLE) {
+                log("serializing struct literal with value: %", Any.{ node.value_type, literal.aggr.value_pointer });
+                
                 // ignoring #place members. Wish there were a better way to do this.
                 last_member_offset := -1;
                 for ti_struct.members {
