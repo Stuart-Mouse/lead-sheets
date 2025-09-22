@@ -75,6 +75,9 @@ Token_Type :: enum {
     
     PLUS_EQUALS;
     MINUS_EQUALS;
+    AND_EQUALS;
+    OR_EQUALS;
+    XOR_EQUALS;
     
     // DOUBLE_QUESTION_MARK;
     
@@ -193,6 +196,9 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
           case ">="; return make_token(.GREATER_THAN_OR_EQUAL_TO, 2);
           case "+="; return make_token(.PLUS_EQUALS, 2);
           case "-="; return make_token(.MINUS_EQUALS, 2);
+          case "&="; return make_token(.AND_EQUALS, 2);
+          case "|="; return make_token(.OR_EQUALS, 2);
+          case "^="; return make_token(.XOR_EQUALS, 2);
           case "&&"; return make_token(.LOGICAL_AND, 2);
           case "||"; return make_token(.LOGICAL_OR, 2);
           case ".."; return make_token(.SPREAD, 2); // not a logical operator but whatever, it goes here

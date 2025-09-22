@@ -489,7 +489,9 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
 }
 
 typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    assert(identifier.identifier_type == .UNRESOLVED);
+    // NOTE: identifier may have already been typechecked e.g. in parameters of procedure call
+    //       in this case we obviously don't want to check it again (not to mention accessing name will now be invalid!)
+    if identifier.identifier_type != .UNRESOLVED  return;
     
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope, check_flags & .EXPECT_LVALUE != 0);
     if declaration {
