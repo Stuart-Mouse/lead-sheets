@@ -516,7 +516,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok {
-                set_parse_error(script, "Failed in parse_contents_of_struct_literal.");
+                set_parse_error(script, "%: failed to parse contents of struct literal.", token.location);
                 return null;
             }
             literal := make_struct_literal(script, token_after_dot, struct_contents);

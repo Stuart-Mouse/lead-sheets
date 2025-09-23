@@ -44,6 +44,9 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
     .{ "=",  .ASSIGNMENT, 1 },
     .{ "+=", .ASSIGNMENT, 1 },
     .{ "-=", .ASSIGNMENT, 1 },
+    .{ "|=", .ASSIGNMENT, 1 },
+    .{ "&=", .ASSIGNMENT, 1 },
+    .{ "^=", .ASSIGNMENT, 1 },
     
     .{ "&&", .BINARY, 2 },
     .{ "||", .BINARY, 2 },
@@ -54,10 +57,10 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
     .{ ">",  .BINARY, 3 },
     .{ "<",  .BINARY, 3 },
     
-    .{ "|", .BINARY, 4 },
-    .{ "&", .BINARY, 4 },
-    .{ "^", .BINARY, 4 },
-    .{ "~", .BINARY, 4 },
+    .{ "|",  .BINARY, 4 },
+    .{ "&",  .BINARY, 4 },
+    .{ "^",  .BINARY, 4 },
+    .{ "~",  .BINARY, 4 },
     
     .{ "+",  .BINARY, 5 },
     .{ "-",  .BINARY, 5 },
@@ -65,6 +68,7 @@ operator_table :: struct { identifier: string; operator_type: Operator_Type; pre
     .{ "/",  .BINARY, 6 },
     
     .{ "-",  .UNARY,  7 },
+    .{ "~",  .UNARY,  7 },
     
     // added for LSD files
     .{ "&",  .UNARY,  8 },
@@ -103,6 +107,9 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
     
     .{ .ASSIGNMENT, "+=", %1, %1, %1, false },
     .{ .ASSIGNMENT, "-=", %1, %1, %1, false },
+    .{ .ASSIGNMENT, "|=", %1, %1, %1, false },
+    .{ .ASSIGNMENT, "&=", %1, %1, %1, false },
+    .{ .ASSIGNMENT, "^=", %1, %1, %1, false },
     
     .{ type = .UNARY, identifier = "~", left = %1,   ret = %1   },
     JAI;
@@ -146,7 +153,8 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
         
         
         // UNARY    (right type will be ignored)
-        .{ type = .UNARY, identifier = "-", left = float, ret = float },
+        .{ type = .UNARY, identifier = "-", left = float,   ret = float },
+        .{ type = .UNARY, identifier = "-", left = Vector2, ret = Vector2 },
         
         
         // ASSIGNMENT
