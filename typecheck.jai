@@ -435,11 +435,11 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         } else {
             // NOTE: also doing a little remap here in default case, 
             //       since we actually want the default float type to be float32
-            // if literal.number.type == type_info(float64) {
+            if literal.number.type == type_info(float64) {
                 new_number := Any_Number.{ type = type_info(float32) };
                 Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
                 literal.number = new_number;
-            // }
+            }
         }
         literal.value_type = literal.number.type;
         
