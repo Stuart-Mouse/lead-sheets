@@ -75,14 +75,16 @@ Error_Type :: enum s64 {
     PARSE_ERROR     :: 3 << 32;
     TYPECHECK_ERROR :: 4 << 32;
     EVAL_ERROR      :: 5 << 32;
-    EXEC_ERROR      :: 6 << 32;
+    EXECUTION_ERROR      :: 6 << 32;
     USER_ERROR      :: 7 << 32;
     
     CLASS_MASK :: 0xffffffff_00000000;
     
     // error subtypes stored in lower 32 bits
-    MISSING_TYPE_HINT       :: TYPECHECK_ERROR + 1;
-    UNRESOLVED_IDENTIFIER   :: TYPECHECK_ERROR + 2;
+    MISSING_TYPE_HINT           :: TYPECHECK_ERROR + 1;
+    UNRESOLVED_IDENTIFIER       :: TYPECHECK_ERROR + 2;
+    FAILED_IMPLICIT_CAST        :: TYPECHECK_ERROR + 3;
+    FAILED_OVERLOAD_RESOLUTION  :: TYPECHECK_ERROR + 4;
     
     UNEXPECTED_TOKEN        :: LEXER_ERROR + 1;
     UNEXPECTED_CHARACTER    :: LEXER_ERROR + 2;
@@ -119,76 +121,95 @@ Typecheck_Error :: struct {
     using 
     base:   Error_Base;
     node:   *Node;
+    procedure_overload_report:    Procedure_Overload_Report;
 }
 
 operator ! :: inline (error: Error) -> bool { return error.type == .NO_ERROR; }
 
 get_class :: inline (error: Error) -> Error_Type { return error.type & .CLASS_MASK; }
 
-format_error :: (builder: *String_Builder, error: Error, append_jai_location := true) {
-    if !error  return;
+format_error :: (builder: *String_Builder, script: *Script, append_jai_location := true, append_script_location := true) {
+    if !script.error  return;
+    error := *script.error;
     
     if append_jai_location {
-        print_to_builder(builder, "%:%,%: ", error.location.fully_pathed_filename, error.location.line_number, error.location.character_number);
+        print(builder, "%:%,%: ", error.location.fully_pathed_filename, error.location.line_number, error.location.character_number);
     }
     
     if get_class(error) == {
       case .LEXER_ERROR;
         token := error.lexer.token;
-        print_to_builder(builder, "\n%:%,%: ", token.location.fully_pathed_filename, token.location.line_number, token.location.character_number);
+        if append_script_location {
+            print(builder, "\n%:%,%: ", token.location.fully_pathed_filename, token.location.line_number, token.location.character_number);
+        }
         
         if error.type == {
           case .UNEXPECTED_TOKEN;
-            print_to_builder(builder, "Unexpected token: % %", token.text, token.trivia);
+            print(builder, "Unexpected token: % %", token.text, token.trivia);
             
           case .UNEXPECTED_CHARACTER;
-            print_to_builder(builder, "Unexpected character: % %", token.text, token.trivia);
+            print(builder, "Unexpected character: % %", token.text, token.trivia);
         }
         
       case .TYPECHECK_ERROR;
         node := error.typecheck.node;
         if node {
-            print_to_builder(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+            if append_script_location {
+                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+            }
             if error.type == {
               case .UNRESOLVED_IDENTIFIER;
-                print(builder, "Unresolved identifier: '%'", node.(*Node_Identifier).name);
+                assert(node.node_type == Node_Identifier);
+                print(builder, "Unresolved identifier: '%'\n", node.(*Node_Identifier).name);
+                
+              case .MISSING_TYPE_HINT;
+                print(builder, "Unable to resolve type due to missing type hint.\n");
+                
+              case .FAILED_IMPLICIT_CAST;
+                // NOTE: currently the full error is just in error.message
+                
+              case .FAILED_OVERLOAD_RESOLUTION;
+                format_procedure_overload_report(builder, script, error.typecheck.procedure_overload_report);
             }
         } else {
             print(builder, "[node is null! error type is %] ", error.type);
         }
-        append(builder, error.message);
         
       case; #through; // temporary, until other cases are implemented
       case .GENERAL_ERROR;
-        append(builder, error.message);
     }
+    
+    append(builder, error.message);
 }
 
-format_error :: (error: Error, append_jai_location := true) -> string {
+format_error :: (script: *Script, append_jai_location := true, append_script_location := true) -> string {
     builder: String_Builder; 
-    format_error(*builder, error, append_jai_location);
+    format_error(*builder, script, append_jai_location, append_script_location);
     return builder_to_string(*builder); 
 }
 
 
-set_error :: (script: *Script, type: Error_Type, format: string, args: ..Any, loc := #caller_location) {
-    script.error = .{ type = type, message = tprint(format, ..args), location = loc };
-} @PrintLike
+// set_error :: (script: *Script, type: Error_Type, format: string, args: ..Any, loc := #caller_location) {
+//     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
+// } @PrintLike
 
 set_general_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
     script.error = .{ type = .GENERAL_ERROR, message = tprint(format, ..args), location = loc };
 } @PrintLike
 
-set_parse_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
+set_parse_error :: (script: *Script, format: string = "", args: ..Any, loc := #caller_location) {
+    // assert(type & .CLASS_MASK == .PARSE_ERROR);
     script.error = .{ type = .PARSE_ERROR, message = tprint(format, ..args), location = loc };
 } @PrintLike
 
-set_typecheck_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
+set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
+    assert(type & .CLASS_MASK == .TYPECHECK_ERROR);
     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
     script.error.typecheck.node = node;
 } @PrintLike
 
-set_exec_error :: (script: *Script, format: string, args: ..Any, node: *Node, type := Error_Type.EXEC_ERROR, loc := #caller_location) {
+set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, loc := #caller_location) {
+    assert(type & .CLASS_MASK == .EXECUTION_ERROR);
     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
     // script.error.exec.node = node;
 } @PrintLike

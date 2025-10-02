@@ -15,11 +15,11 @@
 
 execute_script :: (script: *Script) -> bool {
     if !(script.flags & .PARSED) {
-        set_exec_error(script, "Cannot execute script before AST has been constructed!\n", node = null);
+        set_execution_error(script, "Cannot execute script before AST has been constructed.\n", node = null);
         return false;
     }
     if !(script.flags & .TYPECHECKED) {
-        set_exec_error(script, "Cannot execute script before AST has been typechecked!\n", node = null);
+        set_execution_error(script, "Cannot execute script before AST has been typechecked.\n", node = null);
         return false;
     }
     
@@ -58,7 +58,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     }
     
     if !node.flags & .TYPECHECKED {
-        set_exec_error(script, "Cannot execute a node that has not been typechecked.", node = node);
+        set_execution_error(script, "Cannot execute a node that has not been typechecked.", node = node);
         return false;
     }
     
@@ -144,7 +144,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, identifier.literal);
             
           case;
-            set_exec_error(script, "Unhandled case in execute_node for identifier type: %", identifier.identifier_type, node = node);
+            set_execution_error(script, "Unhandled case in execute_node for identifier type: %", identifier.identifier_type, node = node);
             return false;
         }
         return false;
@@ -344,7 +344,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         array_count, array_data := get_array_count_and_data(base_any.value_pointer, xx base_any.type);
         
         if index_as_s64 < 0 || index_as_s64 >= array_count {
-            set_exec_error(script, "Array index % was out of bounds! Max index is %.", index_as_s64, array_count-1, node = node);
+            set_execution_error(script, "Array index % was out of bounds! Max index is %.", index_as_s64, array_count-1, node = node);
             return false;
         }
         

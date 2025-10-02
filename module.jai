@@ -175,7 +175,7 @@ stack_peek :: inline (script: *Script, $$is_lvalue := false) -> *void {
 
 stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
     if script.stack_ptr >= script.stack_base + script.stack_size {
-        set_exec_error(script, "Ran out of space on stack!", node = null);
+        set_execution_error(script, "Ran out of space on stack!", node = null);
         return false;
     }
     defer script.stack_ptr += PTR_SIZE;
@@ -191,7 +191,7 @@ stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
 
 stack_push_zeroes :: (script: *Script, size: int) -> bool {
     if script.stack_ptr + size >= script.stack_base + script.stack_size {
-        set_exec_error(script, "Ran out of space on stack!", node = null);
+        set_execution_error(script, "Ran out of space on stack!", node = null);
         return false;
     }
     

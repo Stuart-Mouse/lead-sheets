@@ -25,7 +25,7 @@ Node :: struct {
 }
 
 /*
-    Notes about source_token on nodes:
+    Notes about trivia on nodes:
     
     Currently, we don't do a perfect job of preserving whitespace and comments on nodes (trivia), 
     since there is not a one-to-one correspondence between tokens and nodes.

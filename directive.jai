@@ -162,7 +162,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         
         argument_type := typecheck_node(script, it);
         if !!script.error {
-            log("Error: failed to evaluate argument % for directive call:\n\t%", it_index+1, format_error(script.error));
+            log("Error: failed to evaluate argument % for directive call:\n\t%", it_index+1, format_error(script));
             return false;
         }
         if argument_type != expected_type {

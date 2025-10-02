@@ -28,6 +28,8 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
     }
 }
 
+
+
 Procedure_Overload :: struct {
     proc_index:         int;
     coercion_distance:  int;                                    // a score assigned based on how 'far' we have to coerce arguments in order to make the candidate procedure match
@@ -37,6 +39,79 @@ Procedure_Overload :: struct {
         arg_count:  struct { expected: int; provided: int; };
         arg_type:   struct { index: int; expected_type: *Type_Info; argument: *Node; };
     };
+}
+
+format_procedure_overload :: (builder: *String_Builder, script: *Script, overload: Procedure_Overload) #expand {
+    proc := script.procedures[overload.proc_index];
+    
+    print(builder, "%(", proc.name);
+    for proc.argument_types {
+        if it_index != 0  print(builder, ", ");
+        print(builder, "%", as_type(it));
+    }
+    print(builder, ")\n");
+    
+    if overload.reject_reason == {
+      case .ARG_COUNT;
+        print(builder, 
+            "Mismatch on argument count: expected %, got %\n\n", 
+            overload.reject_details.arg_count.expected, 
+            overload.reject_details.arg_count.provided
+        );
+        
+      case .ARG_TYPE;
+        print(builder, 
+            "Type mismatch on argument %: expected %, got %\n\n", 
+            overload.reject_details.arg_type.index, 
+            as_type(overload.reject_details.arg_type.expected_type), 
+            as_type(overload.reject_details.arg_type.argument.value_type)
+        );
+    }
+}
+
+Procedure_Overload_Report :: struct {
+    procedure_call:         *Node_Procedure_Call;
+    overloads:              [] Procedure_Overload;
+    
+    best_overload_index     := -1; // indexes overloads, not script.procedures
+    best_overload_distance  := S64_MAX; 
+    tied_for_best           := 0;
+}
+
+format_procedure_overload_report :: (builder: *String_Builder, script: *Script, using report: Procedure_Overload_Report) {
+    if !tied_for_best && best_overload_index >= 0 {
+        append(builder, "Succesfully resolved procedure overload.\n");
+        print(builder, "Chosen overload: ");
+        format_procedure_overload(builder, script, overloads[best_overload_index]);
+    }
+    
+    print(builder, "Unable to resolve overloaded procedure.\n");
+    
+    if tied_for_best {
+        print(builder, "Could not decide between % matching overloads:\n\n", tied_for_best);
+        for overloads {
+            if it.reject_reason != .NONE 
+            || it.coercion_distance != best_overload_distance 
+                then continue;
+            
+            format_procedure_overload(builder, script, it);
+        }
+    }
+    
+    if overloads.count > tied_for_best {
+        print(builder, "% failing overload(s):\n\n", overloads.count);
+        for overloads {
+            if it.reject_reason == .NONE  continue;
+            format_procedure_overload(builder, script, it);
+        }
+    }
+    
+    print(builder, "Provided argument types were: ");
+    for procedure_call.arguments {
+        if it_index != 0  print(builder, ", ");
+        print(builder, "%", as_type(it.value_type));
+    }
+    print(builder, "\n");
 }
 
 
@@ -49,21 +124,25 @@ get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overl
 }
 
 
-resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, is_operator := false) -> (index: int, swap_args: bool) {
+resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node_Procedure_Call) -> (index: int, swap_args: bool) {
+    arguments := procedure_call.arguments;
+    
+    is_operator := procedure_call.flags & .OVERLOAD == .OVERLOAD;
     if is_operator {
         assert(arguments.count == 2, "arguments.count was %", arguments.count);
     }
     
-    overloads := get_procedure_overloads(script, name,, temp);
-    if !overloads {
-        print("Unable to resolve procedure '%'\n", name);
-        print("No procedure found with the given identifier.\n");
-    }
+    using,except(procedure_call) overload_report: Procedure_Overload_Report;
+    overload_report.procedure_call = procedure_call;
     
-    // typecheck overloads and determine best choice
-    best_overload_index     := -1; // indexes overloads, not script.procedures
-    best_overload_distance  := S64_MAX; 
-    tied_for_best           := 0;
+    overloads = get_procedure_overloads(script, name,, temp);
+    if !overloads {
+        identifier := procedure_call.procedure_expression.(*Node_Identifier);
+        assert(identifier.node_type == Node_Identifier);
+        assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
+        set_typecheck_error(script, node = identifier, type = .UNRESOLVED_IDENTIFIER);
+        return -1, false;
+    }
     
     for *overloads {
         proc := *script.procedures[it.proc_index];
@@ -135,62 +214,8 @@ resolve_procedure_index :: (script: *Script, name: string, arguments: [] *Node, 
         return chosen_overload.proc_index, chosen_overload.swap_args;
     }
     
-    print("Unable to resolve procedure '%'\n", name);
-    
-    if tied_for_best {
-        print("Could not decide between % matching overloads:\n\n", tied_for_best);
-        for overloads {
-            if it.reject_reason != .NONE 
-            || it.coercion_distance != best_overload_distance 
-                then continue;
-                
-            print("%(", name);
-            for script.procedures[it.proc_index].argument_types {
-                if it_index != 0  print(", ");
-                print("%", as_type(it));
-            }
-            print(")\n");
-        }
-    }
-    
-    if overloads.count > tied_for_best {
-        print("% failing overload(s):\n\n", overloads.count);
-        for overloads {
-            if it.reject_reason == .NONE  continue;
-            
-            print("%(", name);
-            for script.procedures[it.proc_index].argument_types {
-                if it_index != 0  print(", ");
-                print("%", as_type(it));
-            }
-            print(")\n");
-            
-            if it.reject_reason == {
-              case .ARG_COUNT;
-                print(
-                    "Mismatch on argument count: expected %, got %\n\n", 
-                    it.reject_details.arg_count.expected, 
-                    it.reject_details.arg_count.provided
-                );
-                
-              case .ARG_TYPE;
-                print(
-                    "Type mismatch on argument %: expected %, got %\n\n", 
-                    it.reject_details.arg_type.index, 
-                    as_type(it.reject_details.arg_type.expected_type), 
-                    as_type(it.reject_details.arg_type.argument.value_type)
-                );
-            }
-        }
-    }
-    
-    print("Argument types were: ");
-    for arguments {
-        if it_index != 0  print(", ");
-        print("%", as_type(it.value_type));
-    }
-    print("\n");
-    
+    set_typecheck_error(script, node = procedure_call, type = .FAILED_OVERLOAD_RESOLUTION);
+    script.error.typecheck.procedure_overload_report = overload_report;
     return -1, false;
 }
 
