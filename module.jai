@@ -1,14 +1,4 @@
 
-External_Variable :: struct {
-    name:       string;
-    binding:    Any;
-}
-
-Name_And_Type :: struct {
-    name:   string; 
-    type:   *Type_Info;
-}
-
 // typechecking callbcak allows additional return value for replacement node
 Typecheck_Callback :: type_of(typecheck_node);
 Execute\ _Callback :: type_of(execute_node);
@@ -61,7 +51,7 @@ Script :: struct {
     }
 }
 
-free_script :: (using script: *Script) {
+deinit_script :: (using script: *Script) {
     array_reset(*variables);
     array_reset(*procedures);
     array_reset(*named_blocks);
@@ -116,18 +106,10 @@ init_script :: (script: *Script, stack_size := 1024) {
     
 // }
 
-// ensures no name conflicts
-set_variable :: (script: *Script, name: string, any: Any, replacement_value := false) {
-    for *script.variables {
-        if it.name == name {
-            it.binding = any;
-            return;
-        }
-    }
-    if replacement_value {
-        log("Called set_variable with replacement_value flag, but no such pre-existing variable '%'.", name);
-    }
-    array_add(*script.variables, .{ name, any });
+
+Name_And_Type :: struct {
+    name:   string; 
+    type:   *Type_Info;
 }
 
 // ensures no name conflicts
@@ -343,6 +325,7 @@ register_common_types :: (script: *Script) {
 #load "evaluate.jai";
 #load "serialize.jai";
 
+#load "variable.jai";
 #load "procedure.jai";
 #load "directive.jai";
 #load "operator.jai";

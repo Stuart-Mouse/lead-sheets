@@ -63,7 +63,7 @@ main :: () {
     array_reserve(*input_buffer, 8);
     
     LS.init_script(*script);
-    defer LS.free_script(*script);
+    defer LS.deinit_script(*script);
     
     LS.register_common_types(*script);
     LS.register_type(*script, "Vector2", type_info(Vector2));

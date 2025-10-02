@@ -1052,3 +1052,90 @@ TODO:
         replace MAKE_C_CALL with something more like call_procedure
             try to make it so that we can separately bake procedure type and specific procedure pointer
         
+
+
+
+### Dynamic Members / Namespacing
+
+Got this new idea, not sure how best to make it work though.
+The basic idea is that we can use some special syntax to access dynamically-added members on some identifiers.
+
+For example:
+```
+entity->cycle_offset = 0.3;
+```
+
+cycle offset is not a real member of the entity struct, but we can treat it like a sort of virtual member that is stored like any other script variable
+so we are basically just using the entity as a sort of namespace to access what is really an internal script variable
+
+the big issue I have right off the bat is that we can't really just bind this to an identifier itself, we need to bind the member to some other particualr variable
+e.g., `it` is an identifier in a for loop that will refer to several different instances of the same type
+    and we don't want the virtual member to be bound to `it`, but to each individual instances that `it` points to
+    but unless the bounds of iteration are known ahead of time, 
+
+alternatively, we can just make the virtual member lookup and a completely dytnamic operation
+    i.e. the user needs ot implement some virtual member lookup procedure that returns an any for the value
+    
+    In this scheme, above example would just desugar to something like
+    `virtual_member_lookup(entity, "cycle_lookup")`
+    
+    I don't like this because it pushes typechecking to execution-time
+    and this isnt just trivially slower due to the additional typechecking, it would mean that we would need to type hint every single spot where virtual members are used as a rvalue
+    
+ideally, we can find a way to make virtual members statically typed, apply to specific instances rather than types, and 
+    will require that we in some way declare the members on each instance before using them
+    coudl use regular declaration syntax for this, but the semantics are quite different, since we 
+    
+
+Any procedures concerining virtual members should be function pointers that we can override, just like the parsing procedures.
+```
+add_virtual_member :: (owner: Any, name: string, type: *Type_Info) -> ok: bool, value: Any {
+    // how to add virtual members will actually depend very much on the data type we are dealing with, probably
+    // because in many cases we cannot assume that pointers will be stable across different executions of the script
+    // so we need some user-level owner resolution
+    // but really, all we will ever be able to give to the user here is the Any, since this is particular to some instance variable, not to an identifier or some node
+    // (we can't use an external variable node due to the iterator problem)
+    
+    so the user will just have to use the pointer + type as a handle, and perform any of their own validation as necessary...
+    
+    we will probably want to first do some internal checks to see if the virtual member is owned by anything within the script itself, then hand it off to the user afterwards
+    
+    
+}
+get_virtual_member :: (owner: Any, name: string, type: *Type_Info) -> ok: bool, value: Any {
+    ok, value := internal_get_virtual_member(owner, name);
+    ok ||= value.type == type
+    return ok, value;
+}
+```
+
+Doing this in a statically typed way should actually be relatively simple now that I think about it.
+There's just an added wrinkle to the semantics of declarations now such that we may change the value pointer each time we execute the declaration (if the declaration is for a virtual member).
+This will mean that we can just resolve the usage sites as per usual, no changes necessary.
+And we will only need to do any kind of type assertion once, at the declaration site.
+
+Because we need to declare virtual members before we can use them in any case, this does mean that we will have to do some extra work to declare virtual members even if we don't set their values.
+    Will require either adding `---` keyword to mean non-initialized in declaration or just not zero-ing virtual members in by default.
+
+
+Another thing to consider about virtual members is that we want them to be easy to look up or access from outside the script
+that way we can display them inside things like imgui menus, e.g. 'Entity Details' panel in my game
+
+
+
+
+TODO: we should add a mechanism to invalidate external variable identifiers
+      that way, we can validate that all when we renew all external variables on a script, we can be sure we don't miss any, or pass any twice
+
+TODO: we should add a mechanism to evaluate a script in a such a way that it is tolerant to errors
+      this could be useful when identifiers may change or become invalidated, such as when using the scripts in the context of a level editor
+
+
+
+
+
+
+
+
+
+

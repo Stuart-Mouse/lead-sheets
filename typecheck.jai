@@ -86,7 +86,7 @@ typecheck_node :: (
     
     if node.value_type != null {
         if check_flags & .EXPECT_LVALUE {
-            ok, message := is_valid_lvalue(node);
+            ok, message := is_valid_lvalue(script, node);
             if !ok {
                 // TODO: refactor is_valid_lvalue so that it sets the script error and attaches any dynamic info needed in each case.
                 // if node.node_type == Node_Identifier {
@@ -315,7 +315,7 @@ try_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
 // second return value is an error string. In order to prevent spamming temp storage, I'm not using tprint to actually make the error message here more specific/situational.
 // so the caller (probably just typecheck_node) may want to follow up with some additional information such as the identifier name.
 // maybe we could come up with some standard system for inserting info from a node so that we can return a format string here...
-is_valid_lvalue :: (node: *Node) -> bool, string {
+is_valid_lvalue :: (script: *Script, node: *Node) -> bool, string {
     if node.node_type == {
       case Node_Literal;
         literal := node.(*Node_Literal);
@@ -329,12 +329,18 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
         if #complete identifier.identifier_type == {
           case .UNRESOLVED;         return false, "An unresolved identifier cannot be used as an lvalue.";
           case .TYPE;               return false, "A type identifier cannot be used as an lvalue.";
-          case .EXTERNAL_VARIABLE;  return true,  "";
           case .EXTERNAL_PROCEDURE; return false, "An external procedure cannot be used as an lvalue.";
           case .STRUCT_MEMBER;      return true,  "";
             
+          case .EXTERNAL_VARIABLE;
+            variable := *script.variables[identifier.index];
+            if variable.flags & .CONSTANT {
+                return false, "An external variable cannot be used as an lvalue when marked as constant.";
+            }
+            return true,  "";
+            
           case .LITERAL;
-            ok, msg := is_valid_lvalue(identifier.literal);
+            ok, msg := is_valid_lvalue(script, identifier.literal);
             return ok, msg;
             
           case .DECLARATION;
@@ -349,10 +355,10 @@ is_valid_lvalue :: (node: *Node) -> bool, string {
       case Node_Dot;
         dot := node.(*Node_Dot);
         if dot.left.value_type.type == .STRUCT {
-            ok, msg := is_valid_lvalue(dot.left);
+            ok, msg := is_valid_lvalue(script, dot.left);
             return ok, msg;
         }
-        ok, msg := is_valid_lvalue(dot.right);
+        ok, msg := is_valid_lvalue(script, dot.right);
         return ok, msg;
         
       case Node_Subscript;          return true,  "";
@@ -540,7 +546,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         if it.name == identifier.name {
             identifier.identifier_type = .EXTERNAL_VARIABLE;
             identifier.index           = it_index;
-            identifier.value_type      = variables[it_index].binding.type;
+            identifier.value_type      = variables[it_index].type;
             return;
         }
     }

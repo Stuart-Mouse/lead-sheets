@@ -101,7 +101,7 @@ evaluate_node :: (
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
-            result = variable.binding;
+            result = get_value(variable);
             dprint("returning external variable with value % at %\n", result, result.value_pointer);
             
           case .EXTERNAL_PROCEDURE;

@@ -127,10 +127,16 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
-            if variable.binding.type.runtime_size > 8
-                then dprint("returning external variable at %\n", variable.binding.value_pointer);
-                else dprint("returning external variable with value % at %\n", variable.binding, variable.binding.value_pointer);
-            if !stack_push_any(script, variable.binding, identifier.flags & .IS_LVALUE != 0)  return false;
+            if variable.value_pointer == null {
+                set_execution_error(script, "Unable to get value of external variable '%'.", variable.name, node = node);
+                return false;
+            }
+            
+            value := get_value(variable);
+            if variable.type.runtime_size > 8
+                then dprint("returning external variable at %\n", variable.value_pointer);
+                else dprint("returning external variable with value % at %\n", value, variable.value_pointer);
+            if !stack_push_any(script, value, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
             
           case .EXTERNAL_PROCEDURE;
@@ -353,8 +359,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // dprint("returning result of indexing operation: %\n", element);
         
         if element.type.runtime_size > 8
-            then dprint("returning external variable at %\n", element.value_pointer);
-            else dprint("returning external variable with value % at %\n", element, element.value_pointer);
+            then dprint("returning result of indexing operation at %\n", element.value_pointer);
+            else dprint("returning result of indexing operation with value % at %\n", element, element.value_pointer);
 
         return true;
         
