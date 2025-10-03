@@ -548,10 +548,9 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     is_operator, operator_index := get_binary_operator(token);
     if is_operator {
         _operator := operator_table[operator_index];
-        
         if _operator.precedence <= min_prec  return left;
-        operator_token := get_token(*lexer);
         
+        operator_token := get_token(*lexer);
         right := my_parse_expression(script, _operator.precedence);
         if right == null  return null;
         
@@ -570,6 +569,9 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
     
     expressions, ok := parse_comma_separated_expressions(script,, temp);
     if !ok  return .[], false;
+    
+    // TODO: if first expression is an assignment operation, then we should parse all struct literal inner expressions as such
+    //       we will then also need to flag the struct literal as being by-name intialized for evaluation and serialization purposes
     
     close_brace := get_token(*lexer);
     if close_brace.type != .CLOSE_BRACE {

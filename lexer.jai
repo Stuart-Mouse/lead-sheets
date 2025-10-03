@@ -189,6 +189,8 @@ lex_next_token :: (using lexer: *Lexer) -> Token {
         };
     }
     
+    // NOTE: this is being done before operators, presumably because a number may start with a minus sign
+    //       this is probably fine, but be aware of this while doing operator refactoring
     token_text := try_lex_number(lexer);
     if token_text  return .{ .NUMBER, token_text, token_location, trivia, .NO_ERROR };
     

@@ -1,4 +1,39 @@
 
+/*
+    Operators
+    
+    I am currently in the process of cleaning up and refactoring how operators are handled.
+    The goal is that we can reorganize sufficiently to implement 'comile-time' operators that behave in a similar way to directives.
+    
+    In order to do this, I think I will need to first cleanly separate the idea of operators as a lexical construct from operators as a particular action performed on some operand.
+    I think for now I will just differntiate with the term 'operator' vs 'operation' where the operator is the lexical construct and the operation is the overloadable, typed construct.
+    
+    
+    TODO: 
+        allow user to extend the operator table
+            init scripts with default operator table values
+            user can register new operators in similar way to procedures or directives
+        
+        update lexer so that operators are parsed based on the script's operator table
+        
+        maybe even make a generalized "OPERATOR" token type since how would we identify such tokens otherwise?
+            if doing this, then token may as well store the operator id (we will have it from doing the operator table lookup in the lexer)
+            alternatively, we still use unique tokens for each operator type, but then we must go about implementing the user token thing
+                otherwise user is still restricted to those tokens which already exist, obviously
+            
+            and even if the user can add new tokens in some generalized way, we have the problem that the lexer still needs to be able to handle those new tokens
+                so then we get roped into adding either lexer callbacks or making lex_next_token totally overridable (NOTE: this is already the case, actually)
+                but still, we don't really want to force the user to override lex_next_token just to add a new operator
+                overriding the lexer proc or adding new tokens entirely is a very heavy-weight thing and probably also means the user now has added all new parsing and typechecking logic too
+                I want the user to only have to go as deep as they really need to in order to add new functionality, yknow?
+            
+        
+        update operation node to support replacement node in a similar way to directives
+        
+        refactor operand swapping so that it only occurs during execution / evaluation, not on AST
+        
+*/
+
 get_prefix_operator :: (token: Token) -> bool, int {
     for operator_table {
         if it.kind != .PREFIX  continue;
@@ -29,9 +64,6 @@ get_binary_operator :: (token: Token) -> bool, int {
     return false, -1;
 }
 
-
-// TODO: use token_type instead of identifier
-// then we can also a separate lookup table to get the text for an operator from the token_type
 operator_table :: Operator.[
     .{ .ASSIGNMENT, .ASSIGN_EQUAL,  "=",  1, .NONE },
     .{ .ASSIGNMENT, .PLUS_EQUALS,   "+=", 1, .NONE },
@@ -68,6 +100,7 @@ operator_table :: Operator.[
     .{ .PREFIX, .DOLLAR,     "$",  8, .NONE },
 ];
 
+// TODO: remove flags and instead use proc pointer for on_parse and on_typecheck
 Operator :: struct {
     kind:           Kind;
     token_type:     Token_Type;
@@ -82,6 +115,34 @@ Operator :: struct {
 is_unary :: inline (kind: Operator.Kind) -> bool { return kind == .PREFIX || kind == .POSTFIX; }
 
 is_unary :: inline (op: Operator) -> bool { return is_unary(op.kind); }
+
+
+
+
+
+
+
+
+
+
+/*
+    Builtin Operations
+    
+    In order to make a lot of basic operations a little bit less slow, we have a big switch/case to handle so-called 'builtin' operations.
+    These builtin operations are basically just your essential numeric and binary operations for int, float, bool, and the like.
+    Builtin operators are referred to by an id, which is simply an index to a massive switch/case.
+    
+    Right now, we have this big dumb #insert that builds the table of builtin operators (since this table needs to be constant).
+    I would like to simplify it in the future, but it is what it is for right now.
+    
+    Whenever I next work on builtin operators I will likely improve this table and also make it so that the user can somehow add their own builtin operations.
+    (Probably, I will just use the sign bit of the index to signify that we should consult the user's provided table and execution procedure.)
+    
+    
+    TODO: consider whether we should have some 'invalid' zero value for Builtin_Operation_ID
+*/
+
+Builtin_Operation_ID :: int;
 
 // this is dumb, but it must be done (for now)
 #insert -> string {
@@ -187,8 +248,7 @@ resolve_builtin_operation :: (
     left_type:      *Type_Info, 
     right_type:     *Type_Info
 ) -> (
-    index:          int, 
-    type:           Operator.Kind, 
+    id:             Builtin_Operation_ID, 
     swap_args:      bool
 ) {
     for BUILTIN_OPERATIONS {
@@ -198,32 +258,32 @@ resolve_builtin_operation :: (
           case .BINARY;
             if it.left .(*Type_Info) == left_type 
             && it.right.(*Type_Info) == right_type {
-                return it_index, .BINARY, false;
+                return it_index, false;
             }
         
             if it.is_symmetric 
             && it.left .(*Type_Info) == right_type 
             && it.right.(*Type_Info) == left_type {
-                return it_index, .BINARY, true;
+                return it_index, true;
             }
           
           case .PREFIX;
-            if it.left.(*Type_Info) == left_type  return it_index, .PREFIX, false;
+            if it.left.(*Type_Info) == left_type  return it_index, false;
             
           case .ASSIGNMENT;
             if it.left .(*Type_Info) == left_type 
-            && it.right.(*Type_Info) == right_type  return it_index, .ASSIGNMENT, false;
+            && it.right.(*Type_Info) == right_type  return it_index, false;
         }
     }
-    return -1, .BINARY, false;
+    return -1, false;
 }
 
-execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *void) -> bool {
+execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, ret: *void) -> bool {
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;
         
-        append(*builder, "if oper_idx == {\n");
+        append(*builder, "if id == {\n");
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "  case %;\n", it_index);
             if it.type == {
@@ -245,13 +305,15 @@ execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *vo
     return false;
 }
 
+
+// TODO: consider whether to remove this!
 // this version may not be worth it
 // because we will still probably need the other version for eval procs
 // and this one creates more code bloat
 // but, it does bake the stack pops so that we don't have to lookup the operator types 
 // this is not a big deal for the exec procs, but for the bytecode, it could be a considerable performance loss 
 // in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
-execute_builtin_operation :: (script: *Script, oper_idx: int) {
+execute_builtin_operation :: (script: *Script, id: Builtin_Operation_ID) {
     
     dprint("stack_ptr: %\n", script.stack_ptr);
     
@@ -259,7 +321,7 @@ execute_builtin_operation :: (script: *Script, oper_idx: int) {
     #insert -> string {
         builder: String_Builder;
         
-        append(*builder, "if oper_idx == {\n");
+        append(*builder, "if id == {\n");
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "case %;\n", it_index);
             

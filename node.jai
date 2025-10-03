@@ -189,7 +189,7 @@ Node_Operation :: struct {
     name:                   string;
     operator_index:         int;
     union { // check node.flag & .OVERLOAD
-        builtin_operation_index:    int;
+        builtin_operation_index:    Builtin_Operation_ID;
         overload_procedure:         *Node_Procedure_Call;
     }
     left, right:            *Node;      // only left is used if .UNARY flag is present

@@ -624,10 +624,12 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    builtin_operation_index, _, swap_args := resolve_builtin_operation(operation.name, _operator.kind, left_underlying_type, right_underlying_type);
+    builtin_operation_index, swap_args := resolve_builtin_operation(operation.name, _operator.kind, left_underlying_type, right_underlying_type);
     if builtin_operation_index >= 0 {
         operation.builtin_operation_index = builtin_operation_index;
         
+        // NOTE: because we are performing this swap on the AST like this, this technically makes the evaluation order of each side of an operation undefined
+        // TODO: ideally, we should just swizzle the operands on the stack when executing the operation
         if swap_args { operation.left, operation.right = operation.right, operation.left; }
         
         // NOTE: only uses the enum type if both left and right enums match, 
