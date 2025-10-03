@@ -61,7 +61,7 @@ typecheck_node :: (
     
     if script.typecheck_callback {
         result := script.typecheck_callback(script, node, check_flags, hint_type);
-        if !!script.error  return null;
+        if has_error(script)  return null;
         if result  return result;
     }
     
@@ -82,7 +82,7 @@ typecheck_node :: (
       case;
         set_typecheck_error(script, "Unhandled node type % in typecheck_node.", node.node_type, node = node);
     }
-    if !!script.error  return null;
+    if has_error(script)  return null;
     
     if node.value_type != null {
         if check_flags & .EXPECT_LVALUE {
@@ -109,7 +109,7 @@ typecheck_script :: (script: *Script) -> bool {
     
     for script.ast_root.statements {
         typecheck_node(script, it, .IS_STATEMENT_ROOT);
-        if !!script.error  return false;
+        if has_error(script)  return false;
     }
     
     script.flags |= .TYPECHECKED;
@@ -138,10 +138,28 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope
     return null;
 }
 
-declaration_is_malleable_literal :: (declaration: Node_Declaration) -> bool {
-    if declaration.init_expression == null  return false;
-    literal := declaration.init_expression;
-    return literal.node_type == Node_Literal && (literal.flags & .IS_MALLEABLE);
+// If some expression is fundamentally just a literal, this procedure will give you that terminal literal node.
+// This procedure primarily exists so that we have a consistent way to check if some expresison can be user as a malleable literal.
+get_terminal_literal :: (node: *Node) -> *Node_Literal {
+    if node.node_type == {
+      case Node_Literal;
+        return xx node;
+        
+      case Node_Dot;
+        dot := node.(*Node_Dot);
+        if dot.right.node_type == {
+          case Node_Literal;
+            return xx dot.right;
+            
+          case Node_Identifier;
+            identifier := dot.right.(*Node_Identifier);
+            if identifier.identifier_type == {
+              case .LITERAL;
+                return identifier.literal;
+            }
+        }
+    }
+    return null;
 }
 
 is_aggr :: (t: Type) -> bool { return is_aggr(t.(*Type_Info)); }
@@ -282,7 +300,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
     if literal.literal_type == {
       case .NUMBER;
         if !is_numeric_type(type)  return false;
-        new_number := Any_Number.{ type = type };
+        new_number := Any_Number.zero_of_type(type);
         Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
         literal.number = new_number;
         return true;
@@ -426,31 +444,32 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         
       case .STRING;
         literal.value_type = type_info(string);
+        literal.flags |= .IS_CONSTANT;
         
       case .BOOLEAN;
         literal.value_type = literal.number.type;
+        literal.flags |= .IS_CONSTANT;
         
       case .NUMBER;
         if is_numeric_type(hint_type) {
-            // dprint("returning hinted type: %\n", as_type(hint_type));
-            
             // NOTE: we now remap to value_type just once here, so that we don't have to do it each time in execute
             // TODO: think about rules around automatic casting here...
             //       maybe we don't want to automatically go float -> int, 
             //       since we will now only get float here when the literal had a decimal part
-            new_number := Any_Number.{ type = hint_type };
+            new_number := Any_Number.zero_of_type(hint_type);
             Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
             literal.number = new_number;
         } else {
             // NOTE: also doing a little remap here in default case, 
             //       since we actually want the default float type to be float32
-            if literal.number.type == type_info(float64) {
-                new_number := Any_Number.{ type = type_info(float32) };
+            if literal.number.type == xx float64 {
+                new_number := Any_Number.zero_of_type(float32);
                 Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
                 literal.number = new_number;
             }
         }
         literal.value_type = literal.number.type;
+        literal.flags |= .IS_CONSTANT;
         
       case .STRUCT;
         ti_struct := hint_type.(*Type_Info_Struct);
@@ -467,18 +486,26 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             return;
         }
         
+        all_members_are_constant := true;
         for literal.aggr.expressions {
             if it_index >= ti_struct.members.count {
                 set_typecheck_error(script, "Too many values provided in struct literal.", node = literal);
                 return;
             }
             member := ti_struct.members[it_index];
+            
             expr_ti := typecheck_node(script, it, hint_type = member.type); 
-            if !!script.error  return;
+            if has_error(script)  return;
             if expr_ti != member.type {
                 set_typecheck_error(script, "Value type provided in struct initializer for field '%' was incorrect. Expected '%', got '%'.", member.name, as_type(member.type), as_type(expr_ti), node = it);
                 return;
             }
+            
+            all_members_are_constant &&= (it.flags & .IS_CONSTANT).(bool);
+        }
+        
+        if all_members_are_constant {
+            literal.flags |= .IS_CONSTANT;
         }
         
         // TODO: we could reduce space required for storing intermediate values
@@ -490,10 +517,6 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
     }
     
-    // all literals are assumed to be constants except for ANY literals, since we want to be able to use those as anonymous lvalues.
-    if literal.literal_type != .ANY {
-        literal.flags |= .IS_CONSTANT;
-    }
     assert(literal.value_type != null);
 }
 
@@ -567,12 +590,12 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
 typecheck_operation :: (using script: *Script, operation: *Node_Operation, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     left_type, right_type: *Type_Info;
     
-    _operator := get_operator(operation);
+    _operator := get_operator(script, operation);
     if _operator.kind == {
       case .PREFIX; #through;
       case .POSTFIX;
         left_type = typecheck_node(script, operation.left, check_flags, hint_type);
-        if !!script.error  return;
+        if has_error(script)  return;
         
       case .BINARY;
         // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
@@ -581,7 +604,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         
         // If both come back null on first try, we return the upstream error.
         if left_type == null && right_type == null {
-            assert(!!script.error);
+            assert(has_error(script));
             return;
         }
         
@@ -591,21 +614,21 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         if left_type == null {
             dprint("Info: Failed to typecheck left operand on first attempt, trying again with type hint: %", as_type(right_type));
             left_type  = typecheck_node(script, operation.left,  check_flags, right_type);
-            if !!script.error  return;
+            if has_error(script)  return;
         }
         if right_type == null {
             dprint("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
             right_type = typecheck_node(script, operation.right, check_flags, left_type);
-            if !!script.error  return;
+            if has_error(script)  return;
         }
         
       case .ASSIGNMENT;
         // NOTE: we basically ignore hint_type in this case because assignment expressions must be used at statement-level anyhow.
         left_type = typecheck_node(script, operation.left, check_flags | .EXPECT_LVALUE, null);
-        if !!script.error  return;
+        if has_error(script)  return;
         
         right_type = typecheck_node(script, operation.right, check_flags, left_type);
-        if !!script.error  return;
+        if has_error(script)  return;
         
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
@@ -707,7 +730,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             if node.value_type == null {
                 dprint("re-typechecking argument with hint_type %", as_type(expected_type));
                 type := typecheck_node(script, node, hint_type = expected_type);
-                if !!script.error  return;
+                if has_error(script)  return;
                 if type != expected_type {
                     builder: String_Builder;
                     print(*builder, "We deferred typechecking a procedure argument in the hopes that we could later hint the type and resolve it that way, but that failed.\n");
@@ -759,7 +782,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         for procedure_call.arguments {
             expected_type := proc_info.argument_types[it_index];
             argument_type := typecheck_node(script, it, hint_type = expected_type);
-            if !!script.error  return;
+            if has_error(script)  return;
             if argument_type != expected_type {
                 set_typecheck_error(script, "Mismatched types on argument % for procedure call. Expected %, got %.\n", it_index, as_type(expected_type), as_type(argument_type), node = it);
                 return;
@@ -780,14 +803,14 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
 
 typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     value_type := typecheck_node(script, node_cast.value);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     if node_cast.flags & .IMPLICIT {
         node_cast.value_type = node_cast.implicit_type;
     } else {
         type_expression := node_cast.type_expression;
         type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
-        if !!script.error  return;
+        if has_error(script)  return;
         if type_type.type != .TYPE {
             set_typecheck_error(script, "Type expression in cast did not resolve to a Type.", node = type_expression);
             return;
@@ -798,7 +821,7 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
             return;
         }
         type_any := evaluate_node(script, type_expression);
-        if !!script.error  return;
+        if has_error(script)  return;
         node_cast.value_type = type_any.value_pointer.(**Type_Info).*;
     }
     
@@ -813,7 +836,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     left_type: *Type_Info;
     if dot.left {
         left_type = typecheck_node(script, dot.left, check_flags & .EXPECT_LVALUE);
-        if !!script.error  return;
+        if has_error(script)  return;
     } else {
         left_type = type_info(Type); 
     }
@@ -883,7 +906,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                 return;
             }
             left_any := evaluate_node(script, dot.left);
-            if !!script.error  return;
+            if has_error(script)  return;
             namespace = left_any.value_pointer.(**Type_Info).*;
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
@@ -898,7 +921,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             if dot.right.node_type == {
               case Node_Literal;
                 right_type := typecheck_node(script, dot.right, hint_type = namespace);
-                if !!script.error  return;
+                if has_error(script)  return;
                 if namespace != right_type {
                     set_typecheck_error(script, "Type returned by right side of struct literal expression did not match type specified on left side of dot.", node = dot.right);
                     return;
@@ -954,7 +977,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
 
 typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node(script, subscript.base_expression, check_flags & .EXPECT_LVALUE);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     base_type := subscript.base_expression.value_type.(*Type_Info_Array);
     if base_type.type != .ARRAY {
@@ -963,7 +986,7 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
     }
     
     typecheck_node(script, subscript.indexing_expression);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     indexing_type := subscript.indexing_expression.value_type;
     if !is_numeric_type(indexing_type) {
@@ -989,7 +1012,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     if declaration.type_expression {
         type_expression := declaration.type_expression;
         type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
-        if !!script.error  return;
+        if has_error(script)  return;
         if type_type.type != .TYPE {
             set_typecheck_error(script, "Type expression in declaration did not resolve to a Type.", node = declaration);
             return;
@@ -1000,14 +1023,14 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             return;
         }
         type_any := evaluate_node(script, type_expression);
-        if !!script.error  return;
+        if has_error(script)  return;
         explicit_type = type_any.value_pointer.(**Type_Info).*;
     }
     
     right_type: *Type_Info;
     if declaration.init_expression {
         right_type = typecheck_node(script, declaration.init_expression, hint_type = explicit_type);
-        if !!script.error  return;
+        if has_error(script)  return;
         
         if explicit_type && explicit_type != right_type {
             set_typecheck_error(script, "Init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type, node = declaration);
@@ -1026,35 +1049,19 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     declaration.value_type = ifx explicit_type else right_type;
     
     if declaration.flags & .MACRO {
-        is_acceptable_init_expression := declaration.init_expression.node_type == Node_Literal;
-        if !is_acceptable_init_expression && declaration.init_expression.node_type == Node_Dot {
-            dot := declaration.init_expression.(*Node_Dot);
-            if dot.right.node_type == Node_Literal {
-                is_acceptable_init_expression = true;
-            }
-        }
-        if !is_acceptable_init_expression {
+        // NOTE: currently, macro declarations are only used to bind to malleable literals
+        literal := get_terminal_literal(declaration.init_expression);
+        if !literal || !is_malleable(literal) {
             set_typecheck_error(script, "Macro declarations can only be made to simple literals at this time.", node = declaration);
             return;
         }
+        literal.flags |= .IS_MALLEABLE;
         
-        if declaration.init_expression.node_type == {
-          case Node_Literal;
-            declaration.value_pointer = get_literal_value_as_any(declaration.init_expression.(*Node_Literal)).value_pointer;
-            
-          case Node_Dot;
-            dot := declaration.init_expression.(*Node_Dot);
-            assert(dot.right.node_type == Node_Literal);
-            declaration.value_pointer = get_literal_value_as_any(dot.right.(*Node_Literal)).value_pointer;
-        }
-        
-        value := evaluate_node(script, declaration.init_expression, declaration.value_pointer);
-        
-        if !!script.error  return;
-    }
-    else {
+        declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
+        evaluate_node(script, declaration.init_expression, declaration.value_pointer);
+        if has_error(script)  return;
+    } else {
         declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
-        // dprint("allocated space for internal variable '%', type %, node %\n", declaration.name, right_type, node);
     }
     
     return;
@@ -1063,7 +1070,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     for block.statements {
         typecheck_node(script, it, .IS_STATEMENT_ROOT);
-        if !!script.error  return;
+        if has_error(script)  return;
     }
     
     block.value_type = type_info(void);
@@ -1072,10 +1079,10 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
 
 typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node(script, if_statement.condition); // TODO: must be bool or coercible to bool
-    if !!script.error  return;
+    if has_error(script)  return;
     
     typecheck_node(script, if_statement.statement, .IS_STATEMENT_ROOT);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     if_statement.value_type = type_info(void);
     return;
@@ -1083,10 +1090,10 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node(script, while_loop.condition); // TODO: must be bool or coercible to bool
-    if !!script.error  return;
+    if has_error(script)  return;
     
     typecheck_node(script, while_loop.statement, .IS_STATEMENT_ROOT);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     while_loop.value_type = type_info(void);
     return;
@@ -1103,11 +1110,11 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
       case .RANGE;
         dprint("typechecking range lower\n");
         lower_type := typecheck_node(script, for_loop.range.lower, hint_type = type_info(int));
-        if !!script.error  return;
+        if has_error(script)  return;
         
         dprint("typechecking range upper\n");
         upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
-        if !!script.error  return;
+        if has_error(script)  return;
         
         if lower_type != upper_type { 
             set_typecheck_error(script, "Type mismatch on lower and upper bounds of range.\n", node = for_loop);
@@ -1126,7 +1133,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         
       case .ARRAY;
         typecheck_node(script, for_loop.array_expression, check_flags = .EXPECT_LVALUE);
-        if !!script.error  return;
+        if has_error(script)  return;
         ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
         
         // TODO: special case for something like a Many_Any / Any_Array_View
@@ -1142,12 +1149,12 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         
       case .LIST;
         first_type := typecheck_node(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);
-        if !!script.error  return;
+        if has_error(script)  return;
         
         for 1..for_loop.list.count-1 {
             node := for_loop.list[it];
             type := typecheck_node(script, node, check_flags = .EXPECT_LVALUE);
-            if !!script.error  return;
+            if has_error(script)  return;
             if type != first_type {
                 set_typecheck_error(script, "All expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it + 2, as_type(type), node = node);
                 return;
@@ -1161,7 +1168,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     }
     
     typecheck_node(script, for_loop.statement, .IS_STATEMENT_ROOT);
-    if !!script.error  return;
+    if has_error(script)  return;
     
     for_loop.value_type = type_info(void);
     return;

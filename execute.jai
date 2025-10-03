@@ -163,7 +163,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, operation.overload_procedure);
         }
         
-        _operator := get_operator(operation);
+        _operator := get_operator(script, operation);
         if _operator.kind != .ASSIGNMENT {
             if is_aggr(operation.value_type) {
                 if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
@@ -374,10 +374,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if declaration.flags & (.MACRO)  return true;
         
         if declaration.init_expression {
-            if !execute_node(script, declaration.init_expression) {
-                dprint("failed to evaluate init expression of declaration statement!\n");
-                return false;
-            }
+            if !execute_node(script, declaration.init_expression)  return false;
             
             r_value := stack_pop_any(script, declaration.init_expression.value_type);
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
@@ -390,6 +387,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
+            // TODO: don't memset to zero for virtual member declarations
             l_value := Any.{ declaration.value_type, declaration.value_pointer };
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }

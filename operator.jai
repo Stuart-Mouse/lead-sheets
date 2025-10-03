@@ -11,12 +11,12 @@
     
     TODO: 
         allow user to extend the operator table
-            init scripts with default operator table values
+            ** init scripts with default operator table values
             user can register new operators in similar way to procedures or directives
         
-        update lexer so that operators are parsed based on the script's operator table
+        ** update lexer so that operators are parsed based on the script's operator table
         
-        maybe even make a generalized "OPERATOR" token type since how would we identify such tokens otherwise?
+        ** maybe even make a generalized "OPERATOR" token type since how would we identify such tokens otherwise?
             if doing this, then token may as well store the operator id (we will have it from doing the operator table lookup in the lexer)
             alternatively, we still use unique tokens for each operator type, but then we must go about implementing the user token thing
                 otherwise user is still restricted to those tokens which already exist, obviously
@@ -31,85 +31,101 @@
         update operation node to support replacement node in a similar way to directives
         
         refactor operand swapping so that it only occurs during execution / evaluation, not on AST
+    
+    
+    Stages of Operator Resolution
+    
+    lexing operators
+        concerns only a sequence of characters, no disambiguation over operator's lexical type (prefix, postfix, binary)
+    
+    parsing operators
+        now we care about the lexical type of the operator, as well as disambiguating between standard binary operators and assignment operators
+        at this stage, we go from a generalized OPERATOR-type token to an index into the operator table
+        our only new error case is in checking whether the operator is being used correctly lexically
+        
+    typechecking operators
+        operator needs to resolve to some concrete operations between two typed operands
+        We now move form using an operator_index to using an index to a builtin operation or to some overload procedure
         
 */
 
-get_prefix_operator :: (token: Token) -> bool, int {
-    for operator_table {
+// check if a token is an operator, and optionally check if it is a specific operator
+is_operator :: inline (token: Token, text := "") -> bool {
+    return token.type == .OPERATOR && (!text || token.text == text);
+}
+
+get_operator :: inline (script: *Script, operator_index: int) -> *Operator { 
+    return *script.operator_table[operator_index]; 
+}
+
+get_prefix_operator :: (script: *Script, token: Token) -> bool, int {
+    for script.operator_table {
         if it.kind != .PREFIX  continue;
-        if it.token_type == token.type {
+        if it.token_text == token.text {
             return true, it_index;
         }
     }
     return false, 0;
 }
 
-get_postfix_operator :: (token: Token) -> bool, int {
-    for operator_table {
+get_postfix_operator :: (script: *Script, token: Token) -> bool, int {
+    for script.operator_table {
         if it.kind != .POSTFIX  continue;
-        if it.token_type == token.type {
+        if it.token_text == token.text {
             return true, it_index;
         }
     }
     return false, 0;
 }
 
-get_binary_operator :: (token: Token) -> bool, int {
-    for operator_table {
+get_binary_operator :: (script: *Script, token: Token) -> bool, int {
+    for script.operator_table {
         if is_unary(it) continue;
-        if it.token_type == token.type {
+        if it.token_text == token.text {
             return true, it_index;
         }
     }
     return false, -1;
 }
 
-operator_table :: Operator.[
-    .{ .ASSIGNMENT, .ASSIGN_EQUAL,  "=",  1, .NONE },
-    .{ .ASSIGNMENT, .PLUS_EQUALS,   "+=", 1, .NONE },
-    .{ .ASSIGNMENT, .MINUS_EQUALS,  "-=", 1, .NONE },
-    .{ .ASSIGNMENT, .OR_EQUALS,     "|=", 1, .NONE },
-    .{ .ASSIGNMENT, .AND_EQUALS,    "&=", 1, .NONE },
-    .{ .ASSIGNMENT, .XOR_EQUALS,    "^=", 1, .NONE },
+default_operator_table :: Operator.[
+    .{ .ASSIGNMENT, "=",  1 },
+    .{ .ASSIGNMENT, "+=", 1 },
+    .{ .ASSIGNMENT, "-=", 1 },
+    .{ .ASSIGNMENT, "|=", 1 },
+    .{ .ASSIGNMENT, "&=", 1 },
+    .{ .ASSIGNMENT, "^=", 1 },
     
-    .{ .BINARY, .LOGICAL_AND, "&&", 2, .NONE },
-    .{ .BINARY, .LOGICAL_OR,  "||", 2, .NONE },
+    .{ .BINARY, "&&", 2 },
+    .{ .BINARY, "||", 2 },
     
-    .{ .BINARY, .COMPARE_EQUAL,             "==", 3, .NONE },
-    .{ .BINARY, .GREATER_THAN_OR_EQUAL_TO,  ">=", 3, .NONE },
-    .{ .BINARY, .LESS_THAN_OR_EQUAL_TO,     "<=", 3, .NONE },
-    .{ .BINARY, .GREATER_THAN,              ">",  3, .NONE },
-    .{ .BINARY, .LESS_THAN,                 "<",  3, .NONE },
+    .{ .BINARY, "==", 3 },
+    .{ .BINARY, ">=", 3 },
+    .{ .BINARY, "<=", 3 },
+    .{ .BINARY, ">",  3 },
+    .{ .BINARY, "<",  3 },
     
-    .{ .BINARY, .BINARY_OR,  "|",  4, .NONE },
-    .{ .BINARY, .BINARY_AND, "&",  4, .NONE },
-    .{ .BINARY, .BINARY_NOT, "~",  4, .NONE },
-    .{ .BINARY, .BINARY_XOR, "^",  4, .NONE },
+    .{ .BINARY, "|",  4 },
+    .{ .BINARY, "&",  4 },
+    .{ .BINARY, "~",  4 },
+    .{ .BINARY, "^",  4 },
     
-    .{ .BINARY, .ADD, "+",  5, .NONE },
-    .{ .BINARY, .SUB, "-",  5, .NONE },
-    .{ .BINARY, .MUL, "*",  6, .NONE },
-    .{ .BINARY, .DIV, "/",  6, .NONE },
+    .{ .BINARY, "+",  5 },
+    .{ .BINARY, "-",  5 },
+    .{ .BINARY, "*",  6 },
+    .{ .BINARY, "/",  6 },
     
-    .{ .PREFIX, .SUB,        "-",  7, .NONE },
-    .{ .PREFIX, .BINARY_NOT, "~",  7, .NONE },
-    
-    // added for LSD files
-    .{ .PREFIX, .BINARY_AND, "&",  8, .NONE },
-    .{ .PREFIX, .MUL,        "*",  8, .NONE },
-    .{ .PREFIX, .DOLLAR,     "$",  8, .NONE },
+    .{ .PREFIX, "-",  7 },
+    .{ .PREFIX, "~",  7 },
 ];
 
 // TODO: remove flags and instead use proc pointer for on_parse and on_typecheck
 Operator :: struct {
     kind:           Kind;
-    token_type:     Token_Type;
     token_text:     string;
     precedence:     int;
-    flags:          Flags;
     
     Kind :: enum { UNINITIALIZED; BINARY; PREFIX; POSTFIX; ASSIGNMENT; };
-    Flags :: enum_flags { NONE :: 0; DIRECTIVE :: 1; };
 }
 
 is_unary :: inline (kind: Operator.Kind) -> bool { return kind == .PREFIX || kind == .POSTFIX; }

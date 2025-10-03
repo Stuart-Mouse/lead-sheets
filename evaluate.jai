@@ -125,7 +125,7 @@ evaluate_node :: (
         
       case Node_Operation;
         operation := node.(*Node_Operation);
-        _operator := get_operator(operation);
+        _operator := get_operator(script, operation);
         
         if operation.flags & .OVERLOAD {
             result = evaluate_node(script, operation.overload_procedure, hint_storage);

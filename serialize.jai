@@ -157,7 +157,7 @@ print_node :: (
         
       case Node_Operation;
         operation := node.(*Node_Operation);
-        _operator := get_operator(operation);
+        _operator := get_operator(script, operation);
         
         if _operator.kind == {
           case .PREFIX;
@@ -176,11 +176,11 @@ print_node :: (
         node_prec := _operator.precedence;
         do_parenthesize_left, do_parenthesize_right := false;
         if operation.left.node_type == Node_Operation {
-            left_prec := get_precedence(xx operation.left);
+            left_prec := get_precedence(script, xx operation.left);
             do_parenthesize_left = left_prec < node_prec && !(operation.left.flags & .PARENTHESIZED);
         }
         if operation.right.node_type == Node_Operation {
-            right_prec := get_precedence(xx operation.right);
+            right_prec := get_precedence(script, xx operation.right);
             do_parenthesize_right = right_prec < node_prec && !(operation.right.flags & .PARENTHESIZED);
         }
         
@@ -243,23 +243,24 @@ print_node :: (
         declaration := node.(*Node_Declaration);
         
         // TODO: improve how this is done...
-        literal_value_prev: Any;
-        do_temp_literal_overwrite := declaration_is_malleable_literal(declaration);
-        if do_temp_literal_overwrite {
-            literal := declaration.init_expression.(*Node_Literal);
-            assert(literal.value_type == declaration.value_type);
+        // TODO: document WHY this is even done
+        // literal_value_prev: Any;
+        // do_temp_literal_overwrite := declaration_is_malleable_literal(declaration);
+        // if do_temp_literal_overwrite {
+        //     literal := declaration.init_expression.(*Node_Literal);
+        //     assert(literal.value_type == declaration.value_type);
             
-            literal_value := get_literal_value_as_any(literal);
-            literal_value_prev = Dynamic_New(literal_value.type);
-            memcpy(literal_value_prev.value_pointer, literal_value.value_pointer, literal_value.type.runtime_size); // copy current value as prev 
+        //     literal_value := get_literal_value_as_any(literal);
+        //     literal_value_prev = Dynamic_New(literal_value.type);
+        //     memcpy(literal_value_prev.value_pointer, literal_value.value_pointer, literal_value.type.runtime_size); // copy current value as prev 
             
-            memcpy(literal_value.value_pointer, declaration.value_pointer, literal_value.type.runtime_size); // overwrite current value temporarily with the value stored in declaration
-        }
-        defer if do_temp_literal_overwrite {
-            literal := declaration.init_expression.(*Node_Literal);
-            literal_value := get_literal_value_as_any(literal);
-            memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
-        }
+        //     memcpy(literal_value.value_pointer, declaration.value_pointer, literal_value.type.runtime_size); // overwrite current value temporarily with the value stored in declaration
+        // }
+        // defer if do_temp_literal_overwrite {
+        //     literal := declaration.init_expression.(*Node_Literal);
+        //     literal_value := get_literal_value_as_any(literal);
+        //     memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
+        // }
         
         do_backtick := !is_legal_identifier(declaration.name);
         if do_backtick  append(builder, "`");

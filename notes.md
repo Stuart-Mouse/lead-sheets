@@ -1133,7 +1133,7 @@ TODO: we should add a mechanism to evaluate a script in a such a way that it is 
 
 
 
-## expanded Procedure_Info
+## Expanded Procedure_Info Structures
 
 Because the type info for a procedure does not actually store any information about any particular procedure, we don't know things like argument names and default values
 
@@ -1145,5 +1145,19 @@ we could probably also support this extended procedure type info with Any_Proced
 
 
 
+
+
+## Fixing some things with malleable literals
+
+need a consistent procedure for determining what expressions can be validly used as malleable literals
+    should use same basic procedure for checking validity and setting the node as a malleable literal
+
+We should check that the literal expression being used as a malleable literal is actually constant
+    since we can have struct literals that are not constants
+    
+
+## Implementing Any type for procedure arguments
+
+TODO
 
 

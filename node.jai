@@ -165,6 +165,14 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
     unreachable();
 }
 
+can_be_malleable :: (literal: *Node_Literal) -> bool {
+    return (literal.flags & .IS_CONSTANT).(bool);
+}
+
+is_malleable :: (literal: *Node_Literal) -> bool {
+    return (literal.flags & .IS_MALLEABLE).(bool);
+}
+
 /*
     Not sure where to put this for now, but here's some documentation about a cool feature with literals:
     
@@ -196,16 +204,16 @@ Node_Operation :: struct {
     return_ptr:             *Node;      // only if return type is aggregate
 }
 
-get_operator :: (node: *Node_Operation) -> *Operator { 
-    return *operator_table[node.operator_index]; 
+get_operator :: inline (script: *Script, node: *Node_Operation) -> *Operator { 
+    return get_operator(script, node.operator_index); 
 }
 
-get_precedence :: (node: *Node_Operation) -> int {
-    return get_operator(node).precedence;
+get_precedence :: inline (script: *Script, node: *Node_Operation) -> int {
+    return get_operator(script, node).precedence;
 }
 
-get_operator_kind :: (node: *Node_Operation) -> Operator.Kind {
-    return get_operator(node).kind;
+get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator.Kind {
+    return get_operator(script, node).kind;
 }
 
 // TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
@@ -270,9 +278,12 @@ replace_node :: inline (original: **Node, new: *Node) {
 }
 
 get_location :: (node: Node) -> string {
-    return tprint("%:%,%", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+    return format_location(node.location);
 }
 
+format_location :: (location: Source_Code_Location) -> string {
+    return tprint("%:%,%", location.fully_pathed_filename, location.line_number, location.character_number);
+}
 
 
 // ===== Make Nodes From Tokens =====

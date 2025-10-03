@@ -14,6 +14,7 @@ Script :: struct {
     directives:             [..] Directive;
     named_blocks:           [..] *Node_Block;
     type_table:             [..] Name_And_Type;
+    operator_table:         [..] Operator;
     
     // added for the sake of convenience and use in repl
     global_declarations:    [..] *Node_Declaration;
@@ -92,8 +93,12 @@ init_script :: (script: *Script, stack_size := 1024) {
     script.ast_root = alloc_node(script, Node_Block);
     script.current_scope = script.ast_root;
     
+    array_add(*script.operator_table, ..default_operator_table);
+    
     script.flags |= .INITIALIZED;
 }
+
+has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
 
 // copy_script_static_variables :: (dst: *Script, src: *Script) {
 //     free_script(dst); // just in case data is already there...
