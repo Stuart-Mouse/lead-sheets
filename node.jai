@@ -153,7 +153,7 @@ Node_Literal :: struct {
     }
 }
 
-get_literal_value_as_any :: (literal: Node_Literal) -> Any {
+get_literal_value_as_any :: (literal: *Node_Literal) -> Any {
     assert(literal.value_type != null);
     if #complete literal.literal_type == {
       case .BOOLEAN; return to_any(*literal.number);
@@ -166,7 +166,7 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 }
 
 can_be_malleable :: (literal: *Node_Literal) -> bool {
-    return (literal.flags & .IS_CONSTANT).(bool);
+    return !(literal.flags & .IS_CONSTANT).(bool);
 }
 
 is_malleable :: (literal: *Node_Literal) -> bool {

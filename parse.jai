@@ -475,7 +475,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         
         literal := get_terminal_literal(left);
         if !literal || !can_be_malleable(literal) {
-            set_parse_error(script, "%: a `?` can only be used directly after a literal.", format_location(question_mark.location));
+            set_parse_error(script, "%: a `?` can only be used directly after a constant literal.", format_location(question_mark.location));
             return null;
         }
         literal.flags |= .IS_MALLEABLE;

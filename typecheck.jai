@@ -277,7 +277,7 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
-    if try_implicit_reference(node, type) {
+    if try_implicit_reference(script, node, type) {
         dprint("took implicit reference to node with value_type '%'\n", as_type(node.value_type));
         return true, null;  
     }
@@ -315,16 +315,20 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
 
 can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     ptr_info := type.(*Type_Info_Pointer);
-    if ptr_info.type != .POINTER || ptr_info.pointer_to != node.value_type  return false;
+    if ptr_info.type != .POINTER return false;
     
-    // TODO: put more logic in here to allow implicit dereference on using #as members?
-    return true;
+    if ptr_info.pointer_to == node.value_type  return true;
+    // if is_using_as(node.value_type, ptr_info) return true;   // TODO
+    
+    return false;
 }
 
 
 // just flags the node as an lvalue if successful
-try_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
+try_implicit_reference :: (script: *Script, node: *Node, type: *Type_Info) -> bool {
+    if !is_valid_lvalue(script, node)  return false;
     if !can_do_implicit_reference(node, type)  return false;
+    
     // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
     node.flags |= .IS_LVALUE;
     return true;
