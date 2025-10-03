@@ -18,6 +18,9 @@
     There is also expect_token_type(), which is useful when one doesn't care about anything other than the token type,
         for example when expecting a closing `)` or `]` token.
     
+    
+    TODO: consider adding user-level lexing overrides, maybe using negative values for Token_Type to signify user tokens
+          then user could add new operators by creating user-level tokens and adding those to the operator table
 */
 
 

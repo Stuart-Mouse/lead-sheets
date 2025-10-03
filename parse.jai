@@ -265,12 +265,13 @@ parse_leaf :: (using script: *Script) -> *Node {
     dprint_push_indent();
     token := get_token(*lexer);
     
-    is_operator, operator_type, precedence := token_is_operator(token, expect_unary = true);
-    if is_operator && operator_type == .UNARY {
-        dprint("UNARY OPERATOR (%)\n", token.text);
+    is_operator, operator_index := get_prefix_operator(token);
+    if is_operator {
+        dprint("PREFIX OPERATOR (%)\n", token.text);
+        precedence := operator_table[operator_index].precedence;
         left := my_parse_expression(script, precedence);
         if left == null  return null;
-        return make_unary_operation(script, token, left);
+        return make_operation(script, token, operator_index, left, null);
     }
     
     if token.type == {
@@ -544,17 +545,18 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     
     // We only consume the binary operator here if it is of a higher precedence than the previous binary operator.
     // If we hit a binary operator but its precedence is too low, we return left back to caller.
-    is_operator, operator_type, precedence := token_is_operator(token);
-    if is_operator && operator_type != .UNARY {
-        if precedence <= min_prec  return left;
-        dprint("% OPERATION (%)\n", operator_type, token.text);
+    is_operator, operator_index := get_binary_operator(token);
+    if is_operator {
+        _operator := operator_table[operator_index];
+        
+        if _operator.precedence <= min_prec  return left;
         operator_token := get_token(*lexer);
         
-        right := my_parse_expression(script, precedence);
+        right := my_parse_expression(script, _operator.precedence);
         if right == null  return null;
         
-        operation := make_operation(script, operator_token, operator_type, left, right);
-        if operator_type == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
+        operation := make_operation(script, operator_token, operator_index, left, right);
+        if _operator.kind == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
         
         return operation;
     }

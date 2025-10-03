@@ -812,8 +812,9 @@ operator table defines what operators exist on a syntax level
     this is currently constant, but we could make this resizable so that we can expand the operator table at runtime
     
 
-had some thoguht the other day about putting operators overloads in their own array, separate from procedure overloads... don't exactly remember that whole traing of thought
-    
+had some thought the other day about putting operators overloads in their own array, separate from procedure overloads... don't exactly remember that whole traing of thought
+
+
 
 
 
@@ -1124,9 +1125,6 @@ that way we can display them inside things like imgui menus, e.g. 'Entity Detail
 
 
 
-TODO: we should add a mechanism to invalidate external variable identifiers
-      that way, we can validate that all when we renew all external variables on a script, we can be sure we don't miss any, or pass any twice
-
 TODO: we should add a mechanism to evaluate a script in a such a way that it is tolerant to errors
       this could be useful when identifiers may change or become invalidated, such as when using the scripts in the context of a level editor
 
@@ -1134,6 +1132,16 @@ TODO: we should add a mechanism to evaluate a script in a such a way that it is 
 
 
 
+
+## expanded Procedure_Info
+
+Because the type info for a procedure does not actually store any information about any particular procedure, we don't know things like argument names and default values
+
+If we had this kind of info about procedures, then we could potentially support features like default arguments, or passing arguments by name, like Jai allows
+
+
+register procedure could probably get info about default argument values by doing something fancy with #caller_code like print_vars
+we could probably also support this extended procedure type info with Any_Procedure
 
 
 

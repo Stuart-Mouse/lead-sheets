@@ -1,83 +1,87 @@
 
-/*
-    So there are currently some things I don't like about how operators are implemented.
-    
-    There's a weird sort of inconsistency to what exactly each operator type implies and how i tbehaves
-    which I suppose make sense, but for example
-    
-    because assignment operators basically are lexically identical to binary operators, they are sort of parsed in the same way
-    but this also means that we can always tell them apart, since no binary operator could be the same token as an assignment operator
-    
-    unary operators are parsed differently, but that also means they can be the same exact token as a binary operator ('-' for example)
-    so if we want to check if a token is a unary operator, we need to look explicityl pass that we expect a unary operator in the lookup proc (token_is_operator)
-    
-    is it weird that we know the operator type before typechecking?
-    
-*/
-
-get_operator_precedence :: (identifier: string) -> int {
-    for operator_table  {
-        if it.identifier == identifier {
-            return it.precedence;
+get_prefix_operator :: (token: Token) -> bool, int {
+    for operator_table {
+        if it.kind != .PREFIX  continue;
+        if it.token_type == token.type {
+            return true, it_index;
         }
     }
-    return -1;
+    return false, 0;
 }
 
-// TODO: expect_unary is a stupid hack, but I can't think of a better way
-token_is_operator :: (token: Token, expect_unary := false) -> bool, Operator_Type, int {
-    if token.text == "="  return true, .ASSIGNMENT, 1;
-    
-    // TODO: we should probably still check the token type and not just the text
-    for operator_table  {
-        if expect_unary && it.operator_type != .UNARY  continue;
-        if it.identifier == token.text {
-            return true, it.operator_type, it.precedence;
+get_postfix_operator :: (token: Token) -> bool, int {
+    for operator_table {
+        if it.kind != .POSTFIX  continue;
+        if it.token_type == token.type {
+            return true, it_index;
         }
     }
-    return false, xx 0, 0;
+    return false, 0;
 }
+
+get_binary_operator :: (token: Token) -> bool, int {
+    for operator_table {
+        if is_unary(it) continue;
+        if it.token_type == token.type {
+            return true, it_index;
+        }
+    }
+    return false, -1;
+}
+
 
 // TODO: use token_type instead of identifier
 // then we can also a separate lookup table to get the text for an operator from the token_type
-operator_table :: struct { identifier: string; operator_type: Operator_Type; precedence: int; } .[
-    .{ "=",  .ASSIGNMENT, 1 },
-    .{ "+=", .ASSIGNMENT, 1 },
-    .{ "-=", .ASSIGNMENT, 1 },
-    .{ "|=", .ASSIGNMENT, 1 },
-    .{ "&=", .ASSIGNMENT, 1 },
-    .{ "^=", .ASSIGNMENT, 1 },
+operator_table :: Operator.[
+    .{ .ASSIGNMENT, .ASSIGN_EQUAL,  "=",  1, .NONE },
+    .{ .ASSIGNMENT, .PLUS_EQUALS,   "+=", 1, .NONE },
+    .{ .ASSIGNMENT, .MINUS_EQUALS,  "-=", 1, .NONE },
+    .{ .ASSIGNMENT, .OR_EQUALS,     "|=", 1, .NONE },
+    .{ .ASSIGNMENT, .AND_EQUALS,    "&=", 1, .NONE },
+    .{ .ASSIGNMENT, .XOR_EQUALS,    "^=", 1, .NONE },
     
-    .{ "&&", .BINARY, 2 },
-    .{ "||", .BINARY, 2 },
+    .{ .BINARY, .LOGICAL_AND, "&&", 2, .NONE },
+    .{ .BINARY, .LOGICAL_OR,  "||", 2, .NONE },
     
-    .{ "==", .BINARY, 3 },
-    .{ ">=", .BINARY, 3 },
-    .{ "<=", .BINARY, 3 },
-    .{ ">",  .BINARY, 3 },
-    .{ "<",  .BINARY, 3 },
+    .{ .BINARY, .COMPARE_EQUAL,             "==", 3, .NONE },
+    .{ .BINARY, .GREATER_THAN_OR_EQUAL_TO,  ">=", 3, .NONE },
+    .{ .BINARY, .LESS_THAN_OR_EQUAL_TO,     "<=", 3, .NONE },
+    .{ .BINARY, .GREATER_THAN,              ">",  3, .NONE },
+    .{ .BINARY, .LESS_THAN,                 "<",  3, .NONE },
     
-    .{ "|",  .BINARY, 4 },
-    .{ "&",  .BINARY, 4 },
-    .{ "^",  .BINARY, 4 },
-    .{ "~",  .BINARY, 4 },
+    .{ .BINARY, .BINARY_OR,  "|",  4, .NONE },
+    .{ .BINARY, .BINARY_AND, "&",  4, .NONE },
+    .{ .BINARY, .BINARY_NOT, "~",  4, .NONE },
+    .{ .BINARY, .BINARY_XOR, "^",  4, .NONE },
     
-    .{ "+",  .BINARY, 5 },
-    .{ "-",  .BINARY, 5 },
-    .{ "*",  .BINARY, 6 },
-    .{ "/",  .BINARY, 6 },
+    .{ .BINARY, .ADD, "+",  5, .NONE },
+    .{ .BINARY, .SUB, "-",  5, .NONE },
+    .{ .BINARY, .MUL, "*",  6, .NONE },
+    .{ .BINARY, .DIV, "/",  6, .NONE },
     
-    .{ "-",  .UNARY,  7 },
-    .{ "~",  .UNARY,  7 },
+    .{ .PREFIX, .SUB,        "-",  7, .NONE },
+    .{ .PREFIX, .BINARY_NOT, "~",  7, .NONE },
     
     // added for LSD files
-    .{ "&",  .UNARY,  8 },
-    .{ "*",  .UNARY,  8 },
-    .{ "$",  .UNARY,  8 },
+    .{ .PREFIX, .BINARY_AND, "&",  8, .NONE },
+    .{ .PREFIX, .MUL,        "*",  8, .NONE },
+    .{ .PREFIX, .DOLLAR,     "$",  8, .NONE },
 ];
 
+Operator :: struct {
+    kind:           Kind;
+    token_type:     Token_Type;
+    token_text:     string;
+    precedence:     int;
+    flags:          Flags;
+    
+    Kind :: enum { UNINITIALIZED; BINARY; PREFIX; POSTFIX; ASSIGNMENT; };
+    Flags :: enum_flags { NONE :: 0; DIRECTIVE :: 1; };
+}
 
-Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
+is_unary :: inline (kind: Operator.Kind) -> bool { return kind == .PREFIX || kind == .POSTFIX; }
+
+is_unary :: inline (op: Operator) -> bool { return is_unary(op.kind); }
 
 // this is dumb, but it must be done (for now)
 #insert -> string {
@@ -85,7 +89,7 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
 
     append(*builder, #string JAI
     BUILTIN_OPERATIONS :: (
-        struct { type: Operator_Type; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
+        struct { type: Operator.Kind; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
     ).[
     JAI);
     
@@ -111,7 +115,7 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
     .{ .ASSIGNMENT, "&=", %1, %1, %1, false },
     .{ .ASSIGNMENT, "^=", %1, %1, %1, false },
     
-    .{ type = .UNARY, identifier = "~", left = %1,   ret = %1   },
+    .{ type = .PREFIX, identifier = "~", left = %1,   ret = %1   },
     JAI;
     
     for (string.["u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64"]) {
@@ -120,7 +124,7 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
     
     
     signed_integer_template :: #string JAI
-    .{ type = .UNARY, identifier = "-", left = %1,   ret = %1   },
+    .{ type = .PREFIX, identifier = "-", left = %1,   ret = %1   },
     JAI;
     
     for (string.["s8", "s16", "s32", "s64"]) {
@@ -152,9 +156,9 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
         .{ .BINARY, "==", Vector2, Vector2, bool, false },
         
         
-        // UNARY    (right type will be ignored)
-        .{ type = .UNARY, identifier = "-", left = float,   ret = float },
-        .{ type = .UNARY, identifier = "-", left = Vector2, ret = Vector2 },
+        // PREFIX    (right type will be ignored)
+        .{ type = .PREFIX, identifier = "-", left = float,   ret = float },
+        .{ type = .PREFIX, identifier = "-", left = Vector2, ret = Vector2 },
         
         
         // ASSIGNMENT
@@ -179,12 +183,12 @@ Operator_Type :: enum { BINARY; UNARY; ASSIGNMENT; };
 //       for example, if we know the type of one side of the operation, but not the other, then perhaps we can use the side we do know to intelligently hint a type for the other side?
 resolve_builtin_operation :: (
     identifier:     string, 
-    type:           Operator_Type, 
+    type:           Operator.Kind, 
     left_type:      *Type_Info, 
     right_type:     *Type_Info
 ) -> (
     index:          int, 
-    type:           Operator_Type, 
+    type:           Operator.Kind, 
     swap_args:      bool
 ) {
     for BUILTIN_OPERATIONS {
@@ -203,8 +207,8 @@ resolve_builtin_operation :: (
                 return it_index, .BINARY, true;
             }
           
-          case .UNARY;
-            if it.left.(*Type_Info) == left_type  return it_index, .UNARY, false;
+          case .PREFIX;
+            if it.left.(*Type_Info) == left_type  return it_index, .PREFIX, false;
             
           case .ASSIGNMENT;
             if it.left .(*Type_Info) == left_type 
@@ -223,7 +227,7 @@ execute_builtin_operation :: (oper_idx: int, left: *void, right: *void, ret: *vo
         for BUILTIN_OPERATIONS {
             print_to_builder(*builder, "  case %;\n", it_index);
             if it.type == {
-              case .UNARY;
+              case .PREFIX;
                 print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
               case .BINARY;
                 print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.identifier, it.right);
@@ -260,7 +264,7 @@ execute_builtin_operation :: (script: *Script, oper_idx: int) {
             print_to_builder(*builder, "case %;\n", it_index);
             
             if it.type == {
-              case .UNARY;
+              case .PREFIX;
                 print_to_builder(*builder, "  left := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
                 print_to_builder(*builder, "  ret  := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
                 print_to_builder(*builder, "  ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);

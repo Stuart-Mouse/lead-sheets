@@ -567,8 +567,10 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
 typecheck_operation :: (using script: *Script, operation: *Node_Operation, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     left_type, right_type: *Type_Info;
     
-    if operation.operator_type == {
-      case .UNARY;
+    _operator := get_operator(operation);
+    if _operator.kind == {
+      case .PREFIX; #through;
+      case .POSTFIX;
         left_type = typecheck_node(script, operation.left, check_flags, hint_type);
         if !!script.error  return;
         
@@ -622,15 +624,15 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    operator_index, _, swap_args := resolve_builtin_operation(operation.name, operation.operator_type, left_underlying_type, right_underlying_type);
-    if operator_index >= 0 {
-        operation.operator_index = operator_index;
+    builtin_operation_index, _, swap_args := resolve_builtin_operation(operation.name, _operator.kind, left_underlying_type, right_underlying_type);
+    if builtin_operation_index >= 0 {
+        operation.builtin_operation_index = builtin_operation_index;
         
         if swap_args { operation.left, operation.right = operation.right, operation.left; }
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
-        operation.value_type = BUILTIN_OPERATIONS[operator_index].ret.(*Type_Info);
+        operation.value_type = BUILTIN_OPERATIONS[builtin_operation_index].ret.(*Type_Info);
         if left_type.type == .ENUM && left_type == right_type {
             if operation.value_type != left_underlying_type {
                 set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type), node = operation);
@@ -652,7 +654,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     procedure_call := alloc_node(script, Node_Procedure_Call);
     procedure_call.procedure_expression = make_identifier(script, operation.name);
     
-    if operation.operator_type == .UNARY 
+    if is_unary(_operator)
         then procedure_call.arguments = array_copy((*Node).[ operation.left ],, get_pool_allocator(*script.pool));
         else procedure_call.arguments = array_copy((*Node).[ operation.left, operation.right ],, get_pool_allocator(*script.pool));
     operation.overload_procedure    = procedure_call;

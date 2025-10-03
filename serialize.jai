@@ -157,23 +157,30 @@ print_node :: (
         
       case Node_Operation;
         operation := node.(*Node_Operation);
+        _operator := get_operator(operation);
         
-        if operation.operator_type == .UNARY {
+        if _operator.kind == {
+          case .PREFIX;
             append(builder, operation.name);
             print_node(script, operation.left, builder, indent);
             return true;
+            
+          case .POSTFIX;
+            print_node(script, operation.left, builder, indent);
+            append(builder, operation.name);
+            return true;
         }
         
-        // we only prenthesize expressions implicitly here if the precedence requires it
+        // we only parenthesize expressions implicitly here if the precedence requires it
         // and the subexpressions weren't already explicitly flagged as parenthesized
-        node_prec := get_operator_precedence(operation.name);
+        node_prec := _operator.precedence;
         do_parenthesize_left, do_parenthesize_right := false;
         if operation.left.node_type == Node_Operation {
-            left_prec := get_operator_precedence(operation.left.(*Node_Operation).name);
+            left_prec := get_precedence(xx operation.left);
             do_parenthesize_left = left_prec < node_prec && !(operation.left.flags & .PARENTHESIZED);
         }
         if operation.right.node_type == Node_Operation {
-            right_prec := get_operator_precedence(operation.right.(*Node_Operation).name);
+            right_prec := get_precedence(xx operation.right);
             do_parenthesize_right = right_prec < node_prec && !(operation.right.flags & .PARENTHESIZED);
         }
         

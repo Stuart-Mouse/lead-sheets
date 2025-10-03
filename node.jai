@@ -187,13 +187,25 @@ get_literal_value_as_any :: (literal: Node_Literal) -> Any {
 Node_Operation :: struct {
     using #as node_base:    Node;
     name:                   string;
-    operator_type:          Operator_Type;
+    operator_index:         int;
     union { // check node.flag & .OVERLOAD
-        operator_index:     int;
-        overload_procedure: *Node_Procedure_Call;
+        builtin_operation_index:    int;
+        overload_procedure:         *Node_Procedure_Call;
     }
     left, right:            *Node;      // only left is used if .UNARY flag is present
     return_ptr:             *Node;      // only if return type is aggregate
+}
+
+get_operator :: (node: *Node_Operation) -> *Operator { 
+    return *operator_table[node.operator_index]; 
+}
+
+get_precedence :: (node: *Node_Operation) -> int {
+    return get_operator(node).precedence;
+}
+
+get_operator_kind :: (node: *Node_Operation) -> Operator.Kind {
+    return get_operator(node).kind;
 }
 
 // TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
@@ -296,20 +308,12 @@ make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {
     return node;
 }
 
-make_unary_operation :: inline (script: *Script, source_token: Token, left: *Node) -> *Node_Operation {
-    return make_operation(script, source_token, .UNARY, left, null);
-}
-
-make_binary_operation :: inline (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Operation {
-    return make_operation(script, source_token, .BINARY, left, right);
-}
-
-make_operation :: (script: *Script, source_token: Token, operator_type: Operator_Type, left: *Node, right: *Node) -> *Node_Operation {
+make_operation :: (script: *Script, source_token: Token, operator_index: int, left: *Node, right: *Node) -> *Node_Operation {
     node := alloc_node(script, Node_Operation, loc = source_token.location, trivia = source_token.trivia);
-    node.name          = source_token.text;
-    node.operator_type = operator_type;
-    node.left          = left;
-    node.right         = right;
+    node.name           = source_token.text;
+    node.operator_index = operator_index;
+    node.left           = left;
+    node.right          = right;
     return node;
 }
 

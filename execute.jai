@@ -163,7 +163,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, operation.overload_procedure);
         }
         
-        if operation.operator_type != .ASSIGNMENT {
+        _operator := get_operator(operation);
+        if _operator.kind != .ASSIGNMENT {
             if is_aggr(operation.value_type) {
                 if !stack_push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
             } else {
@@ -173,7 +174,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         if !execute_node(script, operation.left)  return false;
         
-        if operation.operator_type != .UNARY {
+        if !is_unary(_operator.kind) {
             if !execute_node(script, operation.right)  return false;
         }
         
@@ -198,7 +199,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         // dprint("operation: %\n", op);
         
-        execute_builtin_operation(script, operation.operator_index);
+        execute_builtin_operation(script, operation.builtin_operation_index);
         
         result_any := Any.{ 
             operation.value_type, 

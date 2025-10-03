@@ -125,6 +125,7 @@ evaluate_node :: (
         
       case Node_Operation;
         operation := node.(*Node_Operation);
+        _operator := get_operator(operation);
         
         if operation.flags & .OVERLOAD {
             result = evaluate_node(script, operation.overload_procedure, hint_storage);
@@ -133,7 +134,7 @@ evaluate_node :: (
             if !!script.error  return Null_Any;
             
             right_any: Any;
-            if operation.operator_type != .UNARY {
+            if !is_unary(_operator) {
                 right_any = evaluate_node(script, operation.right);
                 if !!script.error  return Null_Any;
             }
@@ -145,8 +146,8 @@ evaluate_node :: (
                 result = left_any;
             } else {
                 assert(operation.value_type == result.type);
-                if !execute_builtin_operation(operation.operator_index, left_any.value_pointer, right_any.value_pointer, result.value_pointer) {
-                    set_general_error(script, "Failed while trying to execute builtin operation, operator index: %", operation.operator_index);
+                if !execute_builtin_operation(operation.builtin_operation_index, left_any.value_pointer, right_any.value_pointer, result.value_pointer) {
+                    set_general_error(script, "Failed while trying to execute builtin operation, operator index: %", operation.builtin_operation_index);
                     return Null_Any;
                 }
             }
