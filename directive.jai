@@ -179,7 +179,6 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         arguments[0] = *directive_call;
         argument_index := 1;
         
-        // NOTE: we have to iterate by pointer here, otherwise we get a bug when trying to take an Any of the iterator value.
         for procedure.user_data {
             arguments[argument_index] = it;
             argument_index += 1;

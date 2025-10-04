@@ -89,41 +89,41 @@ get_binary_operator :: (script: *Script, token: Token) -> bool, int {
 }
 
 default_operator_table :: Operator.[
-    .{ .ASSIGNMENT, "=",  1 },
-    .{ .ASSIGNMENT, "+=", 1 },
-    .{ .ASSIGNMENT, "-=", 1 },
-    .{ .ASSIGNMENT, "|=", 1 },
-    .{ .ASSIGNMENT, "&=", 1 },
-    .{ .ASSIGNMENT, "^=", 1 },
+    .{ .ASSIGNMENT, "=",  1, "" },
+    .{ .ASSIGNMENT, "+=", 1, "" },
+    .{ .ASSIGNMENT, "-=", 1, "" },
+    .{ .ASSIGNMENT, "|=", 1, "" },
+    .{ .ASSIGNMENT, "&=", 1, "" },
+    .{ .ASSIGNMENT, "^=", 1, "" },
     
-    .{ .BINARY, "&&", 2 },
-    .{ .BINARY, "||", 2 },
+    .{ .BINARY, "&&", 2, "" },
+    .{ .BINARY, "||", 2, "" },
     
-    .{ .BINARY, "==", 3 },
-    .{ .BINARY, ">=", 3 },
-    .{ .BINARY, "<=", 3 },
-    .{ .BINARY, ">",  3 },
-    .{ .BINARY, "<",  3 },
+    .{ .BINARY, "==", 3, "" },
+    .{ .BINARY, ">=", 3, "" },
+    .{ .BINARY, "<=", 3, "" },
+    .{ .BINARY, ">",  3, "" },
+    .{ .BINARY, "<",  3, "" },
     
-    .{ .BINARY, "|",  4 },
-    .{ .BINARY, "&",  4 },
-    .{ .BINARY, "~",  4 },
-    .{ .BINARY, "^",  4 },
+    .{ .BINARY, "|",  4, "" },
+    .{ .BINARY, "&",  4, "" },
+    .{ .BINARY, "~",  4, "" },
+    .{ .BINARY, "^",  4, "" },
     
-    .{ .BINARY, "+",  5 },
-    .{ .BINARY, "-",  5 },
-    .{ .BINARY, "*",  6 },
-    .{ .BINARY, "/",  6 },
+    .{ .BINARY, "+",  5, "" },
+    .{ .BINARY, "-",  5, "" },
+    .{ .BINARY, "*",  6, "" },
+    .{ .BINARY, "/",  6, "" },
     
-    .{ .PREFIX, "-",  7 },
-    .{ .PREFIX, "~",  7 },
+    .{ .PREFIX, "-",  7, "" },
+    .{ .PREFIX, "~",  7, "" },
 ];
 
-// TODO: remove flags and instead use proc pointer for on_parse and on_typecheck
 Operator :: struct {
-    kind:           Kind;
-    token_text:     string;
-    precedence:     int;
+    kind:               Kind;
+    token_text:         string;
+    precedence:         int;
+    directive_name:     string;
     
     Kind :: enum { UNINITIALIZED; BINARY; PREFIX; POSTFIX; ASSIGNMENT; };
 }
@@ -132,6 +132,17 @@ is_unary :: inline (kind: Operator.Kind) -> bool { return kind == .PREFIX || kin
 
 is_unary :: inline (op: Operator) -> bool { return is_unary(op.kind); }
 
+
+register_operator :: (script: *Script, kind: Operator.Kind, token: string, precedence: int, directive := "") -> bool {
+    for script.operator_table {
+        if it.kind == kind && it.token_text = token {
+            log("Error: Cannot register % operator '%'. This operator already exists in the script's operator table.", kind, token);
+            return false;
+        }
+    }
+    array_add(*script.operator_table, .{ kind, token, precedence, directive });
+    return true;
+}
 
 
 

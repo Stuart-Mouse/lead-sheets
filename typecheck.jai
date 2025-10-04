@@ -4,7 +4,6 @@
         we could mark certain node types as constants and do constant evaluation where applicable
         this would not be something we really want to do on initial pass, since we don't want to modify the AST that much
         but it would certainly be a good idea to do before going to bytecode
-
 */
 
 Typechecking_Flags :: enum_flags {
@@ -318,7 +317,9 @@ can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     if ptr_info.type != .POINTER return false;
     
     if ptr_info.pointer_to == node.value_type  return true;
-    // if is_using_as(node.value_type, ptr_info) return true;   // TODO
+    
+    // NOTE: when implementing the below, need to check that #as only works on the first member
+    // if is_using_as(node.value_type, ptr_info.pointer_to) return true;   // TODO
     
     return false;
 }
@@ -592,6 +593,11 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
 
 
 typecheck_operation :: (using script: *Script, operation: *Node_Operation, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    if operation.directive {
+        typecheck_node(script, operation.directive, check_flags, hint_type);
+        if operation.directive.runtime_node  return;
+    }
+    
     left_type, right_type: *Type_Info;
     
     _operator := get_operator(script, operation);

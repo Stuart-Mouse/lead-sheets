@@ -79,6 +79,7 @@ init_script :: (script: *Script, stack_size := 1024) {
     //     DCaggr_lookup_table.allocator = context.allocator;
     // }
     
+    // TODO: ensure that stack base is aligned to 8 bytes
     script.stack_size = stack_size;
     script.stack_base = get(*script.pool, script.stack_size);
     script.stack_ptr  = script.stack_base;

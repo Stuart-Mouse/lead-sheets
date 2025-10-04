@@ -200,8 +200,9 @@ Node_Operation :: struct {
         builtin_operation_index:    Builtin_Operation_ID;
         overload_procedure:         *Node_Procedure_Call;
     }
-    left, right:            *Node;      // only left is used if .UNARY flag is present
-    return_ptr:             *Node;      // only if return type is aggregate
+    left, right:    *Node;      // only left is used if .UNARY flag is present
+    return_ptr:     *Node;      // only if return type is aggregate
+    directive:      *Node_Directive;
 }
 
 get_operator :: inline (script: *Script, node: *Node_Operation) -> *Operator { 
@@ -319,13 +320,45 @@ make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {
     return node;
 }
 
+// NOTE: It is actually important that one call make_operation instead of making the node manually!
+//       This is because we do the extra shenanigans for handling operator directives here.
 make_operation :: (script: *Script, source_token: Token, operator_index: int, left: *Node, right: *Node) -> *Node_Operation {
-    node := alloc_node(script, Node_Operation, loc = source_token.location, trivia = source_token.trivia);
-    node.name           = source_token.text;
-    node.operator_index = operator_index;
-    node.left           = left;
-    node.right          = right;
-    return node;
+    operation := alloc_node(script, Node_Operation, loc = source_token.location, trivia = source_token.trivia);
+    operation.name           = source_token.text;
+    operation.operator_index = operator_index;
+    operation.left           = left;
+    operation.right          = right;
+    
+    _operator := get_operator(script, operator_index);
+    
+    if _operator.kind == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
+    
+    if _operator.directive_name {
+        directive := alloc_node(script, Node_Directive, loc = source_token.location, trivia = source_token.trivia);
+        directive.name = source_token.text;
+        
+        directive.directive_index = -1;
+        for script.directives {
+            if it.name == directive.name {
+                directive.directive_index = it_index;
+            }
+        }
+        if directive.directive_index == -1 {
+            set_parse_error(script, "%: Unable to resolve directive '%'\n", directive.location, directive.name);
+            return null;
+        }
+        
+        directive.arguments = array_copy((*Node).[operation.left, operation.right],, get_pool_allocator(*script.pool));
+        
+        if !evaluate_directive(script, directive, .PARSE) {
+            set_parse_error(script, "%: failed while trying to execute a directive during parsing.", source_token.location);
+            return null;
+        }
+        
+        operation.directive = directive;
+    }
+    
+    return operation;
 }
 
 make_procedure_call :: (script: *Script, source_token: Token, proc_expr: *Node, arg_exprs: [] *Node) -> *Node_Procedure_Call {
@@ -360,8 +393,8 @@ make_cast :: (script: *Script, source_token: Token, value: *Node, type_expr: *No
 // ===== Make Nodes Manually =====
 
 // TODO: need to have some kind of flag on such a node so that we know whether we need to print the fully qualified enum name with type or not
-//       adn that will depend on whether this node is held by a node_identifier/node_dot or not
-//       if this nod eis held by a node_identifier or node_dot, then it actually won't get directly called by print_node anyhow though
+//       and that will depend on whether this node is held by a node_identifier/node_dot or not
+//       if this node is held by a node_identifier or node_dot, then it actually won't get directly called by print_node anyhow though
 //       since the identifier will just print itself with get_identifier_name. so i guess it's actually just fine to always use the fully qualified enum name if we print an enum literal?
 //       or maybe we use a flag like .IMPLICIT to signify that the enum literal was using a unary dot in the source text.
 

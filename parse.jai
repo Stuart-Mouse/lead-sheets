@@ -382,25 +382,6 @@ parse_leaf :: (using script: *Script) -> *Node {
     return null;
 }
 
-
-/*
-    Notes on parse_expression and parse_increasing_precedence
-    
-    TODO: include link to stream where Jon talks about this
-    
-    these two procedures trade off back and forth in a somewhat unintuitive manner in order to construct an AST where operator precedence is respected
-    this works based on an observation that when we construct the proper tree for either increasing or decreasing operator precedence 
-    depending on wehter we are appending nodes linearly or recursively
-    
-    when we navigate a tree and execute it, we do it in (I think) postorder
-    we evaluate left, then right, then self, then return up tree
-    so if a node is left of self, it necessarily has higher precedence, or is in parens (bc it is executed first)
-    
-    parse_increasing_precedence is only relevant when parsing binary operators...?
-        if so, maybe we can factor things a bit more intuitively
-*/
-
-
 // will parse a single string as a statement, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
 parse_statement_string :: (script: *Script, statement: string, expect_eof := true) -> *Node {
@@ -550,10 +531,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         right := my_parse_expression(script, _operator.precedence);
         if right == null  return null;
         
-        operation := make_operation(script, operator_token, operator_index, left, right);
-        if _operator.kind == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
-        
-        return operation;
+        return make_operation(script, operator_token, operator_index, left, right);
     }
     
     return left;
