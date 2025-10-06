@@ -305,3 +305,130 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
 
 
 
+
+
+
+/*
+    Proceudre Info
+    
+    Questions to answer:
+        What kinds of root nodes will we need to deal with other than identifier?
+            Probably #procedure_of_call or #bake_parameters as well...
+        When will argument names actually be available, and when will they not?
+        Do we really care about return value names?
+    
+    TODO: create several test cases usig different types of procedure expressions
+          access through struct members, array indexing, #bake_arguments, #procedure_of_call
+*/
+
+Procedure_Info :: struct {
+    argument_names:         [] string;
+    return_value_names:     [] string;
+    get_default_argument_value:  #type (int) -> bool, Any;
+}
+
+get_procedure_info :: ($procedure_expression: Code) -> Procedure_Info {
+    #insert -> string {
+        builder: String_Builder;
+        
+        proc_header: *Code_Procedure_Header;
+        
+        root := Compiler.compiler_get_nodes(procedure_expression);
+        if root.type.type != .PROCEDURE {
+            append(*builder, "Warning: The given expression does not resolve to a procedure: ");
+            PP.print_expression(*builder, root);
+            assert(false, builder_to_string(*builder));
+        }
+        
+        if root.kind == {
+          case .IDENT;
+            ident := root.(*Compiler.Code_Ident);
+            if ident.resolved_declaration.expression.kind == {
+              case .PROCEDURE_HEADER;
+                proc_header = ident.resolved_declaration.expression.(*Code_Procedure_Header);
+            }
+        }
+        
+        if proc_header == null {
+            append(*builder, "Warning: Unable to resolve procedure header from expression: ");
+            PP.print_expression(*builder, root);
+            log(builder_to_string(*builder));
+            return "return .{};";
+        }
+        
+        assert(proc_header.procedure_flags & .POLYMORPHIC == 0, "Cannot get procedure info for a polymorphic procedure.");
+        
+        proc_info := proc_header.type.(*Type_Info_Procedure);
+        append(*builder, "procedure := #insert procedure_expression;\n");
+        append(*builder, "proc_info :: type_info(type_of(procedure));\n");
+        for 0..proc_info.argument_types.count-1 {
+            print(*builder, "Ta%1 :: #run (*proc_info.argument_types[%1]).(*Type).*;\n", it);
+        }
+        
+        
+        // generate argument names array
+        {
+            append(*builder, "argument_names :: string.[ ");
+            for proc_header.arguments {
+                print(*builder, "\"%\"", it.name);
+                if it_index != proc_header.arguments.count-1 {
+                    append(*builder, ", ");
+                }
+            }
+            append(*builder, " ];\n");
+        }
+        
+        // generate return value names array
+        {
+            append(*builder, "return_value_names :: string.[ ");
+            for proc_header.returns {
+                print(*builder, "\"%\"", it.name);
+                if it_index != proc_header.returns.count-1 {
+                    append(*builder, ", ");
+                }
+            }
+            append(*builder, " ];\n");
+        }
+        
+        // generate get_default_argument_value for the procedure
+        {
+            append(*builder, "get_default_argument_value :: (index: int) -> bool, Any {\n");
+            append(*builder, "ret: Any;\n");
+            append(*builder, "if index == {\n");
+            for proc_header.arguments {
+                // TODO: check if this can actually be null. I am just assuming that it could be if we are given a polymorphic procedure.
+                assert(it.type != null, "Type was not present on argument declaration node!");
+                
+                print(*builder, "case %;\n", it_index);
+                if it.expression {
+                    print(*builder, "ret = New_Any(xx Ta%, initialized = false);\n", it_index);
+                    print(*builder, "ret.value_pointer.(*Ta%).* = ", it_index);
+                    PP.print_expression(*builder, it.expression);
+                    append(*builder, ";\n");
+                } else {
+                    append(*builder, "return false, Any.{};\n");
+                }
+            }
+            append(*builder, "}\n");
+            
+            append(*builder, "return ret.value_pointer != null, ret;\n}\n");
+        }
+        
+        append(*builder, "return .{ argument_names, return_value_names, get_default_argument_value };\n");
+        
+        str := builder_to_string(*builder);
+        log(str);
+        return str;
+    }
+}
+
+get_default_argument_value :: (info: Procedure_Info, argument_name: string) -> bool, Any {
+    for info.argument_names {
+        if it == argument_name { 
+            ok, value := info.get_default_argument_value(it_index);
+            return ok, value;
+        }
+    }
+    return false, Any.{};
+}
+

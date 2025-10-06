@@ -119,6 +119,7 @@ Name_And_Type :: struct {
 }
 
 // ensures no name conflicts
+register_type :: (script: *Script, name: string, type: Type) { register_type(script, name, type.(*Type_Info)); }
 register_type :: (script: *Script, name: string, type: *Type_Info) {
     for *script.type_table {
         if it.name == name {
