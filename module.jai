@@ -45,6 +45,8 @@ Script :: struct {
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
     
+    get_virtual_member:     (Any, string) -> bool, Any;
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
@@ -73,11 +75,6 @@ init_script :: (script: *Script, stack_size := 1024) {
     init(*script.pool);
     
     script.named_blocks.allocator = context.allocator;
-    
-    // TODO: move elsewhere. This is a hack to prevent the lookup table from getting initialized with the temporary allocator.
-    // if !DCaggr_lookup_table {
-    //     DCaggr_lookup_table.allocator = context.allocator;
-    // }
     
     // TODO: ensure that stack base is aligned to 8 bytes
     script.stack_size = stack_size;

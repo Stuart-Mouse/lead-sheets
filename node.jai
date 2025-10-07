@@ -127,24 +127,31 @@ Node_Declaration :: struct {
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
     if !declaration.left  return "";
     
-    if declaration.left.node_type == {
-      case Node_Identifier;
-        return get_identifier_name(script, xx declaration.left);
-        
-      case Node_Dot;
-        
+    if declaration.left.node_type != Node_Identifier {
+        assert(false, "Unable to get declaration name!");
     }
-    assert(false, "Unable to get declaration name!");
-    return "";
+    
+    return get_identifier_name(script, xx declaration.left);
 }
 
 is_virtual_member_declaration :: (declaration: *Node_Declaration) -> bool {
     return declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW);
 }
 
-// get_virtual_member_owner :: () {
+get_virtual_member_declaration_names ::  (script: *Script, declaration: *Node_Declaration) -> string, string {
+    if !declaration.left  return "", "";
     
-// }
+    assert(declaration.left.node_type != Node_Dot);
+    
+    arrow := declaration.left.(*Node_Dot);
+    assert(arrow.left.node_type != Node_Identifier);
+    assert(arrow.right.node_type != Node_Identifier);
+    
+    left_ident := get_identifier_name(script, xx arrow.left);
+    right_ident := get_identifier_name(script, xx arrow.right);
+    
+    return left_ident, right_ident;
+}
 
 Node_Procedure_Call :: struct {
     using #as node_base:    Node;
