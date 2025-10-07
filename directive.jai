@@ -161,7 +161,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         if expected_type == type_info(*Node)  continue;
         
         argument_type := typecheck_node(script, it);
-        if !!script.error {
+        if has_error(script) {
             log("Error: failed to evaluate argument % for directive call:\n\t%", it_index+1, format_error(script));
             return false;
         }
@@ -189,7 +189,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
                 arguments[argument_index] = it.*; // pass *Node itself
             } else {
                 arguments[argument_index] = evaluate_node(script, it.*);
-                if !!script.error  return false;
+                if has_error(script)  return false;
             }
             argument_index += 1;
         }

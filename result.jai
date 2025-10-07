@@ -124,12 +124,10 @@ Typecheck_Error :: struct {
     procedure_overload_report:    Procedure_Overload_Report;
 }
 
-operator ! :: inline (error: Error) -> bool { return error.type == .NO_ERROR; }
-
 get_class :: inline (error: Error) -> Error_Type { return error.type & .CLASS_MASK; }
 
 format_error :: (builder: *String_Builder, script: *Script, append_jai_location := true, append_script_location := true) {
-    if !script.error  return;
+    if !has_error(script)  return;
     error := *script.error;
     
     if append_jai_location {

@@ -120,17 +120,18 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope
     while scope {
         if scope.node_type == {
           case Node_Block;
-            declaration := find_declaration_in_block(xx scope, identifier);
+            declaration := find_declaration_in_block(script, xx scope, identifier);
             if declaration  return declaration;
             
           case Node_For_Loop;
-            declaration := find_iterator_declaration(xx scope, identifier, need_lvalue);
+            declaration := find_iterator_declaration(script, xx scope, identifier, need_lvalue);
             if declaration  return declaration;
         }
         scope = scope.scope;
     }
     for script.global_declarations {
-        if it.name == identifier {
+        if !is_virtual_member_declaration(it) 
+        && get_declaration_name(script, it) == identifier {
             return it;
         }
     }
@@ -176,11 +177,12 @@ is_aggr :: (ti: *Type_Info) -> bool {
     return true;
 }
 
-find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_Declaration {
+find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
         if it.node_type == Node_Declaration {
             declaration := it.(*Node_Declaration);
-            if declaration.name == identifier {
+            if !is_virtual_member_declaration(declaration) 
+            && get_declaration_name(script, declaration) == identifier {
                 return declaration;
             }
         }
@@ -188,11 +190,11 @@ find_declaration_in_block :: (block: *Node_Block, identifier: string) -> *Node_D
     return null;
 }
 
-find_iterator_declaration :: (for_loop: *Node_For_Loop, identifier: string, need_lvalue := false) -> *Node_Declaration {
-    if for_loop.it_decl.name == identifier {
+find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string, need_lvalue := false) -> *Node_Declaration {
+    if get_declaration_name(script, *for_loop.it_decl) == identifier {
         return *for_loop.it_decl;
     }
-    if for_loop.it_index_decl.name == identifier {
+    if get_declaration_name(script, *for_loop.it_index_decl) == identifier {
         if need_lvalue {
             // TODO: this is a bad error message since it's reported with the for loop's location and not the identifier's location.
             log("%: Error: it_index cannot be used as an lvalue.", get_location(for_loop));
@@ -544,13 +546,14 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         //       this may be a good idea to go ahead and implement since it would allow us to use such an identifier in a type expression.
         if declaration.flags & .IS_CONSTANT {
             if check_flags & .EXPECT_LVALUE {
-                dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue\n", declaration.name);
+                dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue\n", get_declaration_name(script, declaration));
                 declaration.flags &= ~.IS_CONSTANT;
             }
             // if declaration.flags & .MACRO {
             //     identifier.flags |= .CONSTANT;
             // }
         }
+        
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
         identifier.value_type      = declaration.value_type;
@@ -618,7 +621,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
             return;
         }
         
-        script.error = .{}; // clear error so we can try again
+        clear_error(script);
         
         // Otherwise, try to typecheck whichever one previously failed with the type hint of the other side.
         if left_type == null {
@@ -703,7 +706,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
     && procedure_call.procedure_expression.node_type == Node_Identifier {
-        script.error = .{}; // clear the error and continue
+        clear_error(script);
         
         identifier := procedure_call.procedure_expression.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
@@ -718,7 +721,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
         */
         for procedure_call.arguments  typecheck_node(script, it);
-        script.error = .{}; // clear the error and continue
+        clear_error(script);
         
         procedure_name  := identifier.name;
         procedure_index := resolve_procedure_index(script, procedure_name, procedure_call);
@@ -841,6 +844,81 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
 }
 
 typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    if dot.flags & .IS_ARROW {
+        assert(dot.left  != null);
+        assert(dot.right != null);
+        
+        // need to resolve declaration to which this refers
+        // declaration will provide both dot/right type
+        // unhandled virtual member access will have to be a runtime error
+        
+        // declaration := resolve_virtual_member_declaration(script, dot);
+        
+        /*
+            I am now noticing that we have a major problem with my plan
+            And that problem is having the ability to support any kind of complex expression on the left side of an arrow
+            because we are essentially just using the left side as a namespace for the declaration,
+            we cannot compare any complex expressions or use those expressions as a namespace
+            
+            we could go to an almost totally dynamic way of dealing with virtual members, but that has a lot of problems, of course
+                (because then we're just back in the dynamic typing boat)
+            
+            we *could* to the dynamic version and then just use casts as a sort of type assertion
+            or insert auto casts in 
+            
+            if we go the totally dynamic route, then we don't need to change how declarations work
+            we would only have to change assignments or add some implicit
+            
+            
+            OK, I think for now what I will do is just implement the more constrained version with static typing, where we only allow simple identifiers on the left side of an arrow
+            
+            we could also potentially do something like, the virtual members do get associated with a type, and must be declared for that type, but they can be null on any individual instance of that type
+            and if they are null that's just a runtime error
+            
+            that's probably the way to go...
+            
+            // declare virtual member for a type
+            Entity->cycle_time:     float;
+            Entity->cycle_lerp:     float;
+            
+            Entity_Group->tempo:    float;
+            
+            // using virtual members
+            for entity_group("orbiters") {
+                entity->cycle_lerp = cycle_over(time * orbiters->tempo, entity->cycle_time);
+                set_next_offset(entity, circle(cycle_lerp));
+            }
+            
+            
+            
+            if we declare virtual members as being owned by some type rather than by some identifier
+            then we get the benefit of being able to access virtual members through arbitrarily complex expressions
+            which would be very helpful if we have, for example, some kind of lookup procedures that return some entity/entity group
+            on the downside, we cannot use the same virtual member identiifers for different data types on differnet instances of the same owning type
+            for example, we could not have one entity that uses 'range' to identify a virtual float member while another uses it for a vector2
+                but maybe his limitation is not that big of a deal...
+            
+            also, perhaps we should allow declaring a virtual member using an instance of some type on th eleft side
+            this could be semantically the exact same as the usual case where the left side is a type, but we just get the type for the user implicitly
+                this could be convenient since we don't have anything like type_of() in LS
+                    not that this would be hard to add though
+            
+            
+            TODO: 
+                before working more on implementation of virtual members, 
+                need to make sure declarations still work with identifier node in separate node
+            
+            NOTE: 
+                as an aside, perhaps we should sort all entity groups each frame, getting a temp array of the members
+                and pass the entity groups as external variables to the levle script
+                so then you can just iterate orbiters.members
+                and can attach virtual members to the groups themselves
+                
+        */
+        
+        return;
+    }
+    
     // Currently, the only valid case for dot.left being null is for unary dot enums.
     // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below.
     left_type: *Type_Info;
@@ -1009,12 +1087,49 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
 }
 
 typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
-    //       this is different from how other statements are done, which all return void instead.
-    //       may have to change this if it creates issues, I suppose.
-    other_declaration := resolve_declaration_by_identifier(script, declaration.name, declaration.scope);
-    if other_declaration != null && declaration != other_declaration {
-        set_typecheck_error(script, "Redeclaration of identifier '%'.", declaration.name, node = declaration);
+    // TODO: typecheck left side of declaration
+    // need to handle parts of this in a more top-down way
+    // e.g. cannot typecheck identifier directly, since the identifier will belong to this declaration
+    // currently the only other thing that we can have on the left side of a declaration is a Node_Dot with the .IS_ARROW flag
+    // this is a virtual member declaration
+    
+    
+    // NOTE: now that we are using an actual identifier node in the declaration, we now have a case in which the AST loops back on itself.
+    //       could this potentially be problematic? Should we just leave the declaration pointer on the identifier null to signify that it refers to itself?
+    if declaration.left.node_type == Node_Identifier {
+        identifier := declaration.left.(*Node_Identifier);
+        if identifier.identifier_type != .UNRESOLVED {
+            set_typecheck_error(script, "Declaration's identifier was not .UNRESOLVED in typecheck_declaration. This should never happen!", node = declaration);
+            return;
+        }
+        
+        // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
+        //       this is different from how other statements are done, which all return void instead.
+        //       may have to change this if it creates issues, I suppose.
+        other_declaration := resolve_declaration_by_identifier(script, identifier.name, declaration.scope);
+        if other_declaration != null && declaration != other_declaration {
+            set_typecheck_error(script, "Redeclaration of identifier '%'.", identifier.name, node = declaration);
+            return;
+        }
+        
+    // } else if is_virtual_member_declaration(declaration) {
+    //     arrow := declaration.left.(*Node_Dot);
+        
+    //     // left side is owner, maybe we just typecheck that as usual...
+    //     // for now, we will only handle cases where owner is external variable
+    //     if left.node_type != .IDENTIFIER {
+    //         set_typecheck_error(script, "Currently, only simple identifiers can be used as the left-hand side of a virtual member expression.", node = declaration);
+    //         return;
+    //     }
+        
+    //     left_type = typecheck_node(script, arrow, check_flags & .EXPECT_LVALUE);
+    //     if has_error(script)  return;
+        
+    //     // check that identifier resolves to an external variable
+        
+        
+    } else {
+        set_typecheck_error(script, "Left-hand side of declaration must be either an identifier or a virtual member.", node = declaration);
         return;
     }
     
@@ -1074,6 +1189,17 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
     }
     
+    
+    // TODO: maybe do this in any case?
+    declaration.left.value_type = declaration.value_type;
+    if declaration.left.node_type == Node_Identifier {
+        if declaration.flags & .IS_CONSTANT {
+            // if declaration.flags & .MACRO {
+            //     identifier.flags |= .CONSTANT;
+            // }
+        }
+    }
+    
     return;
 }
 
@@ -1112,14 +1238,14 @@ typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, ch
 typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // value_pointer for it and it_index decls get set later when actually iterating for loop
     for_loop.it_index_decl = .{
-        name       = "it_index",
-        value_type = type_info(int),
+        left       = make_identifier(script, "it_index"),
+        value_type = xx int,
     };
     
     if #complete for_loop.control_type == {
       case .RANGE;
         dprint("typechecking range lower\n");
-        lower_type := typecheck_node(script, for_loop.range.lower, hint_type = type_info(int));
+        lower_type := typecheck_node(script, for_loop.range.lower, hint_type = xx int);
         if has_error(script)  return;
         
         dprint("typechecking range upper\n");
@@ -1137,7 +1263,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             return;
         }
         for_loop.it_decl = .{        
-            name       = "it",
+            left       = make_identifier(script, "it"),
             value_type = lower_type,
         };
         
@@ -1153,7 +1279,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             return;
         }
         for_loop.it_decl = .{
-            name       = "it",
+            left       = make_identifier(script, "it"),
             value_type = ti_array.element_type,
         };
         
@@ -1172,7 +1298,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         
         for_loop.it_decl = .{
-            name       = "it",
+            left       = make_identifier(script, "it"),
             value_type = first_type,
         };
     }
@@ -1180,6 +1306,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     typecheck_node(script, for_loop.statement, .IS_STATEMENT_ROOT);
     if has_error(script)  return;
     
-    for_loop.value_type = type_info(void);
+    for_loop.value_type = xx void;
     return;
 }

@@ -1125,10 +1125,10 @@ that way we can display them inside things like imgui menus, e.g. 'Entity Detail
 
 
 
+## Error-Tolerant Execution and Evaluation
+
 TODO: we should add a mechanism to evaluate a script in a such a way that it is tolerant to errors
       this could be useful when identifiers may change or become invalidated, such as when using the scripts in the context of a level editor
-
-
 
 
 
@@ -1159,5 +1159,14 @@ We should check that the literal expression being used as a malleable literal is
 ## Implementing Any type for procedure arguments
 
 TODO
+
+
+## Implementing builtin casts
+
+There's no reaosn we should be using some ridiculous dynamic cast for all casts in lead sheets
+we should at least have builtin casts for the numeric types, I think
+This is not a major concern at the moment, but it something we probabyl should take care of soner or later
+The only benefit of staying with the current way of doing casts is that we can catch and report failed casts as runtime erros, and choose to ignore them.
+
 
 

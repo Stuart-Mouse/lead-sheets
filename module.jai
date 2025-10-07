@@ -100,6 +100,7 @@ init_script :: (script: *Script, stack_size := 1024) {
 }
 
 has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
+clear_error :: (script: *Script) { script.error = .{}; }
 
 // copy_script_static_variables :: (dst: *Script, src: *Script) {
 //     free_script(dst); // just in case data is already there...

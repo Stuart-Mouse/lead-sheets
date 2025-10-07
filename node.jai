@@ -11,6 +11,7 @@ Node :: struct {
     
     Flags :: enum_flags { 
         TYPECHECKED;
+        IS_ARROW;               // denotes that a Node_Dot is actually an arrow
         IS_LVALUE;
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
@@ -107,7 +108,7 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
       case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
       case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
       case .STRUCT_MEMBER;      return identifier.member.name;
-      case .DECLARATION;        return identifier.declaration.name;
+      case .DECLARATION;        return get_declaration_name(script, identifier.declaration);
       case .LITERAL;
         assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));
         return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.as_s64);
@@ -117,11 +118,33 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
 
 Node_Declaration :: struct {
     using #as node_base:    Node;
-    name:                   string;
+    left:                   *Node;
     value_pointer:          *void;
     type_expression:        *Node;
     init_expression:        *Node;
 }
+
+get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
+    if !declaration.left  return "";
+    
+    if declaration.left.node_type == {
+      case Node_Identifier;
+        return get_identifier_name(script, xx declaration.left);
+        
+      case Node_Dot;
+        
+    }
+    assert(false, "Unable to get declaration name!");
+    return "";
+}
+
+is_virtual_member_declaration :: (declaration: *Node_Declaration) -> bool {
+    return declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW);
+}
+
+// get_virtual_member_owner :: () {
+    
+// }
 
 Node_Procedure_Call :: struct {
     using #as node_base:    Node;
@@ -379,6 +402,12 @@ make_dot :: (script: *Script, source_token: Token, left: *Node, right: *Node) ->
     node := alloc_node(script, Node_Dot, loc = source_token.location, trivia = source_token.trivia);
     node.left  = left;
     node.right = right;
+    return node;
+}
+
+make_arrow :: inline (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Dot {
+    node := make_dot(script, source_token, left, right);
+    node.flags |= .IS_ARROW;
     return node;
 }
 

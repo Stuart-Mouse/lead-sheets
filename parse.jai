@@ -210,7 +210,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         dprint("DECLARATION\n"); dprint_push_indent();
         
         declaration := alloc_node(script, Node_Declaration, loc = left.location, trivia = left.trivia);
-        declaration.name = left.(*Node_Identifier).name;
+        declaration.left = left.(*Node_Identifier);
         
         next_token := peek_token(script);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
@@ -506,6 +506,20 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         }
         
         set_parse_error(script, "%: unexpected % token '%' after dot.", token.location, token.type, token.text);
+        return null;
+        
+        
+      case .ARROW;
+        arrow_token := get_token(script);
+        
+        token_after_arrow := get_token(script);
+        if token_after_arrow.type == {
+          case .IDENTIFIER;
+            identifier := make_identifier(script, token_after_arrow);
+            return make_arrow(script, arrow_token, left, identifier);
+        }
+        
+        set_parse_error(script, "%: unexpected % token '%' after arrow.", token.location, token.type, token.text);
         return null;
         
         

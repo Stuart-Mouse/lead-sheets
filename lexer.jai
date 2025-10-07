@@ -86,6 +86,7 @@ Token_Type :: enum {
     
     // DOUBLE_QUESTION_MARK;
     
+    ARROW;      // ->
     SPREAD;
     DIRECTIVE;
     
@@ -200,6 +201,7 @@ lex_next_token :: (script: *Script) -> Token {
     if file.count >= 2 {
         if slice(file, 0, 2) == {
           case ".."; return make_token(.SPREAD, 2);
+          case "->"; return make_token(.ARROW, 2);
         }
     }
     

@@ -215,7 +215,7 @@ main :: () {
                     if !ok {
                         log("Error: Failed to evaluate statement.");
                         log(LS.format_error(script.error));
-                        script.error = .{};
+                        clear_error(script);
                     } else {
                         result: string;
                         if value.value_pointer then result = sprint("%", value);

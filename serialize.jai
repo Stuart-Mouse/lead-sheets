@@ -262,9 +262,11 @@ print_node :: (
         //     memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
         // }
         
-        do_backtick := !is_legal_identifier(declaration.name);
+        declaration_name := get_declaration_name(script, declaration);
+        
+        do_backtick := !is_legal_identifier(declaration_name);
         if do_backtick  append(builder, "`");
-        append(builder, declaration.name);
+        append(builder, declaration_name);
         if do_backtick  append(builder, "`");
         
         if !declaration.type_expression  append(builder, " ");

@@ -114,7 +114,6 @@ format_procedure_overload_report :: (builder: *String_Builder, script: *Script, 
     print(builder, "\n");
 }
 
-
 get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overload {
     overloads: [..] Procedure_Overload;
     for *script.procedures  
@@ -122,7 +121,6 @@ get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overl
             array_add(*overloads, .{ proc_index = it_index });
     return overloads;
 }
-
 
 resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node_Procedure_Call) -> (index: int, swap_args: bool) {
     arguments := procedure_call.arguments;
@@ -309,45 +307,81 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
 
 
 /*
-    Proceudre Info
+    Procedure Info
     
     Questions to answer:
-        What kinds of root nodes will we need to deal with other than identifier?
+        What kinds of node nodes will we need to deal with other than identifier?
             Probably #procedure_of_call or #bake_parameters as well...
         When will argument names actually be available, and when will they not?
         Do we really care about return value names?
     
-    TODO: create several test cases usig different types of procedure expressions
-          access through struct members, array indexing, #bake_arguments, #procedure_of_call
+    TODO: 
+        create several test cases using different types of procedure expressions
+        access through struct members, array indexing, #bake_arguments, #procedure_of_call
+            does the struct member case actually matter if the member is nonconstant?
+            array case probably does not matter at all, or at least it's not very important
+        
+        write a procedure to just dump code nodes to the console so that I can see what particular expressions look like as code nodes
+    
+    NOTE:
+        Looking at Code_Procedure_Call, and how #procedure_of_call actually works, it has me wondering:
+        Could we use the argument values provided in procedure_of_call as an override on the default values that are provided to Lead Sheets?
+        Technically, also, the user could just optionally provide a their own get_default_argument_value for a procedure.
+            This is probably the way to go, and we just provide some procedures to create a procedure_info struct in a somewhat pre-checked way
+            user can already just bake parameters if they want to, and manually providing default values seems a bit smarter, tbh
+    
+    TODO: 
+        think about what things we could actually do with return value names
+        maybe would be useful for something similar to or_return?
 */
 
+get_procedure_header :: (node: *Code_Node) -> *Code_Procedure_Header #compile_time {
+    if !node  return null;
+    
+    if node.kind == {
+      case .PROCEDURE_HEADER;
+        return xx node;
+        
+      case .IDENT;
+        ident := node.(*Compiler.Code_Ident);
+        return get_procedure_header(ident.resolved_declaration);
+        
+      case .DIRECTIVE_BAKE;
+        bake := node.(*Code_Directive_Bake);
+        return get_procedure_header(bake.procedure_call);
+        
+      case .DECLARATION;
+        declaration := node.(*Code_Declaration);
+        return get_procedure_header(declaration.expression);
+        
+      case .PROCEDURE_CALL;
+        call := node.(*Code_Procedure_Call);
+        if (call.flags & .RETURNS_PROCEDURE_POINTER_ONLY)
+        || (call.flags & 0x400) {  // this means procedure_of_call was used
+            return get_procedure_header(call.resolved_procedure_expression);
+        }
+    }
+    return null;
+}
+
 Procedure_Info :: struct {
-    argument_names:         [] string;
-    return_value_names:     [] string;
-    get_default_argument_value:  #type (int) -> bool, Any;
+    procedure_expression:         string;
+    argument_names:               [] string;
+    return_value_names:           [] string;
+    get_default_argument_value:   #type (int) -> bool, Any;
 }
 
 get_procedure_info :: ($procedure_expression: Code) -> Procedure_Info {
+    // dumb helper for generating procedure_expression string
+    remove_trailing_newline :: (s: string) -> string {
+        return ifx s && s[s.count-1] == "\n" then string.{ s.count-1, s.data } else s;
+    }
+
     #insert -> string {
         builder: String_Builder;
         
-        proc_header: *Code_Procedure_Header;
-        
         root := Compiler.compiler_get_nodes(procedure_expression);
-        if root.type.type != .PROCEDURE {
-            append(*builder, "Warning: The given expression does not resolve to a procedure: ");
-            PP.print_expression(*builder, root);
-            assert(false, builder_to_string(*builder));
-        }
-        
-        if root.kind == {
-          case .IDENT;
-            ident := root.(*Compiler.Code_Ident);
-            if ident.resolved_declaration.expression.kind == {
-              case .PROCEDURE_HEADER;
-                proc_header = ident.resolved_declaration.expression.(*Code_Procedure_Header);
-            }
-        }
+        proc_header := get_procedure_header(root);
         
         if proc_header == null {
             append(*builder, "Warning: Unable to resolve procedure header from expression: ");
@@ -365,6 +399,10 @@ get_procedure_info :: ($procedure_expression: Code) -> Procedure_Info {
             print(*builder, "Ta%1 :: #run (*proc_info.argument_types[%1]).(*Type).*;\n", it);
         }
         
+        
+        append(*builder, "procedure_expression_string :: #run remove_trailing_newline(#string __PROCEDURE_EXPRESSION__\n");
+        PP.print_expression(*builder, root);
+        append(*builder, "\n__PROCEDURE_EXPRESSION__);\n");
         
         // generate argument names array
         {
@@ -410,14 +448,13 @@ get_procedure_info :: ($procedure_expression: Code) -> Procedure_Info {
                 }
             }
             append(*builder, "}\n");
-            
             append(*builder, "return ret.value_pointer != null, ret;\n}\n");
         }
         
-        append(*builder, "return .{ argument_names, return_value_names, get_default_argument_value };\n");
+        append(*builder, "return .{ procedure_expression_string, argument_names, return_value_names, get_default_argument_value };\n");
         
         str := builder_to_string(*builder);
-        log(str);
+        // log(str);
         return str;
     }
 }
@@ -431,4 +468,3 @@ get_default_argument_value :: (info: Procedure_Info, argument_name: string) -> b
     }
     return false, Any.{};
 }
-
