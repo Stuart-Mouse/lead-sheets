@@ -180,10 +180,10 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     if expect_token_type(script, .COLON) {
         // maybe a bit of a hack, but for now I will just throw away the 
         // identifier node here and transfer the name/source_location to a declaration node 
-        if left.node_type != Node_Identifier {
-            set_parse_error(script, "%: left hand side of a declaration must be an identifier.", get_location(left));
-            return null;
-        }
+        // if left.node_type != Node_Identifier {
+        //     set_parse_error(script, "%: left hand side of a declaration must be an identifier.", get_location(left));
+        //     return null;
+        // }
         
         // colon followed by open brace is a named block, not a standard declaration
         // maybe we should make a named block a type of declaration so that we can resolve it by identifier in the standard way? idk yet...

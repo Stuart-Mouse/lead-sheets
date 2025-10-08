@@ -242,37 +242,11 @@ print_node :: (
       case Node_Declaration;
         declaration := node.(*Node_Declaration);
         
-        // TODO: improve how this is done...
-        // TODO: document WHY this is even done
-        // literal_value_prev: Any;
-        // do_temp_literal_overwrite := declaration_is_malleable_literal(declaration);
-        // if do_temp_literal_overwrite {
-        //     literal := declaration.init_expression.(*Node_Literal);
-        //     assert(literal.value_type == declaration.value_type);
-            
-        //     literal_value := get_literal_value_as_any(literal);
-        //     literal_value_prev = Dynamic_New(literal_value.type);
-        //     memcpy(literal_value_prev.value_pointer, literal_value.value_pointer, literal_value.type.runtime_size); // copy current value as prev 
-            
-        //     memcpy(literal_value.value_pointer, declaration.value_pointer, literal_value.type.runtime_size); // overwrite current value temporarily with the value stored in declaration
-        // }
-        // defer if do_temp_literal_overwrite {
-        //     literal := declaration.init_expression.(*Node_Literal);
-        //     literal_value := get_literal_value_as_any(literal);
-        //     memcpy(literal_value.value_pointer, literal_value_prev.value_pointer, literal_value.type.runtime_size); // restore original value in literal
-        // }
-        
-        declaration_name := get_declaration_name(script, declaration);
-        
-        do_backtick := !is_legal_identifier(declaration_name);
-        if do_backtick  append(builder, "`");
-        append(builder, declaration_name);
-        if do_backtick  append(builder, "`");
+        print_node_or_return(script, declaration.left, builder, indent);
         
         if !declaration.type_expression  append(builder, " ");
         append(builder, ":");
         if declaration.type_expression {
-            // append(builder, " ");
             print_node_or_return(script, declaration.type_expression, builder, indent);
             if declaration.init_expression  append(builder, " ");
         }

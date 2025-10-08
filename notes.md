@@ -1124,6 +1124,92 @@ that way we can display them inside things like imgui menus, e.g. 'Entity Detail
 
 
 
+I am now noticing that we have a major problem with my plan
+And that problem is having the ability to support any kind of complex expression on the left side of an arrow
+because we are essentially just using the left side as a namespace for the declaration,
+we cannot compare any complex expressions or use those expressions as a namespace
+
+we could go to an almost totally dynamic way of dealing with virtual members, but that has a lot of problems, of course
+    (because then we're just back in the dynamic typing boat)
+
+we *could* to the dynamic version and then just use casts as a sort of type assertion
+or insert auto casts in 
+
+if we go the totally dynamic route, then we don't need to change how declarations work
+we would only have to change assignments or add some implicit
+
+
+OK, I think for now what I will do is just implement the more constrained version with static typing, where we only allow simple identifiers on the left side of an arrow
+
+we could also potentially do something like, the virtual members do get associated with a type, and must be declared for that type, but they can be null on any individual instance of that type
+and if they are null that's just a runtime error
+
+that's probably the way to go...
+
+```
+// declare virtual member for a type
+Entity->cycle_time:     float;
+Entity->cycle_lerp:     float;
+
+Entity_Group->tempo:    float;
+
+// using virtual members
+for entity_group("orbiters") {
+    entity->cycle_lerp = cycle_over(time * orbiters->tempo, entity->cycle_time);
+    set_next_offset(entity, circle(cycle_lerp));
+}
+```
+
+if we declare virtual members as being owned by some type rather than by some identifier
+then we get the benefit of being able to access virtual members through arbitrarily complex expressions
+which would be very helpful if we have, for example, some kind of lookup procedures that return some entity/entity group
+on the downside, we cannot use the same virtual member identiifers for different data types on differnet instances of the same owning type
+for example, we could not have one entity that uses 'range' to identify a virtual float member while another uses it for a vector2
+    but maybe his limitation is not that big of a deal...
+
+also, perhaps we should allow declaring a virtual member using an instance of some type on the left side
+this could be semantically the exact same as the usual case where the left side is a type, but we just get the type for the user implicitly
+    this could be convenient since we don't have anything like type_of() in LS
+        not that this would be hard to add though
+
+NOTE: 
+    as an aside, perhaps we should sort all entity groups each frame, getting a temp array of the members
+    and pass the entity groups as external variables to the levle script
+    so then you can just iterate orbiters.members
+    and can attach virtual members to the groups themselves
+        
+
+
+The first, minimal implementation of virtual members seems to be kinda working now
+but there is a lot of cleanup that will be needed in order to make things nice again
+
+firstly, we may actually want to consider making the arrow its own node type, even it is lexically similar to the dot
+
+secondly, we should make resolving declarations a lot cleaner
+    instead of using two separate procedures for regular and virtual declarations, 
+        we should just pass the resolved node for the virtual member owner
+
+thirdly, we should clarify what parts of an arrow node get flagged as typechecked and under what circumstances
+
+
+
+declaration
+    left is either:
+        identifier
+            name (acts as declaration nameb)
+        arrow
+            left identifier  
+                (acts as a sort of namespace for the virtual member, matters what we resolved to)
+                    we need to be able to compare two identifiers to see if they resolve to the same underlying thing
+            right identifier
+                name (acts as declaration name, sorta)
+                
+      
+TODO: need to introduce some procedure to check if an identifier can be used as a namespace
+      we don't want the user to be able to add virtual members on top of other virtaul members for th time being. that sounds like poopoo doodoo (as is the technical term)
+
+
+TODO: we should note somewhere in the code that we leave identifiers in the unresolved state when they are the terminal/primary identifier for some declaration
 
 ## Error-Tolerant Execution and Evaluation
 
@@ -1135,13 +1221,19 @@ TODO: we should add a mechanism to evaluate a script in a such a way that it is 
 
 ## Expanded Procedure_Info Structures
 
-Because the type info for a procedure does not actually store any information about any particular procedure, we don't know things like argument names and default values
+I now have some basic stuff in place to get info about procedure arguments which we could integrate with external procedures.
+    - still need to collect info about varargs parameters, I overlooked that before
 
-If we had this kind of info about procedures, then we could potentially support features like default arguments, or passing arguments by name, like Jai allows
-
-
-register procedure could probably get info about default argument values by doing something fancy with #caller_code like print_vars
-we could probably also support this extended procedure type info with Any_Procedure
+However there are some other things that need to be put in place first:
+    - Parse struct contents with comma-delimited `name = value` syntax
+        - same procedure will apply for parsing named procedure argument expressions
+            - slightly different since we can begin with unnamed arguments, then begin using named arguments (cannot do this in structs)
+    - typechecking changes (duh)
+        - will complicate process of matching arguments and overload resolution
+            - how to rate conflicting overloads where one has some default argument provided implicitly and one does not?
+    - execution changes
+        - how to denote that some argument is filled by default value, which can be non-constant (e.g. context values)?
+            - do we need a Node_Argument can either point to another node or be null to indicate default value should be used?
 
 
 
@@ -1169,4 +1261,10 @@ This is not a major concern at the moment, but it something we probabyl should t
 The only benefit of staying with the current way of doing casts is that we can catch and report failed casts as runtime erros, and choose to ignore them.
 
 
+
+
+
+TODO: make sure that procedure resolution failures don't override error message for deeper nodes when the error is not from a failed type hint
+
+TODO: add the ability to name it and it_index
 

@@ -113,7 +113,22 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
         assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));
         return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.as_s64);
     }
-    assert(false, "unreachable");
+    unreachable();
+}
+
+// NOTE: what a beautiful name
+identifiers_resolve_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
+    if i1 == i2  return true; // this covers the case where both are null
+    if !i1 || !i2 || i1.identifier_type != i2.identifier_type  return false;
+    if #complete i1.identifier_type == {
+      case .UNRESOLVED;         return false;
+      case .TYPE;               return i1.index == i2.index;
+      case .EXTERNAL_VARIABLE;  return i1.index == i2.index;
+      case .EXTERNAL_PROCEDURE; return i1.index == i2.index;
+      case .STRUCT_MEMBER;      return i1.member == i2.member;
+      case .DECLARATION;        return i1.declaration == i2.declaration;
+      case .LITERAL;            return i1.literal.value_type == i2.literal.value_type && i1.literal.number.as_u64 == i2.literal.number.as_u64;
+    }
 }
 
 Node_Declaration :: struct {
@@ -124,14 +139,36 @@ Node_Declaration :: struct {
     init_expression:        *Node;
 }
 
+// this is really just a shorthand for when we know the declaration is not to a virtual member
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
-    if !declaration.left  return "";
+    ok, name := get_declaration_info(script, declaration);
+    return ifx ok then name;
+}
+
+// TODO: badly named, but useful at the moment. we need to clean up all this new declaration nonsense
+// if the declaration has a namespace (i.e. it is a virtual member declaration) then the namespace will be returned as well
+get_declaration_info :: (script: *Script, declaration: *Node_Declaration) -> bool, string, *Node_Identifier {
+    if !declaration.left  return false, "", null;
     
-    if declaration.left.node_type != Node_Identifier {
-        assert(false, "Unable to get declaration name!");
+    if declaration.left.node_type == {
+      case Node_Identifier;
+        return true, get_identifier_name(script, xx declaration.left), null;
+        
+      case Node_Dot;
+        arrow := declaration.left.(*Node_Dot);
+        
+        assert(arrow.left != null && arrow.right != null);
+        if !(arrow.flags & .IS_ARROW)               return false, "", null;
+        if arrow.right.node_type != Node_Identifier return false, "", null;
+        if arrow.right.node_type != Node_Identifier return false, "", null;
+        
+        left_ident := arrow.left.(*Node_Identifier);
+        right_ident := arrow.right.(*Node_Identifier);
+        assert(right_ident.identifier_type == .UNRESOLVED);
+        
+        return true, right_ident.name, left_ident;
     }
-    
-    return get_identifier_name(script, xx declaration.left);
+    return false, "", null;
 }
 
 is_virtual_member_declaration :: (declaration: *Node_Declaration) -> bool {
@@ -141,11 +178,11 @@ is_virtual_member_declaration :: (declaration: *Node_Declaration) -> bool {
 get_virtual_member_declaration_names ::  (script: *Script, declaration: *Node_Declaration) -> string, string {
     if !declaration.left  return "", "";
     
-    assert(declaration.left.node_type != Node_Dot);
+    assert(declaration.left.node_type == Node_Dot);
     
     arrow := declaration.left.(*Node_Dot);
-    assert(arrow.left.node_type != Node_Identifier);
-    assert(arrow.right.node_type != Node_Identifier);
+    assert(arrow.left.node_type == Node_Identifier);
+    assert(arrow.right.node_type == Node_Identifier);
     
     left_ident := get_identifier_name(script, xx arrow.left);
     right_ident := get_identifier_name(script, xx arrow.right);

@@ -120,7 +120,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 // return execute_node(script, declaration.init_expression);
             }
             
-            variable_any := Any.{ identifier.value_type, declaration.value_pointer };
+            variable_any := Any.{ declaration.value_type, declaration.value_pointer };
             dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
             if !stack_push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
@@ -287,11 +287,13 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         dot := node.(*Node_Dot);
         
         if dot.flags & .IS_ARROW {
-            right_ident  := dot.right.(*Node_Identifier);
-            declaration  := right_ident.declaration;
-            variable_any := Any.{ right_ident.value_type, declaration.value_pointer };
-            if !stack_push_any(script, variable_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
-            return true;
+            // right_ident  := dot.right.(*Node_Identifier);
+            // declaration  := right_ident.declaration;
+            // variable_any := Any.{ right_ident.value_type, declaration.value_pointer };
+            // if !stack_push_any(script, variable_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            // return true;
+            
+            return execute_node(script, dot.right);
         }
         
         if dot.left == null {
@@ -379,7 +381,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         // early return on macro for now so that we don't overwrite value of malleable literal
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
-        if declaration.flags & (.MACRO)  return true;
+        if declaration.flags & .MACRO  return true;
         
         /*
             When executng a virtual member declaration, we have to use the get_virtual_member callback to get the actual Any to the virtual member.
@@ -387,7 +389,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             The virtual member lookup only needs to occur when the declaration is executed, not at each location where the virtual member is used as an rvalue.
         */
-        l_value: Any;
         if is_virtual_member_declaration(declaration) {
             if script.get_virtual_member == null {
                 set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = node);
@@ -397,23 +398,28 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             arrow := declaration.left.(*Node_Dot);
             
             if !execute_node(script, arrow.left)  return false;
-            owner := stack_pop_any(script, arrow.left.value_type);
+            owner := stack_pop_any(script, arrow.left.value_type, true);
+            
+            // log("owner: % (%)", owner, as_type(owner.type));
+            if is_on_stack(script, owner.value_pointer) {
+                log("owner is on stack");
+            }
             
             member_identifier := get_identifier_name(script, xx arrow.right);
-            ok, member_value := script.get_virtual_member(owner, member_identifier);
+            
+            ok, member_value := script.get_virtual_member(script, owner, member_identifier, declaration.value_type);
             if !ok {
-                set_execution_error(script, "get_virtual_member failed with owning type: %", owner.type, node = node);
+                set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = node);
                 return false;
             }
             if member_value.type != declaration.value_type {
-                set_execution_error(script, "get_virtual_member returned unexpected type: %. The expected type was: %", member_value.type, declaration.value_type, node = node);
+                set_execution_error(script, "get_virtual_member returned unexpected type: %. The expected type was: %", as_type(member_value.type), as_type(declaration.value_type), node = node);
                 return false;
             }
-            
-            l_value = stack_pop_any(script, declaration.value_type);
-        } else {
-            l_value = Any.{ declaration.value_type, declaration.value_pointer };
+            declaration.value_pointer = member_value.value_pointer;
         }
+        
+        l_value := Any.{ declaration.value_type, declaration.value_pointer };
         
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression)  return false;

@@ -45,7 +45,9 @@ Script :: struct {
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
     
-    get_virtual_member:     (Any, string) -> bool, Any;
+    // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
+    get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
+    get_virtual_member_user_data:   *void;
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -209,6 +211,9 @@ stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -
     }
 }
 
+is_on_stack :: (using script: *Script, ptr: *void) -> bool {
+    return ptr >= script.stack_base && ptr < script.stack_base + script.stack_size;
+}
 
 
 Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (bool, *Node);
