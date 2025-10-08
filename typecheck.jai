@@ -399,13 +399,16 @@ is_valid_lvalue :: (script: *Script, node: *Node) -> bool, string {
         ok, msg := is_valid_lvalue(script, dot.right);
         return ok, msg;
         
-      case Node_Subscript;          return true,  ""; // TODO: shouldn't we return result of is_valid_lvalue(base_expression)?
-      
+      case Node_Subscript;          
+        subscript := node.(*Node_Subscript);
+        ok, msg := is_valid_lvalue(script, subscript.base_expression);
+        return ok, msg;
+        
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
       case Node_Operation;          return false, "Using the result of an operation as an lvalue is not currently supported";
       case Node_Procedure_Call;     return false, "Using the result of a procedure call as an lvalue is not currently supported";
       case Node_Cast;               return false, "Using the result of a cast as an lvalue is not currently supported";
-      
+        
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
       case Node_Declaration;        return false, "A declaration cannot be used as an lvalue;";
       case Node_Block;              return false, "A block cannot be used as an lvalue;";
@@ -1100,7 +1103,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             return;
         }
         
-        // NOTE: we do not typecheck the right identifier here, since it will refers to this declaration and the arrow.right identifier in a declaration will not be executed.
+        // NOTE: we do not typecheck the right identifier here, since it is the primary identifier for this declaration and does not refer elsewhere.
         right_ident := arrow.right.(*Node_Identifier);
         if right_ident.node_type != Node_Identifier {
             set_typecheck_error(script, "Only simple identifiers can be used as the right-hand side of a virtual member expression.", node = declaration);
@@ -1172,12 +1175,11 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
         evaluate_node(script, declaration.init_expression, declaration.value_pointer);
         if has_error(script)  return;
-    } else if is_virtual_member_declaration(declaration) {
-        // arrow := declaration.left.(*Node_Dot);
-        // arrow.right.value_type = declaration.value_type;
-        // NOTE: we do not set the declaration's value pointer here, since we will set it every time the declaration executes.
     } else {
-        declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
+        // NOTE: we don't set declaration.value_pointer for virtual member declarations because that value pointer will be set every time the declaration executes.
+        if !is_virtual_member_declaration(declaration) {
+            declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
+        }
     }
     
     return;
