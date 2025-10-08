@@ -1203,13 +1203,25 @@ declaration
                     we need to be able to compare two identifiers to see if they resolve to the same underlying thing
             right identifier
                 name (acts as declaration name, sorta)
-                
-      
+
+
 TODO: need to introduce some procedure to check if an identifier can be used as a namespace
       we don't want the user to be able to add virtual members on top of other virtaul members for th time being. that sounds like poopoo doodoo (as is the technical term)
 
 
 TODO: we should note somewhere in the code that we leave identifiers in the unresolved state when they are the terminal/primary identifier for some declaration
+
+
+implementing virtual member declarations on a per-type basis rather than a per-identifier basis
+
+restrict the types of identifier which can be used as a declaration namespace to only type for the time being
+when a virtual member is created on a type, we need to somehow attach that information to the type registered on the script
+    so External_Type may need to become a new struct type like External_Procedure or External_Variable
+
+remove the logic to execute virtual member declarations, since virtual member declarations on types would be a purely compile-time thing
+    unless we somehow set a default value for virtual members that get registered on types, then provide that virtual member default value when we call get_virtual_member
+
+
 
 ## Error-Tolerant Execution and Evaluation
 
