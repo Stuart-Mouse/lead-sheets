@@ -10,7 +10,6 @@ Typechecking_Flags :: enum_flags {
     NONE                    :: 0;
     EXPECT_LVALUE           :: 1 << 0;
     IS_STATEMENT_ROOT       :: 1 << 1;
-    IS_PROCEDURE_EXPRESSION :: 1 << 2; // TODO: what are we using this for?
 }
 
 // before using this method, we may want to double check that it does explode the stack too much, as I anticipate it may.
@@ -598,13 +597,6 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         }
     }
     
-    // if the identifier is referring to an external procedure, 
-    //     then that will have to be handled in PROCEDURE_CALL case, 
-    //     since we need the additional context for overload resolution.
-    if !(check_flags & .IS_PROCEDURE_EXPRESSION) {
-        dprint("%: Error: Unable to resolve identifier '%'.\n", get_location(identifier), identifier.name);
-    }
-    
     // NOTE: we don't attach an error message here
     set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
     return;
@@ -718,7 +710,11 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
 }
 
 typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    proc_info := typecheck_node(script, procedure_call.procedure_expression, .IS_PROCEDURE_EXPRESSION).(*Type_Info_Procedure);
+    // TODO: we should probably be more rigorous about how we filter check flags as we traverse the AST
+    //       here, for instance, we could use some constnat like PASSTHROUGH_FLAGS_FOR_PROCEDURE_EXPRESSION and | with that 
+    //       as it stands though, we don't actually have many check flags and maybe even the ones we do have could possibly be removed if we refactored some things...
+    //       So, here is my little note in an obscure place where I will probably just forget about it and move on
+    proc_info := typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
     && procedure_call.procedure_expression.node_type == Node_Identifier {
@@ -727,17 +723,14 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         identifier := procedure_call.procedure_expression.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
         
-        // TODO: we should probably refactor typechecking to return a real error code
-        //       then we can notify caller if failure is due to a missing type hint
-        //       so that we can handle that case more intelligently here when resolving procedure
-        
-        /*
-            Procedure arguments are sort of typechecked twice, once before selecting an overload and once after.
-            In the first check, we do not provide any type hints, which means we may fail to typecheck arguments where the type hint is required.
-            But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
-        */
-        for procedure_call.arguments  typecheck_node(script, it);
-        clear_error(script);
+        // Procedure arguments are sort of typechecked twice, once before selecting an overload and once after.
+        // In the first check, we do not provide any type hints, which means we may fail to typecheck arguments where the type hint is required.
+        // But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
+        for procedure_call.arguments {
+            typecheck_node(script, it);
+            if script.error.type == .MISSING_TYPE_HINT  clear_error(script);
+            if has_error(script)  return;
+        }
         
         procedure_name  := identifier.name;
         procedure_index := resolve_procedure_index(script, procedure_name, procedure_call);
@@ -748,10 +741,8 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         identifier.flags          |= .TYPECHECKED;
         proc_info:, identifier.value_type = procedures[procedure_index].proc_info;
         
-        /*
-            For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that failed due to a missing type hint.
-            We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.
-        */
+        // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
+        // We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.
         for 0..procedure_call.arguments.count-1 {
             node_ptr_ptr  := *procedure_call.arguments[it];
             node          := node_ptr_ptr.*;
@@ -984,7 +975,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             namespace = any_isa(left_any, *Type_Info).*;
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
-                set_typecheck_error(script, "Unary dot can only be used for enums, but hint_type was %", as_type(hint_type), node = dot);
+                set_typecheck_error(script, "Unary dot can only be used for enums, but hint_type was %", as_type(hint_type), type = .MISSING_TYPE_HINT, node = dot);
                 return;
             }
             namespace = hint_type;
