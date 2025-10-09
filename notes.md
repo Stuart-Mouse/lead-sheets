@@ -1561,15 +1561,37 @@ preventing re-typechecking on nodes where doing so is problematic
 
 add the ability to name it and it_index
 
-TODO: strongly consider offloading complexity of identifier node onto declaration
-      and make declaration nodes for all external variables, procedures, and types
-      this alone might make it much more feasible to start thinking about really implementing some of my other crazy ideas
       
 TODO: we should really stamp serial numbers onto all nodes like the Jai compiler does
       since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
       and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
       actually even just having a serial number wouldn't solve it, but maybe it would help
+      
 
+## Simplifying Identifiers
+
+
+TODO: strongly consider offloading complexity of identifier node onto declaration
+      and make declaration nodes for all external variables, procedures, and types
+      this alone might make it much more feasible to start thinking about really implementing some of my other crazy ideas
+      
+
+One reason I cited in the my previous musings about why I did the current thing, is that we may want to allocate nodes wtih temp if we are doing a really simple eval
+but TBH I don't think this is a valid reason anymore
+there's just no use case for allocating nodes with temp any more than there's really a use case for allocting temporary intermediate values in evaluate_node with temp
+
+Maybe the most real, practical concern is for resolving to literals and struct members
+These are not something for which we could even realistically create a declaration node
+
+
+ok wait, so what's the benefit of having declarations for external variables and procedures?
+i dont remember what my train of thought was for why to do this, tbh...
+
+it doesnt solve anything wrt virtual members
+it only slightly simplifies the procedure for identifier resolution
+it slightly complicates the process of updating the value pointers for external variables and procedures
+and it uses a bit more memory for the declaration nodes
+it only slightly reduces the complexity of getting an identifier's name / backing value
 
 ## Unifying Execute and Evaluate
 

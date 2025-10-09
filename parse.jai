@@ -349,21 +349,17 @@ parse_leaf :: (using script: *Script) -> *Node {
             return null;
         }
         
-        open_paren_token := get_token(script);
-        if open_paren_token.type != .OPEN_PAREN {
-            set_parse_error(script, "%: Error, expected an open paren after directive name!\n", open_paren_token.location);
-            return null;
-        }
-        
-        if !expect_token_type(script, .CLOSE_PAREN) {
-            expressions, ok := parse_comma_separated_expressions(script,, temp);
-            if !ok  return null;
-            directive.arguments = array_copy(expressions,, get_pool_allocator(*script.pool));
-            
-            close_paren_token := get_token(script);
-            if close_paren_token.type != .CLOSE_PAREN {
-                set_parse_error(script, "%: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
-                return null;
+        if expect_token_type(script, .OPEN_PAREN) {
+            if !expect_token_type(script, .CLOSE_PAREN) {
+                expressions, ok := parse_comma_separated_expressions(script,, temp);
+                if !ok  return null;
+                directive.arguments = array_copy(expressions,, get_pool_allocator(*script.pool));
+                
+                close_paren_token := get_token(script);
+                if close_paren_token.type != .CLOSE_PAREN {
+                    set_parse_error(script, "%: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
+                    return null;
+                }
             }
         }
         
