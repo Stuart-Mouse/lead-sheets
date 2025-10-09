@@ -20,12 +20,8 @@ Script :: struct {
     global_declarations:    [..] *Node_Declaration;
     
     pool:                   Flat_Pool;
-    
     error:                  Error;
-    
-    stack_base:             *void;
-    stack_size:             int;
-    stack_ptr:              *void;
+    stack:                  Stack;
     
     #if USING_DYNCALL {
         dyncall_vm:             *DCCallVM;
@@ -45,6 +41,7 @@ Script :: struct {
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
     
+    // TODO: remove this fully for now
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
     get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
     get_virtual_member_user_data:   *void;
@@ -78,10 +75,7 @@ init_script :: (script: *Script, stack_size := 1024) {
     
     script.named_blocks.allocator = context.allocator;
     
-    // TODO: ensure that stack base is aligned to 8 bytes
-    script.stack_size = stack_size;
-    script.stack_base = get(*script.pool, script.stack_size);
-    script.stack_ptr  = script.stack_base;
+    init_stack(*script.stack,, get_pool_allocator(*script.pool));
     
     // allocate dyncall vm that will be reused
     #if USING_DYNCALL {
@@ -139,81 +133,6 @@ get_named_block :: (script: *Script, name: string) -> *Node_Block {
 
 
 // STACK STUFF
-
-PTR_SIZE :: size_of(*void);
-
-stack_pop :: inline (script: *Script, $$is_lvalue := false) -> *void {
-    script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
-    if is_lvalue {
-        return script.stack_ptr.(**void).*;
-    } else {
-        return script.stack_ptr;
-    }
-}
-
-stack_peek :: inline (script: *Script, $$is_lvalue := false) -> *void {
-    stack_ptr := script.stack_ptr - PTR_SIZE;
-    assert(stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
-    if is_lvalue {
-        return stack_ptr.(**void).*;
-    } else {
-        return stack_ptr;
-    }
-}
-
-stack_push_any :: (script: *Script, any: Any, is_lvalue := false) -> bool {
-    if script.stack_ptr >= script.stack_base + script.stack_size {
-        set_execution_error(script, "Ran out of space on stack!", node = null);
-        return false;
-    }
-    defer script.stack_ptr += PTR_SIZE;
-    
-    if is_aggr(any.type) || is_lvalue {
-        script.stack_ptr.(**void).* = any.value_pointer; // store the pointer itself instead of the value
-    } else {
-        assert(any.type.runtime_size <= PTR_SIZE);
-        memcpy(script.stack_ptr, any.value_pointer, PTR_SIZE); // copy the value being pointed at for register-sized values (INT, FLOAT, ENUM)
-    }
-    return true;
-}
-
-stack_push_zeroes :: (script: *Script, size: int) -> bool {
-    if script.stack_ptr + size >= script.stack_base + script.stack_size {
-        set_execution_error(script, "Ran out of space on stack!", node = null);
-        return false;
-    }
-    
-    memset(script.stack_ptr, 0, size);
-    script.stack_ptr += size;
-    return true;
-}
-
-stack_pop_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
-    script.stack_ptr -= PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
-    if is_aggr(ti) || is_lvalue {
-        return Any.{ ti, script.stack_ptr.(**void).* }; // additional dereference to get pointer to value
-    } else {
-        assert(ti.runtime_size <= PTR_SIZE);
-        return Any.{ ti, script.stack_ptr };
-    }
-}
-
-stack_peek_any :: inline (script: *Script, ti: *Type_Info, is_lvalue := false) -> Any {
-    ptr := script.stack_ptr - PTR_SIZE;
-    assert(script.stack_ptr >= script.stack_base, "script stack pointer was below stack base!");
-    if is_aggr(ti) || is_lvalue {
-        return Any.{ ti, ptr.(**void).* }; // additional dereference to get pointer to value
-    } else {
-        assert(ti.runtime_size <= PTR_SIZE);
-        return Any.{ ti, ptr };
-    }
-}
-
-is_on_stack :: (using script: *Script, ptr: *void) -> bool {
-    return ptr >= script.stack_base && ptr < script.stack_base + script.stack_size;
-}
 
 
 Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (bool, *Node);
@@ -339,6 +258,7 @@ register_common_types :: (script: *Script) {
 #load "procedure.jai";
 #load "directive.jai";
 #load "operator.jai";
+#load "stack.jai";
 
 #load "result.jai";
 

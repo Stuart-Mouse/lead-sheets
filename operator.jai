@@ -342,7 +342,7 @@ execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *voi
 // in any case, I will probably leave code to use the other version commented out in execute_node so I at least know the we have the option to get rid of this at any time
 execute_builtin_operation :: (script: *Script, id: Builtin_Operation_ID) {
     
-    dprint("stack_ptr: %\n", script.stack_ptr);
+    dprint("stack_ptr: %\n", script.stack.top);
     
     // generate switch case for all builtin operations
     #insert -> string {
@@ -354,20 +354,20 @@ execute_builtin_operation :: (script: *Script, id: Builtin_Operation_ID) {
             
             if it.type == {
               case .PREFIX;
-                print_to_builder(*builder, "  left := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
-                print_to_builder(*builder, "  ret  := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
+                print_to_builder(*builder, "  left := pop (*script.stack, %).(*%);\n", is_aggr(it.left),  it.left);
+                print_to_builder(*builder, "  ret  := peek(*script.stack, %).(*%);\n", is_aggr(it.ret),   it.ret);
                 print_to_builder(*builder, "  ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
                 
               case .BINARY;
-                print_to_builder(*builder, "  right := stack_pop (script, %).(*%);\n", is_aggr(it.right), it.right);
-                print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n", is_aggr(it.left),  it.left);
-                print_to_builder(*builder, "  ret   := stack_peek(script, %).(*%);\n", is_aggr(it.ret),   it.ret);
+                print_to_builder(*builder, "  right := pop (*script.stack, %).(*%);\n", is_aggr(it.right), it.right);
+                print_to_builder(*builder, "  left  := pop (*script.stack, %).(*%);\n", is_aggr(it.left),  it.left);
+                print_to_builder(*builder, "  ret   := peek(*script.stack, %).(*%);\n", is_aggr(it.ret),   it.ret);
                 
                 print_to_builder(*builder, "  ret.* = left.* % right.*;\n", it.identifier);
                 
               case .ASSIGNMENT;
-                print_to_builder(*builder, "  right := stack_pop (script, %).(*%);\n", is_aggr(it.right), it.right);
-                print_to_builder(*builder, "  left  := stack_pop (script, %).(*%);\n", true, it.left);
+                print_to_builder(*builder, "  right := pop (*script.stack, %).(*%);\n", is_aggr(it.right), it.right);
+                print_to_builder(*builder, "  left  := pop (*script.stack, %).(*%);\n", true, it.left);
                 print_to_builder(*builder, "  left.(*%).* % right.(*%).*;\n", it.left, it.identifier, it.right);
             }
             

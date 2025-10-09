@@ -1556,6 +1556,10 @@ preventing re-typechecking on nodes where doing so is problematic
     need to create a thorough list of cases where re-typechecking is ok and those where it is not
     maybe we should refactor things so that it is always ok to re-typecheck?
 
+allowing for node replacement
+    we really should have some systematic way to replace a node by returning some replacement form typecheck_node
+
+
 
 ## Bugs and minor fixes
 
@@ -1615,6 +1619,15 @@ we can probably make our current eval stuff just use the stack (or just use its 
     and then use that for everything we currently use execute for
 
 then we can use execution to refer to running a script as bytecode
+
+
+Firstly, we should simplify the stack operations and make a stack.jai
+then we just init the stack allocator with memoery allocated by some other allocator
+
+when we go to set up an execution / evaluation context, we provide a stack 
+    maybe later this idea integrates with the idea of block contexts
+
+
 
 
 ## IMGUI menu for showing AST node structure
