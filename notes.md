@@ -1372,6 +1372,72 @@ Problems with doing contextual blocks:
         although maybe we could finagle this and only allocate for these declarations on the first time they are used in each instance (but then maybe that's bad data locality? not like that matters much in a scripting language tbh)
     
 
+when we are inside a contextual block, declarations and identifier resolution change a bit
+static declarations's values are scoped to the nearest block context
+
+the root block of our script will now also need to have some block context, and any static declarations will get hoisted up into that block context
+that does not mean the declarations will be accessible outside of their local scope, just that their storage duration is defined by the block context
+
+any block that contains a block context now essentially becomes an execution context that we can overload
+so we could, for instance simply create a new block context entry for an existing script's root block and then execute the same script with different static values
+or we could save just the block context for a script and that allow us to restore all modified static declaration values
+    this could even be used as an alternative to entirely re-serializing scripts, and would probably be better for saving persistent state that's not lexically explicit
+
+
+
+```
+Block_Context :: struct {
+    context_for:            *Node_Block;
+    context_expression:     *Node;                      // maybe this is null for named blocks and root block
+    current_instance:       *Block_Context.Instance;    // only presumed valid during single execution of the block
+    static_declarations:    [] *Node_Declaration;       // maybe just hold all declarations? worth considering... in which case we should probably move to Node_Block
+    
+    Instance :: struct {
+        instance_of:                *Block_Context;
+        static_declaration_values:  *void;              // pointer to single allocation for all static declarations. we will offset by offset value defined in the declaration node
+    }
+}
+
+// allow user to reject unsupported types during typechecking, rather then getting a runtime error
+can_type_be_used_as_block_context_instance :: (script: *Script, type: *Type_Info) -> bool;
+
+get_block_context_instance :: (script: *Script, block_context: *Block_Context) -> *Block_Context.Instance;
+
+```
+
+how to resolve context element ids? something akin to get_virtual_member should work for user ids
+if we allow the context expression to be arbitrary, then the only thing we have to go off is a type and value pointer
+    this is problematic for being able to handle it all internally because we never assume value pointers are some stable identifier of anything
+if we onyl allow the context expression to be an identifer, then at least we can internally link back to some declaration
+    but this does not help any because we have the iterator problem
+so we may as well let the expresison be arbitrary
+so now our only recourse is to request the user creates some Block_Context.Instance (matching a particular Block_Context) and return us that context entry pointer
+
+
+Actually, we could manage block context internally for named blocks and the global block
+    then the question is whether to (and how to) support overloaded entries for these block contexts
+
+
+I am starting to think it's just fine if we can't really communicate too much between different contextual blocks
+or to be able to attach declarations to entities per se
+we could still do some kind of thing with static declarations in context blocks where we sort of aggregate all the context blocks that have a particular value type in the context expression
+and then make sure that across all those blocks, we don't have any redeclarations of static decls
+if we were going to do this though, we would really want to hoist the static declarations so that they can just be referred to form anywhere
+    and we would have to evaluate their init expressions in some deterministic order, probably during typechekcing pass
+    idk, it just sounds too complicated to do this, since we can't really close a block context when the block ends, and that sounds like a problem
+OR we can have all the globally accessible statics (virtual members) be defined ahead of time as I've played with the idea of for a while now
+so we still get block-scoped statics per instance, and we get globally scoped statics per instance
+    I think I just like the idea of having the globally scoped statics (virtual members) in theory, but they may not really be all that useful in practice.
+
+in any case, implementing the block context stuff is probably more of a feature win overall, since that will also solve my problem of preserving static declarations
+    and potentially frees me up from needing to worry about using re-serialization of scripts as the primary way of saving modifications to those scripts
+    
+    we will still need to be able to reserialize back to source text if we want to support things like changing identifiers dynamically, though
+    
+
+
+
+
 ## Static Assignments / Macros
 
 I need to do some thinking about how I want to fully implement the `::` operator since at the moment it is restricted to literally only being used for malleable literals
@@ -1391,6 +1457,20 @@ in theory this would mean just copying the nodes of the RHS and pasting them at 
 Aside:
     I think probably have a sort of #once assignment will be more easy-to-use and useful in many cases than requiring the use of an init block in scripts
         but probbaly only if we have the contextual block stuff
+
+
+`#once` covers the case that we only want to evaluate an expression a single time, and then that value essentially becomes static
+        this prevents the need to do a lot of setup tasks in the init block, and is something we could potentially override or reset in the editor
+
+`::`    the static assignment operator covers the very specific case that we want to bind the value pointer of the RHS to the LHS
+        this really only makes sense when the RHS is a malleable literal, hence why that is currently the only suported use case
+        we could potentially use the same syntax for some kind of macro thing later on, but its an open question how useful that is
+        and then maybe the ? syntax only mean something like 'this literal keeps the same underlying value pointer when its node gets copied'
+            which maybe is a weird thing for the question mark to mean, so perhaps at that point we should consider changing it
+            and also changing the flag MALLEABLE to be something like, SINGLE_UNDERLYING_VALUE
+                (this way of handling malleable literals will require allocating some separate value even for small types, though)
+                (and it won't play as nicely with type inference or implicit casts/coercion)
+
 
 ## Error-Tolerant Execution and Evaluation
 
