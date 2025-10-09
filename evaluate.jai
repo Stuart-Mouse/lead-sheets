@@ -193,10 +193,9 @@ evaluate_node :: (
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
-        // TODO: I don't like that this is called left_any, since that strongly implies that it's the result when in fact it is the value we have yet to convert.
-        left_any := evaluate_node(script, node_cast.value);
-        if !Convert.any_to_any(result, left_any) {
-            set_general_error(script, "Failed in call to Convert.any_to_any in Node_Cast: % -> %", as_type(left_any.type), as_type(result.type));
+        value_any := evaluate_node(script, node_cast.value);
+        if !Convert.any_to_any(result, value_any) {
+            set_general_error(script, "Failed in call to Convert.any_to_any in Node_Cast: % -> %", as_type(value_any.type), as_type(result.type));
             return NULL_ANY;
         }
         

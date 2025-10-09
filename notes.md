@@ -1317,23 +1317,6 @@ NEW PLAN TODO:
         allow providing a default value
 
 
-Handling Any better:
-    need to be able to push an Any or pop an Any from the stack
-    when casting to an Any, need to make sure intermediate value will stay valid
-    when casting an Any to something else, need to make sure we can still use that as an lvalue
-    
-    change assignment operator so that if left side is an any, we can still assign
-    
-    
-Yet another choice to make:
-    either we can allow assignment to change the type of a virtual member, 
-    or we can assert that the right type coerces to what the virtual member type currently is
-        then we can only change the virtual member's type by redeclaring it
-        this seems like the way to go...
-
-
-
-
 We could potentially do something really crazy where we allow the use of the arrow operator to create a sort of code block that is associated to a particular declaration/identifier/value whatever
 And then we can evaluate any arbitrary expressions or statements within this context and return those results back into the global script context
 
@@ -1502,16 +1485,55 @@ However there are some other things that need to be put in place first:
 
 ## Fixing some things with malleable literals
 
-need a consistent procedure for determining what expressions can be validly used as malleable literals
-    should use same basic procedure for checking validity and setting the node as a malleable literal
-
 We should check that the literal expression being used as a malleable literal is actually constant
     since we can have struct literals that are not constants
+
+
+## Improving Handling of Any in Scripts
+
+need to be able to push an Any or pop an Any from the stack
+
+when casting to an Any, need to make sure intermediate value will stay valid
+    should be fine for larger values, but will be a problem for smaller values, since those are always on the stack
+    so we will need to catch the case where a small value is assigned to an Any and stash those values in some small value storage, elsewhere
+when casting an Any to something else, need to make sure we can still use that as an lvalue
+    e.g., the cast node should be a valid lvalue when the value expression's value type is Any
+
+we need to overload the assignment operator for Any to Any case
+    needs to perform a check to assert that right type is coercible to left
+    if not, we get a runtime error
     
+for unary operators, we could dynamically typecheck and resolve the operator to use, then apply it
+for binary operators, 
 
-## Implementing Any type for procedure arguments
+Yet another choice to make:
+    either we can allow assignment to change the type of a virtual member, 
+    or we can assert that the right type coerces to what the virtual member type currently is
+        then we can only change the virtual member's type by redeclaring it
+        this seems like the way to go...
 
-TODO
+now that I think about it, for something to be a valid lvalue essentially just means that the address of the value is the same as some declaration's value pointer
+so if in any situation we copy some value (and thus change the memory location being passed down the tree) then the value is no longer a valid lvalue
+
+
+If we have some value of type Any that we want to pass around within a script
+or for, example we have somethign declared as type Any
+then when we pass that thing up, do we need to have an Any that points to another Any?
+that's not really ideal!
+
+that extra indirection is sort of problematic and since we can't really make an any of an any without really forcing it
+
+any_any := Any.{ type = xx Any, value = *any };
+
+i mean, I suppose we could do this, but maybe while we're at it we should just make our own result type again
+one that is essentailly just an Any, but with some kind of small value optimization, like Any_Number
+
+Then we can just turn our stack into a `[] Value` or something
+
+Maybe having this standardized value type thing will also make it easier to swap between execution and evaluation?
+    could we use eval logic for handling Any's in execute?
+        probably not, thats not how evaluate works
+        we actually typecheck fully before evaluating, so uh, yeah..
 
 
 ## Implementing builtin casts
@@ -1519,7 +1541,7 @@ TODO
 There's no reason we should be using some ridiculous dynamic cast for all casts in lead sheets
 we should at least have builtin casts for the numeric types, I think
 This is not a major concern at the moment, but it something we probabyl should take care of soner or later
-The only benefit of staying with the current way of doing casts is that we can catch and report failed casts as runtime erros, and choose to ignore them.
+The only benefit of staying with the current way of doing casts is that we can catch and report failed casts as runtime errors, and choose to ignore them.
 
 
 
@@ -1546,7 +1568,32 @@ TODO: strongly consider offloading complexity of identifier node onto declaratio
 TODO: we should really stamp serial numbers onto all nodes like the Jai compiler does
       since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
       and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
-      actually even just having a serial number wouldn't solve it, but maybe it would helps
+      actually even just having a serial number wouldn't solve it, but maybe it would help
+
+
+## Unifying Execute and Evaluate
+
+this distinction makes it harder to maintian the codebase
+also, the real primary difference is only in how results get passed back up
+in either case, we are trypechecking fully before doing any execution / evaluation
+so it's really just a difference of 
+    in eval: using temp storage and returning values as Anys
+    in exec: using a stack and getting return values by popping from the stack
+
+I suppose the original purpose of the evaluation stuff was to prevent the need to use the stack, but like
+    we already have the pool allocated for the ast nodes, so having some small stack for intermediate values is not any extra cost
+  
+so either eval needs to justify its existince by being more fully dynamic and doing *more* dynamic typechecking
+or we need to just marry the two in whatever way proves best
+
+TODO: check where all that we use dynamic new in both exec and eval
+    think about how that plays with current state of hint storage
+
+we can probably make our current eval stuff just use the stack (or just use its own temp storage)
+    and then use that for everything we currently use execute for
+
+then we can use execution to refer to running a script as bytecode
+
 
 ## IMGUI menu for showing AST node structure
 
