@@ -1516,7 +1516,7 @@ TODO
 
 ## Implementing builtin casts
 
-There's no reaosn we should be using some ridiculous dynamic cast for all casts in lead sheets
+There's no reason we should be using some ridiculous dynamic cast for all casts in lead sheets
 we should at least have builtin casts for the numeric types, I think
 This is not a major concern at the moment, but it something we probabyl should take care of soner or later
 The only benefit of staying with the current way of doing casts is that we can catch and report failed casts as runtime erros, and choose to ignore them.
@@ -1538,5 +1538,20 @@ preventing re-typechecking on nodes where doing so is problematic
 ## Bugs and minor fixes
 
 add the ability to name it and it_index
+
+TODO: strongly consider offloading complexity of identifier node onto declaration
+      and make declaration nodes for all external variables, procedures, and types
+      this alone might make it much more feasible to start thinking about really implementing some of my other crazy ideas
+      
+TODO: we should really stamp serial numbers onto all nodes like the Jai compiler does
+      since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
+      and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
+      actually even just having a serial number wouldn't solve it, but maybe it would helps
+
+## IMGUI menu for showing AST node structure
+
+this would actually be pretty easy to do, and would allow for messing with the AST a bit more directly, which could be useful in some circumstances
+could be very useful for logging/debugging if we could have the debug printing and error message be appended directly to each node
+
 
 

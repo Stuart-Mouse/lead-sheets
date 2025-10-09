@@ -271,9 +271,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
-        // special case to handle conversion from Any. 
+        // TODO: special case to handle conversion from Any. 
         // we just treat this as a type assertion at the moment
-        if 
+        // if 
         
         // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
         dst := Any.{ node.value_type, script.stack_ptr };
@@ -291,13 +291,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         dot := node.(*Node_Dot);
         
         if dot.flags & .IS_ARROW {
-            // right_ident  := dot.right.(*Node_Identifier);
-            // declaration  := right_ident.declaration;
-            // variable_any := Any.{ right_ident.value_type, declaration.value_pointer };
-            // if !stack_push_any(script, variable_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
-            // return true;
-            
-            return execute_node(script, dot.right);
+            assert(false, "Arrow is currently unimplemented. This should not have passed typechecking.");
+            // return execute_node(script, dot.right);
         }
         
         if dot.left == null {
@@ -315,7 +310,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             left_type = pointer_info.pointer_to;
             
             if !execute_node(script, dot.left)  return false;
-
+            
             struct_any, did_dereference := dereference_any_pointer(stack_pop_any(script, pointer_info, false));
             assert(did_dereference);
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
@@ -376,7 +371,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if element.type.runtime_size > 8
             then dprint("returning result of indexing operation at %\n", element.value_pointer);
             else dprint("returning result of indexing operation with value % at %\n", element, element.value_pointer);
-
+        
         return true;
         
         
@@ -386,42 +381,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // early return on macro for now so that we don't overwrite value of malleable literal
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
         if declaration.flags & .MACRO  return true;
-        
-        /*
-            When executng a virtual member declaration, we have to use the get_virtual_member callback to get the actual Any to the virtual member.
-            We then assert that the type returned matches what was determined during typechecking, and overwrite the declaration's value pointer.
-            
-            The virtual member lookup only needs to occur when the declaration is executed, not at each location where the virtual member is used as an rvalue.
-        */
-        if is_virtual_member_declaration(declaration) {
-            if script.get_virtual_member == null {
-                set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = node);
-                return false;
-            }
-            
-            arrow := declaration.left.(*Node_Dot);
-            
-            if !execute_node(script, arrow.left)  return false;
-            owner := stack_pop_any(script, arrow.left.value_type, true);
-            
-            // log("owner: % (%)", owner, as_type(owner.type));
-            if is_on_stack(script, owner.value_pointer) {
-                log("owner is on stack");
-            }
-            
-            member_identifier := get_identifier_name(script, xx arrow.right);
-            
-            ok, member_value := script.get_virtual_member(script, owner, member_identifier, declaration.value_type);
-            if !ok {
-                set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = node);
-                return false;
-            }
-            if member_value.type != declaration.value_type {
-                set_execution_error(script, "get_virtual_member returned unexpected type: %. The expected type was: %", as_type(member_value.type), as_type(declaration.value_type), node = node);
-                return false;
-            }
-            declaration.value_pointer = member_value.value_pointer;
-        }
         
         l_value := Any.{ declaration.value_type, declaration.value_pointer };
         
@@ -436,7 +395,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
             
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
-        } else if !is_virtual_member_declaration(declaration) {
+        } else {
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
         }
         return true;

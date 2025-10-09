@@ -101,6 +101,12 @@ Node_Identifier :: struct {
     }
 }
 
+is_unresolved_identifier :: (node: *Node) -> bool {
+    return node 
+        && node.node_type == Node_Identifier 
+        && node.(*Node_Identifier).identifier_type == .UNRESOLVED;
+}
+
 get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string {
     if #complete identifier.identifier_type == {
       case .UNRESOLVED;         return identifier.name;
@@ -116,9 +122,7 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
     unreachable();
 }
 
-// NOTE: what a beautiful name
-identifiers_resolve_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
-    if i1 == i2  return true; // this covers the case where both are null
+identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
     if !i1 || !i2 || i1.identifier_type != i2.identifier_type  return false;
     if #complete i1.identifier_type == {
       case .UNRESOLVED;         return false;
@@ -139,55 +143,11 @@ Node_Declaration :: struct {
     init_expression:        *Node;
 }
 
-// this is really just a shorthand for when we know the declaration is not to a virtual member
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
-    ok, name := get_declaration_info(script, declaration);
-    return ifx ok then name;
-}
-
-// TODO: badly named, but useful at the moment. we need to clean up all this new declaration nonsense
-// if the declaration has a namespace (i.e. it is a virtual member declaration) then the namespace will be returned as well
-get_declaration_info :: (script: *Script, declaration: *Node_Declaration) -> bool, string, *Node_Identifier {
-    if !declaration.left  return false, "", null;
-    
-    if declaration.left.node_type == {
-      case Node_Identifier;
-        return true, get_identifier_name(script, xx declaration.left), null;
-        
-      case Node_Dot;
-        arrow := declaration.left.(*Node_Dot);
-        
-        assert(arrow.left != null && arrow.right != null);
-        if !(arrow.flags & .IS_ARROW)               return false, "", null;
-        if arrow.right.node_type != Node_Identifier return false, "", null;
-        if arrow.right.node_type != Node_Identifier return false, "", null;
-        
-        left_ident := arrow.left.(*Node_Identifier);
-        right_ident := arrow.right.(*Node_Identifier);
-        assert(right_ident.identifier_type == .UNRESOLVED);
-        
-        return true, right_ident.name, left_ident;
+    if is_unresolved_identifier(declaration.left) {
+        return declaration.left.(*Node_Identifier).name;
     }
-    return false, "", null;
-}
-
-is_virtual_member_declaration :: (declaration: *Node_Declaration) -> bool {
-    return declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW);
-}
-
-get_virtual_member_declaration_names ::  (script: *Script, declaration: *Node_Declaration) -> string, string {
-    if !declaration.left  return "", "";
-    
-    assert(declaration.left.node_type == Node_Dot);
-    
-    arrow := declaration.left.(*Node_Dot);
-    assert(arrow.left.node_type == Node_Identifier);
-    assert(arrow.right.node_type == Node_Identifier);
-    
-    left_ident := get_identifier_name(script, xx arrow.left);
-    right_ident := get_identifier_name(script, xx arrow.right);
-    
-    return left_ident, right_ident;
+    return ""; // declaration is either malformed or has not yet been typechecked
 }
 
 Node_Procedure_Call :: struct {

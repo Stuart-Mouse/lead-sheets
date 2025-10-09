@@ -107,45 +107,37 @@ typecheck_script :: (script: *Script) -> bool {
 
 // TODO: try to remove the need for 'need_lvalue' and make it so that we can just check the returned node with is_valid_lvalue if need be
 //       it appears the only reason we have this in place atm is to prevent using it_index as an lvalue
-// NOTE: the 'namespace' parameter is for resolving virtual member declarations. It's a bit wonky right now...
-resolve_declaration :: (script: *Script, identifier: string, scope_block: *Node, namespace: *Node_Identifier = null, need_lvalue := false) -> *Node_Declaration {
+resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope_block: *Node, need_lvalue := false) -> *Node_Declaration {
     scope := scope_block;
     while scope {
         if scope.node_type == {
           case Node_Block;
-            declaration := find_declaration_in_block(script, xx scope, identifier, namespace);
+            declaration := find_declaration_in_block(script, xx scope, identifier);
             if declaration  return declaration;
             
           case Node_For_Loop;
-            if !namespace {
-                declaration := find_iterator_declaration(script, xx scope, identifier, need_lvalue);
-                if declaration  return declaration;
-            }
+            declaration := find_iterator_declaration(script, xx scope, identifier, need_lvalue);
+            if declaration  return declaration;
         }
         scope = scope.scope;
     }
     for script.global_declarations {
-        if match_declaration(script, xx it, identifier, namespace) {
+        if get_declaration_name(script, it) == identifier {
             return it;
         }
     }
     return null;
 }
 
-find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string, namespace: *Node_Identifier = null) -> *Node_Declaration {
+find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
         if it.node_type == Node_Declaration {
-            if match_declaration(script, xx it, identifier, namespace) {
+            if get_declaration_name(script, xx it) == identifier {
                 return xx it;
             }
         }
     }
     return null;
-}
-
-match_declaration :: (script: *Script, declaration: *Node_Declaration, identifier: string, namespace: *Node_Identifier = null) -> bool {
-    ok, name, decl_namespace := get_declaration_info(script, declaration);
-    return ok && name == identifier && identifiers_resolve_to_the_same_thing(script, decl_namespace, namespace);
 }
 
 find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string, need_lvalue := false) -> *Node_Declaration {
@@ -556,7 +548,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     //       in this case we obviously don't want to check it again (not to mention accessing name will now be invalid!)
     if identifier.identifier_type != .UNRESOLVED  return;
     
-    declaration := resolve_declaration(script, identifier.name, identifier.scope, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
+    declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
     if declaration {
         if declaration.value_type == null {
             set_typecheck_error(script, "Identifier '%' used before its declaration.", identifier.name, node = identifier);
@@ -861,64 +853,43 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
 
 typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if dot.flags & .IS_ARROW {
-        // bad things will happen if we try to re-typecheck an arrow
-        if dot.value_type != null  return;
-        
-        assert(dot.left  != null);
-        assert(dot.right != null);
-        assert(dot.left.node_type  == Node_Identifier);
-        assert(dot.right.node_type == Node_Identifier);
-        
-        // left ident typechecks in standard way
-        left_ident := dot.left.(*Node_Identifier);
-        
-        // TODO: should we be passing check flags here?
-        typecheck_node(script, left_ident);
-        if has_error(script)  return;
-        
-        #if false {
-            // right ident typechecking is all done here in non-standard way
-            right_ident := dot.right.(*Node_Identifier);
-            assert(right_ident.identifier_type == .UNRESOLVED);
-            
-            right_ident_name := get_identifier_name(script, xx dot.right);
-            assert(right_ident_name != "");
-            
-            declaration := resolve_declaration(script, right_ident_name, dot.scope, namespace = left_ident, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
-            if !declaration {
-                set_typecheck_error(script, "Unresolved virtual member identifier '%'", right_ident_name, type = .UNRESOLVED_IDENTIFIER, node = dot);
-                return;
-            }
-            if declaration.value_type == null {
-                set_typecheck_error(script, "Virtual member identifier '%' used before its declaration.", right_ident_name, node = right_ident);
-                return;
-            }
-            
-            // NOTE: it is actually important that we set right_ident as lvalue and flag as typechecked, since we execute right_ident to get the virtual member value
-            right_ident.identifier_type = .DECLARATION;
-            right_ident.declaration     = declaration;
-            right_ident.value_type      = declaration.value_type;
-            if (check_flags & .EXPECT_LVALUE) && !set_as_lvalue(script, right_ident)  return;
-            right_ident.flags |= .TYPECHECKED;
-        } else {
-            // TODO: if right side is declaration then do that extra stuff
-            
-            // cannot do anything with identifier by itself right now
-            // so for now, we just check if we have some hint type, and if not then we have a problem
-            
-            // we could pre-determine an index to the virtual member in VMS, then just verify this index at each use
-            // will not do that right now, but it's an option and it would aid performance
-            // however! 
-            
-            if hint_type {
-                dot.value_type = hint_type;
-            } else {
-                set_typecheck_error(script, "Virtual member must receive some hint type. Try using an explicit cast.", type = .MISSING_TYPE_HINT, node = right_ident);
-                return;
-            }
-        }
-        
+        set_typecheck_error(script, "Arrow is not currently implemented.", node = dot);
         return;
+        
+        // // bad things will happen if we try to re-typecheck an arrow
+        // if dot.value_type != null  return;
+        
+        // assert(dot.left  != null);
+        // assert(dot.right != null);
+        // assert(dot.left.node_type  == Node_Identifier);
+        // assert(dot.right.node_type == Node_Identifier);
+        
+        // // left ident typechecks in standard way
+        // left_ident := dot.left.(*Node_Identifier);
+        
+        // // TODO: should we be passing check flags here?
+        // typecheck_node(script, left_ident);
+        // if has_error(script)  return;
+        
+        // #if false {
+        //     // TODO: if right side is declaration then do that extra stuff
+            
+        //     // cannot do anything with identifier by itself right now
+        //     // so for now, we just check if we have some hint type, and if not then we have a problem
+            
+        //     // we could pre-determine an index to the virtual member in VMS, then just verify this index at each use
+        //     // will not do that right now, but it's an option and it would aid performance
+        //     // however! 
+            
+        //     if hint_type {
+        //         dot.value_type = hint_type;
+        //     } else {
+        //         set_typecheck_error(script, "Virtual member must receive some hint type. Try using an explicit cast.", type = .MISSING_TYPE_HINT, node = right_ident);
+        //         return;
+        //     }
+        // }
+        
+        // return;
     }
     
     // Currently, the only valid case for dot.left being null is for unary dot enums.
@@ -1133,49 +1104,13 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         identifier := declaration.left.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED);
         
-        other_declaration := resolve_declaration(script, identifier.name, declaration.scope);
+        other_declaration := resolve_declaration_by_identifier(script, identifier.name, declaration.scope);
         if other_declaration != null && declaration != other_declaration {
             set_typecheck_error(script, "Redeclaration of identifier '%'.", identifier.name, node = declaration);
             return;
         }
-    } else if is_virtual_member_declaration(declaration) {
-        arrow := declaration.left.(*Node_Dot);
-        
-        if arrow.left.node_type == {
-          case Node_Identifier;
-            left_ident := arrow.left.(*Node_Identifier);
-            
-            left_type := typecheck_node(script, left_ident, .EXPECT_LVALUE);
-            if has_error(script)  return;
-            
-            // TODO: should we pre-check that the left type can have virtual members attached?
-            // check_virtual_member_owning_type(left_type);
-          case;
-            set_typecheck_error(script, "Currently, only simple identifiers can be used as the left-hand side of a virtual member expression.", node = declaration);
-            return;
-        }
-        
-        // NOTE: we do not typecheck the right identifier here, since it is the primary identifier for this declaration and does not refer elsewhere.
-        right_ident := arrow.right.(*Node_Identifier);
-        if right_ident.node_type != Node_Identifier {
-            set_typecheck_error(script, "Only simple identifiers can be used as the right-hand side of a virtual member expression.", node = declaration);
-            return;
-        }
-        assert(right_ident.identifier_type == .UNRESOLVED);
-        
-        #if false {
-            right_ident_name := get_identifier_name(script, right_ident);
-            other_declaration := resolve_declaration(script, right_ident_name, declaration.scope);
-            if other_declaration != null && declaration != other_declaration {
-                set_typecheck_error(script, "Redeclaration of virtual member identifier '%'.", right_ident_name, node = declaration);
-                return;
-            }
-        } else {
-            
-        }
-        
     } else {
-        set_typecheck_error(script, "Left-hand side of declaration must be either an identifier or a virtual member expression.", node = declaration);
+        set_typecheck_error(script, "Left-hand side of declaration must be a simple identifier.", node = declaration);
         return;
     }
     
@@ -1197,10 +1132,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         evaluate_node(script, declaration.init_expression, declaration.value_pointer);
         if has_error(script)  return;
     } else {
-        // NOTE: we don't set declaration.value_pointer for virtual member declarations because that value pointer will be set every time the declaration executes.
-        if !is_virtual_member_declaration(declaration) {
-            declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
-        }
+        declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
     }
     
     return;
