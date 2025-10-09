@@ -271,6 +271,10 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
         }
     }
     
+    // TODO
+    if from == xx Any { return 0; }
+    if to   == xx Any { return 0; }
+    
     return -1;
 }
 
@@ -406,7 +410,12 @@ is_valid_lvalue :: (script: *Script, node: *Node) -> bool, string {
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
       case Node_Operation;          return false, "Using the result of an operation as an lvalue is not currently supported";
       case Node_Procedure_Call;     return false, "Using the result of a procedure call as an lvalue is not currently supported";
-      case Node_Cast;               return false, "Using the result of a cast as an lvalue is not currently supported";
+      case Node_Cast;
+        node_cast := node.(*Node_Cast);
+        if node_cast.value.value_type == xx Any {
+            
+        }
+        return false, "Using the result of a cast as an lvalue is not currently supported";
         
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
       case Node_Declaration;        return false, "A declaration cannot be used as an lvalue;";
@@ -867,31 +876,48 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         typecheck_node(script, left_ident);
         if has_error(script)  return;
         
-        // right ident typechecking is all done here in non-standard way
-        right_ident := dot.right.(*Node_Identifier);
-        assert(right_ident.identifier_type == .UNRESOLVED);
-        
-        right_ident_name := get_identifier_name(script, xx dot.right);
-        assert(right_ident_name != "");
-        
-        declaration := resolve_declaration(script, right_ident_name, dot.scope, namespace = left_ident, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
-        if !declaration {
-            set_typecheck_error(script, "Unresolved virtual member identifier '%'", right_ident_name, type = .UNRESOLVED_IDENTIFIER, node = dot);
-            return;
+        #if false {
+            // right ident typechecking is all done here in non-standard way
+            right_ident := dot.right.(*Node_Identifier);
+            assert(right_ident.identifier_type == .UNRESOLVED);
+            
+            right_ident_name := get_identifier_name(script, xx dot.right);
+            assert(right_ident_name != "");
+            
+            declaration := resolve_declaration(script, right_ident_name, dot.scope, namespace = left_ident, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
+            if !declaration {
+                set_typecheck_error(script, "Unresolved virtual member identifier '%'", right_ident_name, type = .UNRESOLVED_IDENTIFIER, node = dot);
+                return;
+            }
+            if declaration.value_type == null {
+                set_typecheck_error(script, "Virtual member identifier '%' used before its declaration.", right_ident_name, node = right_ident);
+                return;
+            }
+            
+            // NOTE: it is actually important that we set right_ident as lvalue and flag as typechecked, since we execute right_ident to get the virtual member value
+            right_ident.identifier_type = .DECLARATION;
+            right_ident.declaration     = declaration;
+            right_ident.value_type      = declaration.value_type;
+            if (check_flags & .EXPECT_LVALUE) && !set_as_lvalue(script, right_ident)  return;
+            right_ident.flags |= .TYPECHECKED;
+        } else {
+            // TODO: if right side is declaration then do that extra stuff
+            
+            // cannot do anything with identifier by itself right now
+            // so for now, we just check if we have some hint type, and if not then we have a problem
+            
+            // we could pre-determine an index to the virtual member in VMS, then just verify this index at each use
+            // will not do that right now, but it's an option and it would aid performance
+            // however! 
+            
+            if hint_type {
+                dot.value_type = hint_type;
+            } else {
+                set_typecheck_error(script, "Virtual member must receive some hint type. Try using an explicit cast.", type = .MISSING_TYPE_HINT, node = right_ident);
+                return;
+            }
         }
-        if declaration.value_type == null {
-            set_typecheck_error(script, "Virtual member identifier '%' used before its declaration.", right_ident_name, node = right_ident);
-            return;
-        }
         
-        // NOTE: it is actually important that we set right_ident as lvalue and flag as typechecked, since we execute right_ident to get the virtual member value
-        right_ident.identifier_type = .DECLARATION;
-        right_ident.declaration     = declaration;
-        right_ident.value_type      = declaration.value_type;
-        if (check_flags & .EXPECT_LVALUE) && !set_as_lvalue(script, right_ident)  return;
-        right_ident.flags |= .TYPECHECKED;
-        
-        dot.value_type = declaration.value_type;
         return;
     }
     
@@ -1068,6 +1094,41 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     //       this is different from how other statements are done, which all return void instead.
     //       may have to change this if it creates issues, I suppose.
     
+    explicit_type: *Type_Info;
+    if declaration.type_expression {
+        type_expression := declaration.type_expression;
+        type_type := typecheck_node(script, type_expression, hint_type = xx Type);
+        if has_error(script)  return;
+        if type_type.type != .TYPE {
+            set_typecheck_error(script, "Type expression in declaration did not resolve to a Type.", node = declaration);
+            return;
+        }
+        // TODO: make sure that type expression is constant before evaluating it
+        if !(type_expression.flags & .IS_CONSTANT) {
+            set_typecheck_error(script, "Type expression in declaration must be constant.", node = declaration);
+            return;
+        }
+        type_any := evaluate_node(script, type_expression);
+        if has_error(script)  return;
+        explicit_type = type_any.value_pointer.(**Type_Info).*;
+    }
+    
+    right_type: *Type_Info;
+    if declaration.init_expression {
+        right_type = typecheck_node(script, declaration.init_expression, hint_type = explicit_type);
+        if has_error(script)  return;
+        
+        if explicit_type && explicit_type != right_type {
+            set_typecheck_error(script, "Init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type, node = declaration);
+            return;
+        }
+        // if the init expression of a declaration is marked as constant, then the declaration is also marked as constant
+        // however, if the declaration is later re-assigned to a new value, the declaration will lose this designation
+        if declaration.init_expression.flags & .IS_CONSTANT {
+            declaration.flags |= .IS_CONSTANT;
+        }
+    }
+    
     if declaration.left.node_type == Node_Identifier {
         identifier := declaration.left.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED);
@@ -1102,51 +1163,20 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         }
         assert(right_ident.identifier_type == .UNRESOLVED);
         
-        right_ident_name := get_identifier_name(script, right_ident);
-        
-        other_declaration := resolve_declaration(script, right_ident_name, declaration.scope);
-        if other_declaration != null && declaration != other_declaration {
-            set_typecheck_error(script, "Redeclaration of virtual member identifier '%'.", right_ident_name, node = declaration);
-            return;
+        #if false {
+            right_ident_name := get_identifier_name(script, right_ident);
+            other_declaration := resolve_declaration(script, right_ident_name, declaration.scope);
+            if other_declaration != null && declaration != other_declaration {
+                set_typecheck_error(script, "Redeclaration of virtual member identifier '%'.", right_ident_name, node = declaration);
+                return;
+            }
+        } else {
+            
         }
+        
     } else {
         set_typecheck_error(script, "Left-hand side of declaration must be either an identifier or a virtual member expression.", node = declaration);
         return;
-    }
-    
-    explicit_type: *Type_Info;
-    if declaration.type_expression {
-        type_expression := declaration.type_expression;
-        type_type := typecheck_node(script, type_expression, hint_type = xx Type);
-        if has_error(script)  return;
-        if type_type.type != .TYPE {
-            set_typecheck_error(script, "Type expression in declaration did not resolve to a Type.", node = declaration);
-            return;
-        }
-        // TODO: make sure that type expression is constant before evaluating it
-        if !(type_expression.flags & .IS_CONSTANT) {
-            set_typecheck_error(script, "Type expression in declaration must be constant.", node = declaration);
-            return;
-        }
-        type_any := evaluate_node(script, type_expression);
-        if has_error(script)  return;
-        explicit_type = type_any.value_pointer.(**Type_Info).*;
-    }
-    
-    right_type: *Type_Info;
-    if declaration.init_expression {
-        right_type = typecheck_node(script, declaration.init_expression, hint_type = explicit_type);
-        if has_error(script)  return;
-        
-        if explicit_type && explicit_type != right_type {
-            set_typecheck_error(script, "Init expression of declaration does not match given type. Expected '%', got '%'.", explicit_type, right_type, node = declaration);
-            return;
-        }
-        // if the init expression of a declaration is marked as constant, then the declaration is also marked as constant
-        // however, if the declaration is later re-assigned to a new value, the declaration will lose this designation
-        if declaration.init_expression.flags & .IS_CONSTANT {
-            declaration.flags |= .IS_CONSTANT;
-        }
     }
     
     dprint("explicit_type: %\n", explicit_type);

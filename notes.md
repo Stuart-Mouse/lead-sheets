@@ -1223,6 +1223,150 @@ remove the logic to execute virtual member declarations, since virtual member de
 
 
 
+
+Syntax possibilities
+
+declaring virtual members for a type, using some keyword or directive
+```
+#attach(Entity, {
+    cycle_lerp: float;
+    cycle_time: float = 5;
+    range := Vec2f.{ 1, 1 };
+});
+
+@Entity {
+    cycle_lerp: float;
+    cycle_time: float = 5;
+    range := Vec2f.{ 1, 1 };
+};
+```
+
+accessing virtual members totally dynamically, with type assertion on accessor expression
+```
+// right side of arrow is declaration expression inside of parens
+entity -> (cycle_lerp: float);
+
+// if we had proper macro stamping, we could do something like this
+// which would then allow us to use cycle lerp to refer to this virtual member in a 'statically typed' way
+cycle_lerp :: entity -> (cycle_lerp: float);
+```
+
+If we go the route of needing to declare virtual members on a type, 
+    it should be noted that each instance may not actually contain all of the declared virtual members
+    or, the instance may also have virtual members that are not declared on the type
+
+
+type cast after totally dynamic virtual member access:
+```
+cycle_time := entity->cycle_time.(float);
+```
+imporantly, for the above case we would need to make sure that the arrow has higher precedence than the dot cast
+    I don't think we actually have a systematic way to handle precedence for the builtin binary-operator-esque nodes like dot and cast
+    it wasn't an issue before, but now it would be
+        so we need some get_precedence proc that takes any node type and returns some precedence value
+        on second thought, I think this should actually already work as needed, so maybe this is a non-issue
+
+
+ok, new idea
+what if we just try to have out cake and eat it too
+```
+// get virtual member directly, as an Any
+// NOTE: assignment always gets right type!
+entity->range = 5;  
+
+// when used as rvalue, we need either a type cast to explicitly assert the type, or we will do an implicit conversion to the hint type
+// if we cannot get a hint type, we can't compile the virtual member access expression
+// my hunch is that we may not actually need to explicit cast all too often
+entity.position = circle(time, entity->range.(float));
+
+
+// options number two, secondary syntax
+// if right side of -> is a parenthesis, then we parse a declartion inside the parens
+entity->(cycle_time: float);
+
+// this above expression also just returns the value of cycle lerp, 
+//   but if cycle lerp does not exist on entity yet, then it will be declared with the default value of float (which is zero)
+//   it also inserts the proper type assertion, so this expression could be used as follows
+cycle_time := entity->(cycle_time: float = 5);
+
+// even though we're accessing a virtual member in the above statment, the additional type assertion means we can do type inference for the internal variable on the left side
+// the major downside of this syntax is that it's a lot 
+// but we do need to have the semantics to properly get the virtual member, cast the type, and allocate the thing if need be
+// and this just takes a bit of typing
+// so, a way to make this a bit nicer may be to be able to bind the virtual member declaration to a shorter name
+// and hey, it just so happens we already kind of have a mechanism for that (though an incomplete one)
+// we can use a static assignment like we use for malleable literals
+cycle_time :: entity->(cycle_time: float = 5);
+
+// now when we use `cycle_time`, we will instead be essentially pasting that whole virtaul member access expression (with type assertion and default value) at the site where we use `cyce_time`
+
+```
+
+
+NEW PLAN TODO: 
+    support type assertion on casting an Any to some static type
+        could still just use Convert.any_to_any, but we should probably disable all remappings beyond simple numeric types in the script's conversion context
+        as opposed to Jai, we will have implicit casting from Any to other types as well as in the other direction
+        maybe this will turn out to be problematic or maybe it'll be useful, i dunno yet!
+    while we're at it, also add support for coercing any type to an Any in assignments and in procedure arguments
+        the procedure argument case may actually be more trivial
+            in the case of a general assignment/declaration to Any, we actually need to think about the storage duration of the rvalue
+            since the rvalue may be some expression that produces an intermediate vlaue that just lives on the stack
+            so this is a more complex case...
+    change the semantics of get_virtual_member
+        allow providing a default value
+
+
+Handling Any better:
+    need to be able to push an Any or pop an Any from the stack
+    when casting to an Any, need to make sure intermediate value will stay valid
+    when casting an Any to something else, need to make sure we can still use that as an lvalue
+    
+    change assignment operator so that if left side is an any, we can still assign
+    
+    
+Yet another choice to make:
+    either we can allow assignment to change the type of a virtual member, 
+    or we can assert that the right type coerces to what the virtual member type currently is
+        then we can only change the virtual member's type by redeclaring it
+        this seems like the way to go...
+
+
+
+
+We could potentially do something really crazy where we allow the use of the arrow operator to create a sort of code block that is associated to a particular declaration/identifier/value whatever
+And then we can evaluate any arbitrary expressions or statements within this context and return those results back into the global script context
+
+then the idea of virtual members emerges for free as a sort of natural consequence
+this contextual block can override how identifier resolution occurs and how declaration values get stored
+for identifier resolution, we could basically 'using' the context value so that if, for example, the context value is a struct, we get access to the members directly as if they were declared like external variables
+    could do this very simply through a get_context_identifier callback on script. context scope could be between local block scope and 
+secondly, the declarations within a contextual block would naturally get duplicated
+    (we would have to duplicate and specialize the block at runtime, since we may 'call' the block with statically unknown contexts)
+        still though, once the block has been specialized for a particular context, we can execute it as per usual
+
+
+
+## Static Assignments / Macros
+
+I need to do some thinking about how I want to fully implement the `::` operator since at the moment it is restricted to literally only being used for malleable literals
+There are a few very similar, but importantly distinct things I would like to be bale to express using as little syntax as possible on declarations
+
+The current semantics of `::` are simply to make the declaration value pointer point directly to the malleable literal on the RHS of the assignment statement.
+What this affords the user is the ability to modify the value of the literal on the RHS in multiple places by using the identifier of the declaration.
+A side effect of these semantics is that the init expression of the declaration only gets run once, at compile-time, and then never againduring routine execution.
+
+but we would like to separately be able to do a sort of #once on the evaluation of a declaration's init expression
+and separately, to do the sort of direct binding of the value pointer
+    (and the direct value pointer binding was really just a shortcut for properly duplicating/referencing the literal node)
+
+the other dimension on which we may want to disambiguate is in what exactly a macro assignment entails
+in theory this would mean just copying the nodes of the RHS and pasting them at each place where the identifier is used
+
+Aside:
+    I think probably have a sort of #once assignment will be more easy-to-use and useful in many cases than requiring the use of an init block in scripts
+        but probbaly only if we have the contextual block stuff
+
 ## Error-Tolerant Execution and Evaluation
 
 TODO: we should add a mechanism to evaluate a script in a such a way that it is tolerant to errors
