@@ -1347,6 +1347,31 @@ secondly, the declarations within a contextual block would naturally get duplica
 
 
 
+Problems with doing contextual blocks:
+    primary issue is that we may have multiple contextual blocks that use the same context
+    this means that we can't use the context item itself as a namespace to access items within any particular contextual block
+    since we can't know for sure which one you're intending to reference
+    
+    not a problem: polymorphism, macro stamping 
+        I was previously thinking we would need to do some sort of AST-copying macro business for these kind of blocks since we are specializing the block for  a particular context
+        but this is not necessarily the case, actually, since we can probably just make the assumption that context variable will always be of the same type for a given block
+        this is because we don't have any kind of polymorphism in our for loops (yet?) and no other way to call blocks with varying types of parameters
+        
+        so instead of having to copy and specialize entire chunks of AST, we can just have some context structure the holds the static declarations for the block, which we retrieve via some callback for an id from the script owner
+        because this mechanism is inherently less concerned with the particular type being used as context, we can probably just implement this all without the need for user callbacks and management
+        and we can prevent the need for runtime errors if some item is used for context and no context has yet been created. we just make a new one with all necessary declarations, and set the up withi their correct intial values
+        
+    One option we may have afforded by not doing the AST stamping thing, is to simply expose only static `::` declarations as accessible across multiple blocks with the same context
+    or we could just go so far as to assert that all contextual blocks with the same context item share the same scope, but that seems problematic for a variety of reasons
+    one potential problem with this idea though, is that we will either have to restrict these kinds of static declarations to the root block of a contextual block for scoping reasons, or we will have to implement some kind of hoisting to push the declarations into the root contextual blocks' scope.
+    
+    not needing to do anything polymorphic actually does have me considering the possibility of bringing back in the idea of declaring virtual/static members on each type
+    then these and only these values can be resolved globally within any contextual blocks using that type
+    so they are properly enumerated at compile-time and can be used throughout the script
+    the downside of this is that we would then actually allocate space for all of these virtaul members in every single instance of the type
+        although maybe we could finagle this and only allocate for these declarations on the first time they are used in each instance (but then maybe that's bad data locality? not like that matters much in a scripting language tbh)
+    
+
 ## Static Assignments / Macros
 
 I need to do some thinking about how I want to fully implement the `::` operator since at the moment it is restricted to literally only being used for malleable literals
@@ -1418,9 +1443,20 @@ The only benefit of staying with the current way of doing casts is that we can c
 
 
 
+## Things we need to be more rigorous about
+
+passing check flags up the AST
+
+checking for whether things are valid lvalues
+    maybe we should move this back into individual typechecking cases
+    
+preventing re-typechecking on nodes where doing so is problematic
+    need to create a thorough list of cases where re-typechecking is ok and those where it is not
+    maybe we should refactor things so that it is always ok to re-typecheck?
 
 
-TODO: make sure that procedure resolution failures don't override error message for deeper nodes when the error is not from a failed type hint
+## Bugs and minor fixes
 
-TODO: add the ability to name it and it_index
+add the ability to name it and it_index
+
 
