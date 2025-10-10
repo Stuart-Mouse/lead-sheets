@@ -96,10 +96,7 @@ typecheck_script :: (script: *Script) -> bool {
     if script.ast_root == null                  return false;
     if script.ast_root.node_type != Node_Block  return false;
     
-    for script.ast_root.statements {
-        typecheck_node(script, it, .IS_STATEMENT_ROOT);
-        if has_error(script)  return false;
-    }
+    typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
     
     script.flags |= .TYPECHECKED;
     return true;
@@ -690,7 +687,8 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         }
         
         if is_aggr(operation.value_type) {
-            operation.return_ptr = Dynamic_New(operation.value_type,, get_pool_allocator(*script.pool));
+            operation.result_stack_offset = get_stack_space(script, operation.value_type.runtime_size, operation.scope);
+            // operation.return_ptr = Dynamic_New(operation.value_type,, get_pool_allocator(*script.pool));
             // dprint("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
         }
         
@@ -816,7 +814,11 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
     }
     
     if is_aggr(procedure_call.value_type) {
-        procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, get_pool_allocator(*script.pool));
+        identifier := procedure_call.procedure_expression.(*Node_Identifier);
+        procedure_name := ifx identifier.node_type == Node_Identifier then get_identifier_name(script, identifier) else "no name??";
+        
+        procedure_call.return_value_stack_offset = get_stack_space(script, procedure_call.value_type.runtime_size, procedure_call.scope);
+        // procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, get_pool_allocator(*script.pool));
         // dprint("allocating variable of type % at % for node %\n", as_type(procedure_call.value_type), procedure_call.return_ptr, procedure_call);
     }
     assert(procedure_call.value_type != null);
@@ -1132,7 +1134,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         evaluate_node(script, declaration.init_expression, declaration.value_pointer);
         if has_error(script)  return;
     } else {
-        declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
+        declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
+        // declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
     }
     
     return;
@@ -1143,7 +1146,6 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
         typecheck_node(script, it, .IS_STATEMENT_ROOT);
         if has_error(script)  return;
     }
-    
     block.value_type = xx void;
     return;
 }
@@ -1175,6 +1177,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     for_loop.it_index_decl = .{
         left       = make_identifier(script, "it_index"),
         value_type = xx int,
+        flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
     };
     
     if #complete for_loop.control_type == {
@@ -1200,6 +1203,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         for_loop.it_decl = .{        
             left       = make_identifier(script, "it"),
             value_type = lower_type,
+            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
         };
         
       case .ARRAY;
@@ -1216,6 +1220,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         for_loop.it_decl = .{
             left       = make_identifier(script, "it"),
             value_type = ti_array.element_type,
+            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
         };
         
       case .LIST;
@@ -1235,6 +1240,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         for_loop.it_decl = .{
             left       = make_identifier(script, "it"),
             value_type = first_type,
+            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
         };
     }
     

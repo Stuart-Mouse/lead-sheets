@@ -43,11 +43,41 @@ Node :: struct {
 Node_Block :: struct {
     using #as node_base:    Node;
     name:                   string;
-    statements:             [] *Node; 
+    statements:             [] *Node;
+    
+    // TODO: Maybe we should get this through some procedure, rather than just incrementing it here
+    // TODO: we should not have every single block as a stack frame. This is dumb, but I am doing it rn as a simple test
+    stack_frame_size:       int;
+    stack_frame_pointer:    *void;
 }
 
-// TODO: before continuing with whitespace/comments issue, refactor node creation so that we are passing in source token wherever possible.
-//       then we can copy certain attributes from the token automatically, which will make it easier to try different methods of resolving whitespace issue, will improve debug abilities as well
+get_stack_space :: (script: *Script, requested_size: int, scope: *Node) -> stack_offset: int {
+    block := get_stack_frame_block(script, scope);
+    
+    // assert(parent_block.node_type == Node_Block);
+    // block := parent_block.(*Node_Block);
+    
+    current_offset := block.stack_frame_size;
+    
+    // pad to 8 byte alignment
+    size := (requested_size + 7) & ~7;
+    block.stack_frame_size += size;
+    
+    return current_offset;
+}
+
+// TODO: resolve to closest named block
+get_stack_frame_block :: (script: *Script, node: *Node) -> *Node_Block {
+    scope := node;
+    while scope {
+        if scope.node_type == Node_Block {
+            block := scope.(*Node_Block);
+            if block.name || block == script.ast_root  return block;
+        }
+        scope = scope.scope;
+    }
+    return null;
+}
 
 Node_Cast :: struct {
     using #as base:     Node;
@@ -138,9 +168,20 @@ identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i
 Node_Declaration :: struct {
     using #as node_base:    Node;
     left:                   *Node;
-    value_pointer:          *void;
+    union { // use value_pointer if declaration is static, else 
+        value_pointer:      *void;
+        stack_offset:       int;
+    }
     type_expression:        *Node;
     init_expression:        *Node;
+}
+
+get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void {
+    if declaration.flags & .MACRO {
+        return declaration.value_pointer;
+    }
+    block := get_stack_frame_block(script, declaration);
+    return block.stack_frame_pointer + declaration.stack_offset;
 }
 
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
@@ -154,7 +195,13 @@ Node_Procedure_Call :: struct {
     using #as node_base:    Node;
     procedure_expression:   *Node;
     arguments:              [] *Node;
-    return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
+    // return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
+    return_value_stack_offset:  int;
+}
+
+get_return_value_pointer :: (script: *Script, procedure_call: *Node_Procedure_Call) -> *void {
+    block := get_stack_frame_block(script, procedure_call);
+    return block.stack_frame_pointer + procedure_call.return_value_stack_offset;
 }
 
 Node_Directive :: struct {
@@ -228,7 +275,8 @@ Node_Operation :: struct {
         overload_procedure:         *Node_Procedure_Call;
     }
     left, right:    *Node;      // only left is used if .UNARY flag is present
-    return_ptr:     *Node;      // only if return type is aggregate
+    // return_ptr:     *Node;      // only if return type is aggregate
+    result_stack_offset: int;
     directive:      *Node_Directive;
 }
 
@@ -242,6 +290,11 @@ get_precedence :: inline (script: *Script, node: *Node_Operation) -> int {
 
 get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator.Kind {
     return get_operator(script, node).kind;
+}
+
+get_result_value_pointer :: (script: *Script, op: *Node_Operation) -> *void {
+    block := get_stack_frame_block(script, op);
+    return block.stack_frame_pointer + op.result_stack_offset;
 }
 
 // TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
@@ -463,7 +516,7 @@ make_number_literal :: (script: *Script, number: $T, loc := #caller_location) ->
 }
 
 make_identifier :: (script: *Script, name: string, loc := #caller_location) -> *Node_Identifier {
-    node := alloc_node(script, Node_Identifier);
+    node := alloc_node(script, Node_Identifier, loc = loc);
     node.name = name;
     return node;
 }

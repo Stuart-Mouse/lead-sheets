@@ -1627,6 +1627,51 @@ then we just init the stack allocator with memoery allocated by some other alloc
 when we go to set up an execution / evaluation context, we provide a stack 
     maybe later this idea integrates with the idea of block contexts
 
+### Fixing Stack Operations
+
+Before I can really reconcile all the differences between exec and eval, I reall yneed to have a rigorous 
+    model for how different values are stored, and how memory is allocated within scripts
+For instance, in eval, we just always allocate for the result value unless we have some hint storage
+    (I think we are even doing this when the returned value is some small literal, which is really dumb since those backing values are stored on the literal node itself)
+
+And while we are improving our allocation strategy, we may as well refactor non-static declarations to use some stack offset rather than a value pointer
+    this will make it possible for use to theoretically implement functions or at least callable blocks in the future
+
+NOTE: one nice part about having declarations that have their own separately allocated values is that we can validly read these declarations values and display them in the ui even while the script is not running
+      but maybe its fine that we won't be able to do this for normal declarations anymore, since we can't modify those values anyhow
+      and we can still show and modify static declarations in any case
+
+It's not exaclty rigorous, but we could potentially just give eval a different temp allocator that uses our pre-allocated stack space as the backing storage
+    and then we can simply reset the watermark after each statement that executes
+    
+    It will be better if we just make our stack structure reliable and use that instead of using an allocator
+    the allocator method may be faster to implement, but it won't work well (if at all) for bytecode execution 
+    
+
+
+Stack Improvements Part 2:
+    Make sure that Stack base is aligned to 8 bytes (probably already should be)
+    push bytes for all declarations in scope at beginning of scope
+    non-static declarations get some stack offset relative to stack base pointer for parent Node_Block
+    When declaration executes, we return either value_pointer (static decl) or scope.stack_pointer + stack_offset
+
+For any node whose value type is not <= 8 bytes, and where there is no hint storage, we need to also allocate stack space for those that will get pushed on scope entry, just like for non-static declarations
+
+to summarize:
+    any large values (declarations or temporaries) get put into the 'stack frame' allocation, and then word-sized allocations just get pushed and popped from the stack freely on top of that
+    maybe this is a bit non-standard, but I think this model should work well for LS
+
+in theory, we could probably just push and pop even larger temporaries on the stack freely like we will do for small values
+    however, we then need to make it a special case when we coerce to an Any
+        acutally, this will need to be a special case anyhow, since we will need persistent storage in any case, even for small intermediates
+
+new problem:
+    if we use each block scope as a stack frame, we end up with a big problem
+    if we try to access a declaration form an outer scope, we will get the wrong value pointer, 
+        since it will use the local scope's frame pointer, not the frame pointer of the scope the declaration belongs to
+    so either we need to store a frame pointer on every block
+    or we need to use some more encompassing block as our stack frame reference point
+    really, we should probably only use the root block and named blocks (assuming we make those callable) as stack frames
 
 
 
@@ -1635,5 +1680,10 @@ when we go to set up an execution / evaluation context, we provide a stack
 this would actually be pretty easy to do, and would allow for messing with the AST a bit more directly, which could be useful in some circumstances
 could be very useful for logging/debugging if we could have the debug printing and error message be appended directly to each node
 
+
+## Running Scripts in Separate Stack Frame
+
+For as long as we are running scripts by walking the AST, we will probably need some kind of coroutine thing so that we can yeild after executing each node
+We can probably use the osor_coroutine module for this.
 
 

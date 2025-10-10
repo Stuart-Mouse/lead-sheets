@@ -24,15 +24,7 @@ execute_script :: (script: *Script) -> bool {
     }
     
     reset_stack(*script.stack);
-    
-    statements := script.ast_root.statements;
-    for statements {
-        dprint("executing statement #%\n", it_index);
-        if !execute_node(script, it)  return false;
-    }
-    assert(script.stack.top == script.stack.memory);
-    
-    return true;
+    return execute_node(script, script.ast_root);
 }
 
 /*
@@ -120,7 +112,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 // return execute_node(script, declaration.init_expression);
             }
             
-            variable_any := Any.{ declaration.value_type, declaration.value_pointer };
+            variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
             dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
             if !push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
             return true;
@@ -166,7 +158,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         _operator := get_operator(script, operation);
         if _operator.kind != .ASSIGNMENT {
             if is_aggr(operation.value_type) {
-                if !push_any(script, Any.{ operation.value_type, operation.return_ptr })  return false;         
+                if !push_any(script, Any.{ operation.value_type, get_result_value_pointer(script, operation) })  return false;         
             } else {
                 if !push_zeroes(script, 8)  return false;
             }
@@ -203,7 +195,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         result_any := Any.{ 
             operation.value_type, 
-            ifx is_aggr(operation.value_type) then operation.return_ptr else script.stack.top
+            ifx is_aggr(operation.value_type) then get_result_value_pointer(script, operation) else script.stack.top
         };
         dprint("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
         return true;
@@ -216,6 +208,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if !execute_node(script, procedure_call.procedure_expression)  return false;
         proc_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
         assert(proc_info.type == .PROCEDURE);
+        
         dprint("proc_info: %\n", as_type(proc_info));
         
         procedure  := pop_any(script, proc_info); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
@@ -225,8 +218,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         return_ptr := script.stack.top;
         
         if is_aggr(procedure_call.value_type) {
-            if !push_any(script, Any.{ procedure_call.value_type, procedure_call.return_ptr })  return false;
-            return_ptr = procedure_call.return_ptr;
+            return_ptr = get_return_value_pointer(script, procedure_call);
+            dprint("return_ptr: %\n", return_ptr);
+            dprint("return stack offset: %\n", procedure_call.return_value_stack_offset);
+            if !push_any(script, Any.{ procedure_call.value_type, return_ptr })  return false;
         } else {
             push_zeroes(script, 8);
         }
@@ -240,11 +235,15 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             value_pointer := arg_ptr;
             if is_aggr(it)  value_pointer = value_pointer.(**void).*;
             arguments[it_index] = Any.{ it, value_pointer };
+            dprint("argsument %: %\n", it_index, Any.{ it, value_pointer });
             arg_ptr += size_of(*void);
         }
         
         result := Any.{ procedure_call.value_type, return_ptr };
         result_array: [] Any; 
+        
+        dprint("return_ptr: %\n", return_ptr);
+        
         if result.type != xx void then result_array = .[ result ];
         #if USING_DYNCALL {
             if !do_dyncall(script.dyncall_vm, Any.{ proc_info, *proc_ptr }, arguments, result_array) {
@@ -382,7 +381,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
         if declaration.flags & .MACRO  return true;
         
-        l_value := Any.{ declaration.value_type, declaration.value_pointer };
+        l_value := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
         
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression)  return false;
@@ -391,8 +390,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("l_value.value_pointer: %\n", l_value.value_pointer);
             dprint("r_value.value_pointer: %\n", r_value.value_pointer);
             
-            dprint("l_value: % % at %\n", as_type(l_value.type), l_value, l_value.value_pointer);
-            dprint("r_value: % % at %\n", as_type(r_value.type), r_value, r_value.value_pointer);
+            dprint("l_value.type: %\n", as_type(l_value.type));
+            dprint("r_value.type: %\n", as_type(r_value.type));
             
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
@@ -405,10 +404,21 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         block := node.(*Node_Block);
         if block.name && !explicit_call  return true; // we don't execute named blocks unless explicitly called
         
+        previous_frame := script.stack.frame;
+        previous_top   := script.stack.top;
+        
+        block.stack_frame_pointer = script.stack.top;
+        script.stack.frame = script.stack.top;
+        script.stack.top   = script.stack.frame + block.stack_frame_size;
+        
         for block.statements {
-            dprint("executing statement #%\n", it_index);
             if !execute_node(script, it)  return false;
         }
+        
+        // Check that we've popped ourselves back to where we started
+        assert(script.stack.top == script.stack.frame + block.stack_frame_size);
+        script.stack.frame = previous_frame;
+        
         return true;
         
         

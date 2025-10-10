@@ -2,9 +2,6 @@
 parse_source_file :: (script: *Script, source: string, file_path := "") -> bool {
     if !(script.flags & .INITIALIZED)  return false;
     
-    success: bool;
-    // defer if !success  free_script(script);
-    
     init_lexer(script, source, location = .{ file_path, 1, 1 });
     
     // TODO: this really should not be a check 
@@ -23,7 +20,6 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     
     if !typecheck_script(script)  return false;
     
-    success = true;
     return true;
 }
 

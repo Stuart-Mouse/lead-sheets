@@ -1,8 +1,14 @@
+/*
+    TODO:
+        create debug flag
+        in debug mode, add a Stack.Push_Header that we can use to check for proper pushes/pops
+*/
 
 Stack :: struct {
     memory:         *void;
     allocated:      int;
     top:            *void;
+    frame:          *void;
     
     // Word :: Number_Union;
     WORD_SIZE :: size_of(*void);
@@ -12,27 +18,43 @@ Stack :: struct {
 // TODO: ensure that stack base is aligned to 8 bytes
 init_stack :: (stack: *Stack, size_in_bytes := 1024) {
     stack.allocated = size_in_bytes;
-    stack.memory    = alloc(stack.allocated);
-    stack.top       = stack.memory;
+    memory := alloc(stack.allocated);
+    stack.memory, stack.top, stack.frame = memory;
 }
 
 reset_stack :: (stack: *Stack) {
-    stack.top = stack.memory;
-};
+    stack.top, stack.frame = stack.memory;
+}
 
 deinit_stack :: (stack: *Stack) {
     free(stack.memory);
-};
-
-pop :: inline (stack: *Stack, $$indirect := false) -> *void {
-    stack.top -= stack.WORD_SIZE;
-    assert(stack.top >= stack.memory, "Invalid stack pop!");
-    return ifx indirect then stack.top.(**void).* else stack.top;
 }
 
-peek :: inline (stack: *Stack, $$indirect := false) -> *void {
-    pointer := stack.top - stack.WORD_SIZE;
-    assert(pointer >= stack.memory, "Invalid stack peek!");
+push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := false) -> bool {
+    if top >= memory + allocated  return false;
+    
+    if indirect {
+        // store the pointer itself instead of the value
+        top.(**void).* = pointer; 
+    } else {
+        assert(size <= WORD_SIZE);
+        memset(top, 0, WORD_SIZE);          // in case element size is less than word size
+        memcpy(top, pointer, size); 
+    }
+    
+    top += WORD_SIZE;
+    return true;
+}
+
+pop :: inline (using stack: *Stack, $$indirect := false) -> *void {
+    top -= WORD_SIZE;
+    assert(top >= memory, "Invalid stack pop!");
+    return ifx indirect then top.(**void).* else top;
+}
+
+peek :: inline (using stack: *Stack, $$indirect := false) -> *void {
+    pointer := top - WORD_SIZE;
+    assert(pointer >= memory, "Invalid stack peek!");
     return ifx indirect then pointer.(**void).* else pointer;
 }
 
