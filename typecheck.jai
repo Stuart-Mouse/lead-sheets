@@ -670,9 +670,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     if builtin_operation_index >= 0 {
         operation.builtin_operation_index = builtin_operation_index;
         
-        // NOTE: because we are performing this swap on the AST like this, this technically makes the evaluation order of each side of an operation undefined
-        // TODO: ideally, we should just swizzle the operands on the stack when executing the operation
-        if swap_args { operation.left, operation.right = operation.right, operation.left; }
+        if swap_args then operation.flags |= .SWAP_OPERANDS;
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
@@ -682,14 +680,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
                 set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type), node = operation);
                 return;
             }
-            // dprint("Info: returning enum type from binary operation: %", as_type(left_type));
             operation.value_type = left_type;
-        }
-        
-        if is_aggr(operation.value_type) {
-            operation.result_stack_offset = get_stack_space(script, operation.value_type.runtime_size, operation.scope);
-            // operation.return_ptr = Dynamic_New(operation.value_type,, get_pool_allocator(*script.pool));
-            // dprint("allocating variable of type % at % for node %", as_type(operation.value_type), operation.return_ptr, operation);
         }
         
         return;
@@ -813,14 +804,6 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             else type_info(void);
     }
     
-    if is_aggr(procedure_call.value_type) {
-        identifier := procedure_call.procedure_expression.(*Node_Identifier);
-        procedure_name := ifx identifier.node_type == Node_Identifier then get_identifier_name(script, identifier) else "no name??";
-        
-        procedure_call.return_value_stack_offset = get_stack_space(script, procedure_call.value_type.runtime_size, procedure_call.scope);
-        // procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, get_pool_allocator(*script.pool));
-        // dprint("allocating variable of type % at % for node %", as_type(procedure_call.value_type), procedure_call.return_ptr, procedure_call);
-    }
     assert(procedure_call.value_type != null);
 }
 
@@ -1139,7 +1122,6 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         if has_error(script)  return;
     } else {
         declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
-        // declaration.value_pointer = Dynamic_New(declaration.value_type,, get_pool_allocator(*script.pool));
     }
     
     return;

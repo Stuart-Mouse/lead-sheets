@@ -1,16 +1,13 @@
 
 
 /*
-    TODO: we should differentiate execute and evaluate procs
-    the procs here should be labelled execute, since they work primarily through side effects
-        i.e., they push/pop things on the preallocated stack and rely on typecheck phase to have been done correctly
-
-    by contrast, I will probably reintroduce some evaluate procs that basically do things the old way of dynamically typechecking and returning Any's
-    these may be useful in the case of scripts that only need to be run once, e.g. evaluating expresions in gon files or seomthing
+    TODO: Cleaning up execute.jai, removing evaluate.jai
     
-    as it stands, I think the execute procs will probably have decent enough performance characteristics that going to a bytecode will probabyl not be worth it for a good while
-    it will be much easier to debug things using the old ast walking method, and because we are typechecked, it's really more like a fat ass bytecode with horrible cache misses
-    but we would still have bad cache misses in bytecode with procedure calls anyhow because of the type info navigation that's required
+    need to implement callback like we have for evaluation
+        user callbacks will now need to push to script stack rather than return an Any
+        this means the user needs to be a bit more aware of lvalue/rvalue semantics, since they will need to know when to push indirectly
+        maybe we can aid in this by passing up .EXPECT_LVALUE in the execution callback, so at least we make the user aware of what is expected
+        
 */
 
 execute_script :: (script: *Script) -> bool {
@@ -71,23 +68,17 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         if #complete literal.literal_type == {
           case .ANY;
-            if !push_any(script, literal.any, literal.flags & .PUSH_BY_POINTER != 0)  return false;
-            dprint("returning literal with value %", literal.any);
-            return true;
+            return push_any(script, literal.any, should_push_by_pointer(literal));
             
           case .STRING;
-            if !push_any(script, literal.text, literal.flags & .PUSH_BY_POINTER != 0)  return false;
-            dprint("returning literal with value %", literal.text);
-            return true;
+            return push_any(script, literal.text, should_push_by_pointer(literal));
             
           case .BOOLEAN; #through;
           case .NUMBER;
-            if !push_any(script, to_any(*literal.number), literal.flags & .PUSH_BY_POINTER != 0)  return false;
-            dprint("returning literal with value %", to_any(*literal.number));
-            return true;
+            return push_any(script, to_any(*literal.number), should_push_by_pointer(literal));
             
           case .STRUCT;
-            if !push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .PUSH_BY_POINTER != 0)  return false;
+            if !push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, should_push_by_pointer(literal))  return false;
             write_ptr := literal.aggr.value_pointer;
             // TODO: if we enhance typechecking to pass value pointer for these values, 
             //       then we don't need to do any pushing or popping from stack here.
@@ -115,29 +106,29 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
             dprint("returning internal variable with value % at %", variable_any, variable_any.value_pointer);
-            if !push_any(script, variable_any, identifier.flags & .PUSH_BY_POINTER != 0)  return false;
+            if !push_any(script, variable_any, should_push_by_pointer(identifier))  return false;
             return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
+            value    := get_value(variable);
+            
             if variable.value_pointer == null {
                 set_execution_error(script, "Unable to get value of external variable '%'.", variable.name, node = node);
                 return false;
             }
             
-            value := get_value(variable);
             if variable.type.runtime_size > 8
                 then dprint("returning external variable at %", variable.value_pointer);
                 else dprint("returning external variable with value % at %", value, variable.value_pointer);
-            if !push_any(script, value, identifier.flags & .PUSH_BY_POINTER != 0)  return false;
-            return true;
+            
+            return push_any(script, value, should_push_by_pointer(identifier));
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
             dprint("returning external procedure with type % at %", as_type(procedure.proc_info), procedure.pointer);
             assert(identifier.flags & .PUSH_BY_POINTER == 0);
-            if !push_any(script, procedure.pointer)  return false;
-            return true;
+            return push_any(script, procedure.pointer);
             
           case .LITERAL;
             return execute_node(script, identifier.literal);
@@ -158,13 +149,17 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, operation.overload_procedure);
         }
         
-        result_value_pointer := script.stack.top;
+        result_value_pointer: *void;
         
         _operator := get_operator(script, operation);
         if _operator.kind != .ASSIGNMENT {
             // TODO: don't push space for the return value if we have some hint storage
             //       need to first implement some means to check if we will have hint storage during typechecking
-            if !push_zeroes(script, operation.value_type.runtime_size)  return false;
+            result_value_pointer = push(*script.stack, null, operation.value_type.runtime_size);
+            if result_value_pointer == null {
+                set_execution_error(script, type = .STACK_OVERFLOW, node = node);
+                return false;
+            }
         }
         
         if !execute_node(script, operation.left)  return false;
@@ -175,7 +170,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
-            assert(operation.left.flags & .PUSH_BY_POINTER != 0);
+            assert(should_push_by_pointer(operation.left));
             r_value := pop_any(script, operation.right.value_type);
             l_value := pop_any(script, operation.left.value_type, true);
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
@@ -186,11 +181,14 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         right: Any;
         if !is_unary(_operator.kind) {
-            right = pop_any(script, operation.right.value_type, operation.right.flags & .PUSH_BY_POINTER != 0);
+            right = pop_any(script, operation.right.value_type, should_push_by_pointer(operation.right));
         }
-        left := pop_any(script, operation.left.value_type, operation.left.flags & .PUSH_BY_POINTER != 0);
+        left := pop_any(script, operation.left.value_type, should_push_by_pointer(operation.left));
         
         // TODO: swizzle arguments if needed
+        // if node.flags & .SWAP_OPERANDS {
+            // if left, right := right, left;
+        // }
         
         dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
         if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return false;
@@ -216,58 +214,60 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         proc_ptr   := procedure.value_pointer.(**void).*;
         
         return_ptr := script.stack.top;
-        if !push_zeroes(script, procedure_call.value_type.runtime_size)  return false;
+        if !push(*script.stack, null, procedure_call.value_type.runtime_size)  return false;
         
-        // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
-        arguments: [] Any;
-        arguments.data  = script.stack.top;
-        arguments.count = proc_info.argument_types.count;
-        arguments_push_size := arguments.count * size_of(Any);
-        if !push_zeroes(script, arguments_push_size)  return false;
-        
-        spba := script.stack.top;
-        
-        for procedure_call.arguments  if !execute_node(script, it)  return false;
-        
-        // arguments := NewArray(proc_info.argument_types.count, Any,, temp);
-        for < proc_info.argument_types {
-            argument_node := procedure_call.arguments[it_index];
+        {
+            // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
+            ARGUMENTS_ARRAY_ELEMENT_TYPE :: Any;
             
-            // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
-            //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
-            argument_any := pop_any(script, it, argument_node.flags & .PUSH_BY_POINTER != 0);
-            arguments[it_index] = argument_any;
-            
-            if argument_any.type.runtime_size > 8
-                then dprint("argument % @ %", it_index, argument_any.value_pointer);
-                else dprint("argument % @ %: %", it_index, argument_any.value_pointer, argument_any);
-        }
-        
-        assert(spba == script.stack.top);
-        
-        result := Any.{ procedure_call.value_type, return_ptr };
-        result_array: [] Any; 
-        
-        dprint("return_ptr: %", return_ptr);
-        
-        if result.type != xx void then result_array = .[ result ];
-        #if USING_DYNCALL {
-            if !do_dyncall(script.dyncall_vm, Any.{ proc_info, *proc_ptr }, arguments, result_array) {
-                set_general_error(script, "Failed while trying to make dyncall.");
+            push_ok, arguments := push_empty_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE, proc_info.argument_types.count);
+            if !push_ok {
+                set_execution_error(script, type = .STACK_OVERFLOW, node = node);
                 return false;
             }
-        } else {
-            if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, result_array) {
-                set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
-                return false;
+            defer pop_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE);
+            
+            
+            for procedure_call.arguments  if !execute_node(script, it)  return false;
+            
+            for < proc_info.argument_types {
+                argument_node := procedure_call.arguments[it_index];
+                
+                // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
+                //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
+                argument_any := pop_any(script, it, argument_node.flags & .PUSH_BY_POINTER != 0);
+                arguments[it_index] = argument_any;
+                
+                if argument_any.type.runtime_size > 8
+                    then dprint("argument % @ %", it_index, argument_any.value_pointer);
+                    else dprint("argument % @ %: %", it_index, argument_any.value_pointer, argument_any);
+            }
+            
+            
+            result := Any.{ procedure_call.value_type, return_ptr };
+            result_array: [] Any; 
+            
+            dprint("return_ptr: %", return_ptr);
+            
+            if result.type != xx void then result_array = .[ result ];
+            #if USING_DYNCALL {
+                if !do_dyncall(script.dyncall_vm, Any.{ proc_info, *proc_ptr }, arguments, result_array) {
+                    set_general_error(script, "Failed while trying to make dyncall.");
+                    return false;
+                }
+            } else {
+                if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, result_array) {
+                    set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                    return false;
+                }
             }
         }
         
-        dprint("returning result of procedure call: %", Any.{ procedure_call.value_type, return_ptr });
+        dprint("result of procedure call: %", Any.{ procedure_call.value_type, return_ptr });
         
-        pop(*script.stack, arguments_push_size);
-        
+        // TODO: handle in a more systematic way, for other types of expressions that may be used as a statement.
         if procedure_call.flags & .DISCARD_VALUE {
+            dprint("Discarding unused result of procedure call expression.");
             pop_any(script, procedure_call.value_type);
         }
         return true;
@@ -296,7 +296,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         assert(!is_aggr(node_cast.value_type) && !is_aggr(node_cast.value.value_type));
         
         dst := Any.{ node.value_type, script.stack.top };
-        if !push_zeroes(script, 8)  return false;
+        if !push(*script.stack, null, 8)  return false;
         
         if !execute_node(script, node_cast.value)  return false;
         src := pop_any(script, node_cast.value.value_type);

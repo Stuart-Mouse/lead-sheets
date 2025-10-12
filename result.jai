@@ -75,7 +75,7 @@ Error_Type :: enum s64 {
     PARSE_ERROR     :: 3 << 32;
     TYPECHECK_ERROR :: 4 << 32;
     EVAL_ERROR      :: 5 << 32;
-    EXECUTION_ERROR      :: 6 << 32;
+    EXECUTION_ERROR :: 6 << 32;
     USER_ERROR      :: 7 << 32;
     
     CLASS_MASK :: 0xffffffff_00000000;
@@ -86,9 +86,11 @@ Error_Type :: enum s64 {
     FAILED_IMPLICIT_CAST        :: TYPECHECK_ERROR + 3;
     FAILED_OVERLOAD_RESOLUTION  :: TYPECHECK_ERROR + 4;
     
-    UNEXPECTED_TOKEN        :: LEXER_ERROR + 1;
-    UNEXPECTED_CHARACTER    :: LEXER_ERROR + 2;
-    UNEXPECTED_EOF          :: LEXER_ERROR + 3;
+    UNEXPECTED_TOKEN            :: LEXER_ERROR + 1;
+    UNEXPECTED_CHARACTER        :: LEXER_ERROR + 2;
+    UNEXPECTED_EOF              :: LEXER_ERROR + 3;
+    
+    STACK_OVERFLOW              :: EXECUTION_ERROR + 1;
 }
 
 Error :: union {
@@ -97,6 +99,7 @@ Error :: union {
     parse:      Parse_Error;
     lexer:      Lexer_Error;
     typecheck:  Typecheck_Error;
+    execution:  Execution_Error;
 }
 
 Error_Base :: struct {
@@ -122,6 +125,14 @@ Typecheck_Error :: struct {
     base:   Error_Base;
     node:   *Node;
     procedure_overload_report:    Procedure_Overload_Report;
+}
+
+Execution_Error :: struct {
+    using 
+    base:   Error_Base;
+    node:   *Node;
+    
+    // TODO: maybe take a stack trace?
 }
 
 get_class :: inline (error: Error) -> Error_Type { return error.type & .CLASS_MASK; }
@@ -168,6 +179,22 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
                 
               case .FAILED_OVERLOAD_RESOLUTION;
                 format_procedure_overload_report(builder, script, error.typecheck.procedure_overload_report);
+            }
+        } else {
+            print(builder, "[node is null! error type is %] ", error.type);
+        }
+        
+        
+      case .EXECUTION_ERROR;
+        node := error.execution.node;
+        if node {
+            if append_script_location {
+                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+            }
+            if error.type == {
+              case .STACK_OVERFLOW;
+                assert(node.node_type == Node_Identifier);
+                print(builder, "Ran out of stack space. Try increasing stack size when initializing script.\n", node.(*Node_Identifier).name);
             }
         } else {
             print(builder, "[node is null! error type is %] ", error.type);

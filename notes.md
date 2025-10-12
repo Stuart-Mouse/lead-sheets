@@ -1566,11 +1566,14 @@ allowing for node replacement
 add the ability to name it and it_index
 
       
-TODO: we should really stamp serial numbers onto all nodes like the Jai compiler does
-      since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
-      and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
-      actually even just having a serial number wouldn't solve it, but maybe it would help
+we should really stamp serial numbers onto all nodes like the Jai compiler does
+    since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
+    and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
+    actually even just having a serial number wouldn't solve it, but maybe it would help
       
+
+Handle discarding of unreceived stack values in a more systematic way
+
 
 ## Simplifying Identifiers
 
@@ -1703,5 +1706,10 @@ could be very useful for logging/debugging if we could have the debug printing a
 
 For as long as we are running scripts by walking the AST, we will probably need some kind of coroutine thing so that we can yeild after executing each node
 We can probably use the osor_coroutine module for this.
+
+
+
+
+
 
 

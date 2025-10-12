@@ -22,7 +22,12 @@ Node :: struct {
         DISCARD_VALUE;
         MUST_BE_STATEMENT_ROOT;
         IS_STATEMENT_ROOT;
+        SWAP_OPERANDS;
     };
+}
+
+should_push_by_pointer :: (node: *Node) -> bool {
+    return node.flags & .PUSH_BY_POINTER != 0;
 }
 
 /*
@@ -169,8 +174,6 @@ Node_Procedure_Call :: struct {
     using #as node_base:    Node;
     procedure_expression:   *Node;
     arguments:              [] *Node;
-    // return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
-    return_value_stack_offset:  int;
 }
 
 Node_Directive :: struct {
@@ -244,8 +247,6 @@ Node_Operation :: struct {
         overload_procedure:         *Node_Procedure_Call;
     }
     left, right:    *Node;      // only left is used if .UNARY flag is present
-    // return_ptr:     *Node;      // only if return type is aggregate
-    result_stack_offset: int;
     directive:      *Node_Directive;
 }
 

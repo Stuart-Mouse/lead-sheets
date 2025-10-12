@@ -32,19 +32,21 @@ deinit_stack :: (stack: *Stack) {
         the parameter is also an auto-bake though, so you don't pay for the runtime flexibility it if you don't need it
 */
 
-push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := false) -> bool {
-    push_size := ifx indirect then 8 else (size + 7) & ~7;
-    if top + push_size >= memory + allocated  return false;
+// NOTE: if pointer is null, we just memset the pushed bytes to zero
+push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := false) -> *void {
+    push_size := ifx indirect then size_of(*void) else (size + 7) & ~7;
+    if top + push_size >= memory + allocated  return null;
     
     if indirect {
-        // store the pointer itself instead of the value
-        top.(**void).* = pointer; 
+        top.(**void).* = pointer;   // store the pointer itself instead of the value
+    } else if pointer == null {
+        memset(top, 0, push_size);
     } else {
         memcpy(top, pointer, size);
     }
     
-    top += push_size;
-    return true;
+    defer top += push_size;
+    return top;
 }
 
 pop :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
@@ -61,24 +63,55 @@ peek :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
     return ifx indirect then pointer.(**void).* else pointer;
 }
 
-push_zeroes :: (using script: *Script, size: int) -> bool {
-    push_size := (size + 7) & ~7;
-    if stack.top + push_size >= stack.memory + stack.allocated {
-        set_execution_error(script, "Ran out of space on stack!", node = null);
-        return false;
-    }
-    
-    memset(stack.top, 0, push_size);
-    stack.top += push_size;
-    return true;
+pop_as :: inline (using stack: *Stack, $T: Type) -> T {
+    return pop(stack, size_of(T)).(*T).*;
 }
+
+
+/*
+    push / pop arrays
+    
+    In addition to pushing the array data, we also push the array count.
+    This just seems like a very useful thing, and uses only marginally more stack space.
+    You can always push jsut the array data manually if you really want to.
+*/
+
+push_array :: inline (using stack: *Stack, array: [] $T, count: int) -> bool, [] T {
+    ok, returned_array := push_array(stack, array.data, size_of(T), count);
+    return ok, (*returned_array).(*[]T).*;
+}
+
+push_empty_array :: inline (using stack: *Stack, $T: Type, count: int) -> bool, [] T {
+    ok, array := push_array(stack, null, size_of(T), count);
+    return ok, (*array).(*[]T).*;
+}
+
+push_array :: (using stack: *Stack, pointer: *void, element_size: int, count: int) -> bool, Array_View_64 {
+    array := Array_View_64.{ count, push(stack, pointer, element_size * count) };
+    count_pointer := push(stack, *count, size_of(int));
+    
+    ok := array.data != null && count_pointer != null;
+    return ok, array;
+}
+
+pop_array :: inline (using stack: *Stack, $T: Type) -> [] T {
+    return (*pop_array(stack, size_of(T))).(*[]T).*;
+}
+
+pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
+    count := pop_as(stack, int);
+    array := Array_View_64.{ count, pop(stack, element_size * count) };
+    return array;
+}
+
+
 
 push_any :: (using script: *Script, any: Any, indirect := false) -> bool {
     dprint("push_any(%, %)", as_type(any.type), indirect);
     if indirect  dprint("pushed ptr value: %", any.value_pointer);
-    ok := push(*script.stack, any.value_pointer, any.type.runtime_size, indirect);
-    if !ok  set_execution_error(script, "Ran out of space on stack!", node = null);
-    return ok;
+    result := push(*script.stack, any.value_pointer, any.type.runtime_size, indirect);
+    if !result  set_execution_error(script, "Ran out of space on stack!", node = null);
+    return result != null;
 }
 
 pop_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
