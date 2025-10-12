@@ -1692,17 +1692,6 @@ Stack improvements part 3
     reducing allocations in stack frame for temporary values
         still require space in stack frame when we coerce to an Any in an assignment or declaration
 
-Now that we aren't just pushing all aggregates by pointer, we have some new problems
-    the first problem was to do with implicit referencing, but I think I fixed that
-    but the second problem (which is actually preventing me from fully testing the first problem's solution)
-    is that we really need some distinct flags to communicate that some node should push its value indirectly
-    and this should not be directly related to whether or not the value is an lvalue
-    for instance, in dot expressions, we only need the base pointer for the struct whose member we are accessing
-    and thus we should only push the pointer to the struct rather than pushing the whole ass thing
-    I think for now we can just test fixing this case by marking such nodes with .IS_LVALUE but as soon as this gets sorted out we should change the name of this flag to communicate the actual semantics better
-        PUSH_BY_POINTER (and thus also pop by pointer i guess)
-
-
 
 ## IMGUI menu for showing AST node structure
 

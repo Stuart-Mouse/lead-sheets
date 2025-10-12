@@ -43,7 +43,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     dprint_push_indent();
     
     dprint("stack_pointer offset: %  (%)\n", script.stack.top - script.stack.memory, script.stack.top);
-    if node.flags & .IS_LVALUE  dprint("expecting lvalue\n");
+    if node.flags & .PUSH_BY_POINTER  dprint("expecting lvalue\n");
     
     if !node.value_type {
         dprint("Warning: node has no set value type!\n");
@@ -65,29 +65,29 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .IS_LVALUE {
+        if literal.flags & .PUSH_BY_POINTER {
             assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         }
         
         if #complete literal.literal_type == {
           case .ANY;
-            if !push_any(script, literal.any, literal.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, literal.any, literal.flags & .PUSH_BY_POINTER != 0)  return false;
             dprint("returning literal with value %\n", literal.any);
             return true;
             
           case .STRING;
-            if !push_any(script, literal.text, literal.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, literal.text, literal.flags & .PUSH_BY_POINTER != 0)  return false;
             dprint("returning literal with value %\n", literal.text);
             return true;
             
           case .BOOLEAN; #through;
           case .NUMBER;
-            if !push_any(script, to_any(*literal.number), literal.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, to_any(*literal.number), literal.flags & .PUSH_BY_POINTER != 0)  return false;
             dprint("returning literal with value %\n", to_any(*literal.number));
             return true;
             
           case .STRUCT;
-            if !push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, literal.flags & .PUSH_BY_POINTER != 0)  return false;
             write_ptr := literal.aggr.value_pointer;
             // TODO: if we enhance typechecking to pass value pointer for these values, 
             //       then we don't need to do any pushing or popping from stack here.
@@ -115,7 +115,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
             dprint("returning internal variable with value % at %\n", variable_any, variable_any.value_pointer);
-            if !push_any(script, variable_any, identifier.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, variable_any, identifier.flags & .PUSH_BY_POINTER != 0)  return false;
             return true;
             
           case .EXTERNAL_VARIABLE;
@@ -129,13 +129,13 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             if variable.type.runtime_size > 8
                 then dprint("returning external variable at %\n", variable.value_pointer);
                 else dprint("returning external variable with value % at %\n", value, variable.value_pointer);
-            if !push_any(script, value, identifier.flags & .IS_LVALUE != 0)  return false;
+            if !push_any(script, value, identifier.flags & .PUSH_BY_POINTER != 0)  return false;
             return true;
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
             dprint("returning external procedure with type % at %\n", as_type(procedure.proc_info), procedure.pointer);
-            assert(identifier.flags & .IS_LVALUE == 0);
+            assert(identifier.flags & .PUSH_BY_POINTER == 0);
             if !push_any(script, procedure.pointer)  return false;
             return true;
             
@@ -173,7 +173,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
-            assert(operation.left.flags & .IS_LVALUE != 0);
+            assert(operation.left.flags & .PUSH_BY_POINTER != 0);
             r_value := pop_any(script, operation.right.value_type);
             l_value := pop_any(script, operation.left.value_type, true);
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
@@ -184,9 +184,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         right: Any;
         if !is_unary(_operator.kind) {
-            right = pop_any(script, operation.right.value_type, operation.right.flags & .IS_LVALUE != 0);
+            right = pop_any(script, operation.right.value_type, operation.right.flags & .PUSH_BY_POINTER != 0);
         }
-        left := pop_any(script, operation.left.value_type, operation.left.flags & .IS_LVALUE != 0);
+        left := pop_any(script, operation.left.value_type, operation.left.flags & .PUSH_BY_POINTER != 0);
         
         // TODO: swizzle arguments if needed
         
@@ -216,6 +216,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         return_ptr := script.stack.top;
         if !push_zeroes(script, procedure_call.value_type.runtime_size)  return false;
         
+        // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
         arguments: [] Any;
         arguments.data  = script.stack.top;
         arguments.count = proc_info.argument_types.count;
@@ -232,7 +233,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
             //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
-            argument_any := pop_any(script, it, argument_node.flags & .IS_LVALUE != 0);
+            argument_any := pop_any(script, it, argument_node.flags & .PUSH_BY_POINTER != 0);
             arguments[it_index] = argument_any;
             
             if argument_any.type.runtime_size > 8
@@ -280,8 +281,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if dst_type.type == .POINTER 
         && dst_type.(*Type_Info_Pointer).pointer_to == src_type {
             // Actually do nothing, but caller will pop the pointer as rvalue instead of as lvalue now
-            assert(node_cast.value.flags & .IS_LVALUE != 0);
-            assert(node_cast.flags & .IS_LVALUE == 0);
+            assert(node_cast.value.flags & .PUSH_BY_POINTER != 0);
+            assert(node_cast.flags & .PUSH_BY_POINTER == 0);
             
             if !execute_node(script, node_cast.value)  return false;
             dprint("implicitly taking pointer to % @ %\n", as_type(node_cast.value_type), peek_any(script, type_info(*void)));
@@ -335,7 +336,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %\n", struct_any.value_pointer);
             dprint("member value ptr: %\n", member_any.value_pointer);
             
-            if !push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            if !push_any(script, member_any, (dot.flags & .PUSH_BY_POINTER) == .PUSH_BY_POINTER)  return false;
             return true;
             
           case .STRUCT;
@@ -346,7 +347,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %\n", struct_any.value_pointer);
             dprint("member value ptr: %\n", member_any.value_pointer);
             
-            if !push_any(script, member_any, (dot.flags & .IS_LVALUE) == .IS_LVALUE)  return false;
+            if !push_any(script, member_any, (dot.flags & .PUSH_BY_POINTER) == .PUSH_BY_POINTER)  return false;
             return true;
             
           case .TYPE;
@@ -382,7 +383,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        if !push_any(script, element, node.flags & .IS_LVALUE == .IS_LVALUE)  return false;
+        if !push_any(script, element, node.flags & .PUSH_BY_POINTER == .PUSH_BY_POINTER)  return false;
         // dprint("returning result of indexing operation: %\n", element);
         
         if element.type.runtime_size > 8
@@ -411,6 +412,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("l_value.type: %\n", as_type(l_value.type));
             dprint("r_value.type: %\n", as_type(r_value.type));
             
+            dprint("r_value: %\n", r_value);
+            
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
@@ -428,7 +431,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // TODO: is_stack_frame_block
         if block.name || block == script.ast_root {
             script.stack.frame = script.stack.top;
-            script.stack.top   = script.stack.frame + block.stack_frame_size;
+            script.stack.top += block.stack_frame_size;
         }
         
         for block.statements {
@@ -436,9 +439,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         
         // Check that we've popped ourselves back to where we started
-        script.stack.top -= block.stack_frame_size;
-        assert(script.stack.top == previous_top, "stack.top does not match what it was when we entered this block! % != %", script.stack.top, previous_top);
-        script.stack.frame = previous_frame;
+        if block.name || block == script.ast_root {
+            script.stack.top -= block.stack_frame_size;
+            assert(script.stack.top == previous_top, "stack.top does not match what it was when we entered this block! % != %", script.stack.top, previous_top);
+            script.stack.frame = previous_frame;
+        }
         
         return true;
         

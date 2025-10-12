@@ -71,7 +71,7 @@ evaluate_node :: (
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .IS_LVALUE then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
+        if literal.flags & .PUSH_BY_POINTER then assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         
         if #complete literal.literal_type == {
           case .ANY;     result = literal.any;
@@ -106,7 +106,7 @@ evaluate_node :: (
             procedure := *script.procedures[identifier.index];
             result = to_any(procedure);
             // dprint("returning external procedure with type % at %\n", as_type(result.type), procedure.pointer);
-            assert(identifier.flags & .IS_LVALUE == 0);
+            assert(identifier.flags & .PUSH_BY_POINTER == 0);
             
           case .LITERAL;
             result = evaluate_node(script, identifier.literal, hint_storage);
@@ -139,7 +139,7 @@ evaluate_node :: (
             
             if operation.name == "=" {
                 // special case: operator = is always a simple memcpy
-                assert(operation.left.flags & .IS_LVALUE != 0);
+                assert(operation.left.flags & .PUSH_BY_POINTER != 0);
                 memcpy(left_any.value_pointer, right_any.value_pointer, right_any.type.runtime_size);
                 result = left_any;
             } else {

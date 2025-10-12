@@ -12,7 +12,7 @@ Node :: struct {
     Flags :: enum_flags { 
         TYPECHECKED;
         IS_ARROW;               // denotes that a Node_Dot is actually an arrow
-        IS_LVALUE;
+        PUSH_BY_POINTER;
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
         MACRO;                  // marks declarations with :: which act as simple AST node references to the init_expression

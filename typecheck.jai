@@ -273,7 +273,7 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
     if is_valid_lvalue(script, node)
     && can_do_implicit_reference(node, type) {
         // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
-        node.flags |= .IS_LVALUE;
+        node.flags |= .PUSH_BY_POINTER;
         dprint("made implicit cast for implicit reference: %", as_type(type));
         return true, make_implicit_cast(script, node, type);
     }
@@ -338,7 +338,7 @@ set_as_lvalue :: (script: *Script, node: *Node) -> bool {
         set_typecheck_error(script, message, node = node);
         return false;
     }
-    node.flags |= .IS_LVALUE;
+    node.flags |= .PUSH_BY_POINTER;
     return true;
 }
 
@@ -919,7 +919,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         
         // NOTE: we also need to remove the EXPECT_LVALUE flag if it was set for the pointer iself.
         //       this is currently the only spot we ever do this, so its a bit weird!
-        dot.left.flags &= ~.IS_LVALUE;
+        dot.left.flags &= ~.PUSH_BY_POINTER;
         #through;
         
       case .STRUCT;
@@ -958,9 +958,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         dot.value_type = member_ti.type;
         
         // NOTE: if we are not implicitly dereferencing the left side here, we want to make sure left side only pushes the struct pointer to the stack
-        if left_type.type != .POINTER {
-            dot.left.flags |= .IS_LVALUE;
-        }
+        if dot.left.value_type.type != .POINTER { dot.left.flags |= .PUSH_BY_POINTER; }
         
         return; // no error
         
