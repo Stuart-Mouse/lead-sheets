@@ -216,11 +216,17 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         return_ptr := script.stack.top;
         if !push_zeroes(script, procedure_call.value_type.runtime_size)  return false;
         
+        arguments: [] Any;
+        arguments.data  = script.stack.top;
+        arguments.count = proc_info.argument_types.count;
+        arguments_push_size := arguments.count * size_of(Any);
+        if !push_zeroes(script, arguments_push_size)  return false;
+        
         spba := script.stack.top;
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
-        arguments := NewArray(proc_info.argument_types.count, Any,, temp);
+        // arguments := NewArray(proc_info.argument_types.count, Any,, temp);
         for < proc_info.argument_types {
             argument_node := procedure_call.arguments[it_index];
             
@@ -255,6 +261,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         
         dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
+        
+        pop(*script.stack, arguments_push_size);
         
         if procedure_call.flags & .DISCARD_VALUE {
             pop_any(script, procedure_call.value_type);
