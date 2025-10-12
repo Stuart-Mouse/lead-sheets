@@ -134,7 +134,7 @@ Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (boo
 walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, data: *void) -> bool {
     node := _node.*;
     if node == null {
-        dprint("Warning: node was null in walk_nodes.\n");
+        dprint("Warning: node was null in walk_nodes.");
         return true; // TODO: make false later probably...
     }
     
@@ -286,7 +286,7 @@ dprint :: (format_string: string, args: ..Any, newline := true) {
         }
         print(format_string, ..args);
         if newline {
-            // print("\n");
+            print("\n");
         }
         context.dprint.skip_indent = !newline;
     }

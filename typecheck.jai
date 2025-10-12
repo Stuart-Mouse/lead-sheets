@@ -35,9 +35,9 @@ typecheck_node :: (
 ) -> (
     value_type:     *Type_Info
 ) {
-    dprint("typechecking node % % (%)\n", node, node.node_type, get_location(node));
-    dprint("expecting type: %\n", as_type(hint_type));
-    // dprint("%\n", sprint_node(script, node));
+    dprint("typechecking node % % (%)", node, node.node_type, get_location(node));
+    dprint("expecting type: %", as_type(hint_type));
+    // dprint("%", sprint_node(script, node));
     dprint_push_indent();
     
     // if already typechecked, just return resolved type
@@ -279,7 +279,7 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
     }
     
     // if try_implicit_reference(script, node, type) {
-    //     dprint("took implicit reference to node with value_type '%'\n", as_type(node.value_type));
+    //     dprint("took implicit reference to node with value_type '%'", as_type(node.value_type));
     //     return true, null;  
     // }
     
@@ -534,7 +534,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         //       for its backing value instead of allocating its own space for value
         literal.value_type = ti_struct;
         literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
-        dprint("allocated space for literal of type %, node %\n", literal.value_type, literal);
+        dprint("allocated space for literal of type %, node %", literal.value_type, literal);
     }
     
     assert(literal.value_type != null);
@@ -559,7 +559,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         //       this may be a good idea to go ahead and implement since it would allow us to use such an identifier in a type expression.
         if declaration.flags & .IS_CONSTANT {
             if check_flags & .EXPECT_LVALUE {
-                dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue\n", get_declaration_name(script, declaration));
+                dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue", get_declaration_name(script, declaration));
                 declaration.flags &= ~.IS_CONSTANT;
             }
             // if declaration.flags & .MACRO {
@@ -689,7 +689,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         if is_aggr(operation.value_type) {
             operation.result_stack_offset = get_stack_space(script, operation.value_type.runtime_size, operation.scope);
             // operation.return_ptr = Dynamic_New(operation.value_type,, get_pool_allocator(*script.pool));
-            // dprint("allocating variable of type % at % for node %\n", as_type(operation.value_type), operation.return_ptr, operation);
+            // dprint("allocating variable of type % at % for node %", as_type(operation.value_type), operation.return_ptr, operation);
         }
         
         return;
@@ -819,7 +819,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         
         procedure_call.return_value_stack_offset = get_stack_space(script, procedure_call.value_type.runtime_size, procedure_call.scope);
         // procedure_call.return_ptr = Dynamic_New(procedure_call.value_type,, get_pool_allocator(*script.pool));
-        // dprint("allocating variable of type % at % for node %\n", as_type(procedure_call.value_type), procedure_call.return_ptr, procedure_call);
+        // dprint("allocating variable of type % at % for node %", as_type(procedure_call.value_type), procedure_call.return_ptr, procedure_call);
     }
     assert(procedure_call.value_type != null);
 }
@@ -931,7 +931,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         member_identifier := dot.right.(*Node_Identifier);
         assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
         member_name := member_identifier.name;
-        dprint("typechecking struct member identifier at % with name '%'\n", member_identifier, member_name);
+        dprint("typechecking struct member identifier at % with name '%'", member_identifier, member_name);
         
         member_ti, member_offset := get_field(xx left_type, member_name);
         if member_ti == null {
@@ -1120,8 +1120,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         return;
     }
     
-    dprint("explicit_type: %\n", explicit_type);
-    dprint("right_type: %\n", right_type);
+    dprint("explicit_type: %", explicit_type);
+    dprint("right_type: %", right_type);
     
     declaration.value_type = ifx explicit_type else right_type;
     
@@ -1186,11 +1186,11 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     
     if #complete for_loop.control_type == {
       case .RANGE;
-        dprint("typechecking range lower\n");
+        dprint("typechecking range lower");
         lower_type := typecheck_node(script, for_loop.range.lower, hint_type = xx int);
         if has_error(script)  return;
         
-        dprint("typechecking range upper\n");
+        dprint("typechecking range upper");
         upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
         if has_error(script)  return;
         

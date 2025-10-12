@@ -45,7 +45,7 @@ evaluate_node :: (
     hint_storage:   *void    = null,
     explicit_call := false
 ) -> Any {
-    dprint("evaluating node %: %\n", node, node.node_type);
+    dprint("evaluating node %: %", node, node.node_type);
     dprint_push_indent();
     
     if script.evaluate_callback {
@@ -95,17 +95,17 @@ evaluate_node :: (
           case .DECLARATION;
             declaration := identifier.declaration;
             result = Any.{ identifier.value_type, declaration.value_pointer };
-            dprint("returning internal variable with value % at %\n", result, result.value_pointer);
+            dprint("returning internal variable with value % at %", result, result.value_pointer);
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
             result = get_value(variable);
-            dprint("returning external variable with value % at %\n", result, result.value_pointer);
+            dprint("returning external variable with value % at %", result, result.value_pointer);
             
           case .EXTERNAL_PROCEDURE;
             procedure := *script.procedures[identifier.index];
             result = to_any(procedure);
-            // dprint("returning external procedure with type % at %\n", as_type(result.type), procedure.pointer);
+            // dprint("returning external procedure with type % at %", as_type(result.type), procedure.pointer);
             assert(identifier.flags & .PUSH_BY_POINTER == 0);
             
           case .LITERAL;
@@ -150,7 +150,7 @@ evaluate_node :: (
                 }
             }
             
-            dprint("returning result of binary operation % % % -> % %\n", left_any, operation.name, right_any, as_type(result.type), result);
+            dprint("returning result of binary operation % % % -> % %", left_any, operation.name, right_any, as_type(result.type), result);
         }
         
         
@@ -161,7 +161,7 @@ evaluate_node :: (
         if has_error(script)  return NULL_ANY;
         
         assert(proc_any.type.type == .PROCEDURE);
-        dprint("proc_type: %\n", as_type(proc_any.type));
+        dprint("proc_type: %", as_type(proc_any.type));
         
         arguments := NewArray(procedure_call.arguments.count, Any,, temp);
         for procedure_call.arguments {
@@ -185,7 +185,7 @@ evaluate_node :: (
                 return NULL_ANY;
             }
         }
-        dprint("returning result of procedure call: %\n", result);
+        dprint("returning result of procedure call: %", result);
         
         
       case Node_Cast;
@@ -223,8 +223,8 @@ evaluate_node :: (
                 struct_any = dereference_any_pointer(struct_any);
                 
                 result = Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
-                dprint("struct value ptr: %\n", struct_any.value_pointer);
-                dprint("member value ptr: %\n", result.value_pointer);
+                dprint("struct value ptr: %", struct_any.value_pointer);
+                dprint("member value ptr: %", result.value_pointer);
                 
               case .TYPE;
                 result = evaluate_node(script, dot.right, hint_storage);
@@ -255,7 +255,7 @@ evaluate_node :: (
         }
         
         result = Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        dprint("returning result of indexing operation: %\n", result);
+        dprint("returning result of indexing operation: %", result);
         
     
       case Node_Declaration;
@@ -277,7 +277,7 @@ evaluate_node :: (
         if block.name && !explicit_call  return NULL_ANY;
         
         for block.statements {
-            dprint("executing statement #%\n", it_index);
+            dprint("executing statement #%", it_index);
             evaluate_node(script, it);
             if has_error(script)  return NULL_ANY;
         }
@@ -289,7 +289,7 @@ evaluate_node :: (
         condition := evaluate_node(script, if_statement.condition);
         if has_error(script)  return NULL_ANY;
         
-        dprint("condition: % %\n", as_type(condition.type), condition);
+        dprint("condition: % %", as_type(condition.type), condition);
         
         condition_as_bool: bool;
         Convert.any_to_bool(condition_as_bool, condition);
@@ -306,7 +306,7 @@ evaluate_node :: (
             condition := evaluate_node(script, while_loop.condition);
             if has_error(script)  return NULL_ANY;
             
-            dprint("condition: % %\n", as_type(condition.type), condition);
+            dprint("condition: % %", as_type(condition.type), condition);
             
             condition_as_bool: bool;
             Convert.any_to_bool(condition_as_bool, condition);

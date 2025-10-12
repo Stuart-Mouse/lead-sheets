@@ -74,17 +74,17 @@ push_zeroes :: (using script: *Script, size: int) -> bool {
 }
 
 push_any :: (using script: *Script, any: Any, indirect := false) -> bool {
-    dprint("push_any(%, %)\n", as_type(any.type), indirect);
-    if indirect  dprint("pushed ptr value: %\n", any.value_pointer);
+    dprint("push_any(%, %)", as_type(any.type), indirect);
+    if indirect  dprint("pushed ptr value: %", any.value_pointer);
     ok := push(*script.stack, any.value_pointer, any.type.runtime_size, indirect);
     if !ok  set_execution_error(script, "Ran out of space on stack!", node = null);
     return ok;
 }
 
 pop_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
-    dprint("pop_any(%, %)\n", as_type(type), indirect);
+    dprint("pop_any(%, %)", as_type(type), indirect);
     value_pointer := pop(*script.stack, type.runtime_size, indirect);
-    if indirect  dprint("popped ptr value: %\n", value_pointer);
+    if indirect  dprint("popped ptr value: %", value_pointer);
     return Any.{ type, value_pointer };
 }
 
