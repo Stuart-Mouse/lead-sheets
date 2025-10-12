@@ -100,13 +100,13 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             }
             return true;
         }
-        return false;
+        assert(false, "Invalid literal type in execute_node.");
         
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
         dprint("name: %", get_identifier_name(script, identifier));
-        if identifier.identifier_type == {
+        if #complete identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
             if declaration.flags & .MACRO {
@@ -142,11 +142,13 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
           case .LITERAL;
             return execute_node(script, identifier.literal);
             
-          case;
-            set_execution_error(script, "Unhandled case in execute_node for identifier type: %", identifier.identifier_type, node = node);
-            return false;
+            
+            // identifier types that should never be executed:
+          case .UNRESOLVED;
+          case .TYPE;
+          case .STRUCT_MEMBER;
         }
-        return false;
+        assert(false, "Invalid identifier type in execute_node: %", identifier.identifier_type);
         
         
       case Node_Operation;
@@ -256,7 +258,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             }
         } else {
             if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, result_array) {
-                log("Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
                 return false;
             }
         }
@@ -285,7 +287,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             assert(node_cast.flags & .PUSH_BY_POINTER == 0);
             
             if !execute_node(script, node_cast.value)  return false;
-            dprint("implicitly taking pointer to % @ %", as_type(node_cast.value_type), peek_any(script, type_info(*void)));
             return true;
         }
         
@@ -300,7 +301,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         if !execute_node(script, node_cast.value)  return false;
         src := pop_any(script, node_cast.value.value_type);
         
-        if !Convert.any_to_any(dst, src)  return false;
+        if !Convert.any_to_any(dst, src) {
+            set_general_error(script, "Failed to execute cast from % to %. Source value was %", as_type(src.type), as_type(dst.type), src);
+            return false;
+        }
         
         return true;
         
@@ -450,10 +454,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
-        if !execute_node(script, if_statement.condition) {
-            dprint("failed to evaluate left side of assignment statement!");
-            return false;
-        }
+        if !execute_node(script, if_statement.condition)  return false;
         
         condition := pop_any(script, if_statement.condition.value_type);
         dprint("condition: % %", as_type(condition.type), condition);
@@ -461,10 +462,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         condition_as_bool: bool;
         Convert.any_to_bool(condition_as_bool, condition);
         if condition_as_bool {
-            if !execute_node(script, if_statement.statement) {
-                dprint("failed to evaluate left side of assignment statement!");
-                return false;
-            }
+            if !execute_node(script, if_statement.statement)  return false;
         }
         return true;
         
@@ -472,10 +470,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
       case Node_While_Loop;
         while_loop := node.(*Node_While_Loop);
         while loop := true {
-            if !execute_node(script, while_loop.condition) {
-                dprint("failed to evaluate left side of assignment statement!");
-                return false;
-            }
+            if !execute_node(script, while_loop.condition)  return false;
             
             condition := pop_any(script, while_loop.condition.value_type);
             dprint("condition: % %", as_type(condition.type), condition);
@@ -484,10 +479,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             Convert.any_to_bool(condition_as_bool, condition);
             if !condition_as_bool  break loop;
             
-            if !execute_node(script, while_loop.statement) {
-                dprint("failed to evaluate left side of assignment statement!");
-                return false;
-            }
+            if !execute_node(script, while_loop.statement)  return false;
         }
         return true;
         
@@ -496,10 +488,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         for_loop := node.(*Node_For_Loop);
         if for_loop.control_type == {
           case .ARRAY;
-            if !execute_node(script, for_loop.array_expression) {
-                dprint("failed to evaluate for loop control node!");
-                return false;
-            }
+            if !execute_node(script, for_loop.array_expression)  return false;
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
             array := pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
@@ -512,48 +501,41 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             for_loop.it_index_decl.value_pointer = *it_index;
             
             while it_index < array_count {
-                defer {
-                    for_loop.it_decl.value_pointer += ti_array.element_type.runtime_size;
-                    it_index += 1;
-                }
-                
-                if !execute_node(script, for_loop.statement) {
-                    dprint("failed to evaluate for loop statement!");
-                    return false;
-                }
+                if !execute_node(script, for_loop.statement)  return false;
+                for_loop.it_decl.value_pointer += ti_array.element_type.runtime_size;
+                it_index += 1;
             }
             return true;
             
           case .RANGE;
-            if !execute_node(script, for_loop.range.lower) {
-                dprint("failed to evaluate for_loop.range.lower!");
-                return false;
-            }
-            if !execute_node(script, for_loop.range.upper) {
-                dprint("failed to evaluate for_loop.range.upper!");
-                return false;
-            }
+            if !execute_node(script, for_loop.range.lower)  return false;
+            if !execute_node(script, for_loop.range.upper)  return false;
             
             control_type := for_loop.range.lower.value_type;
             upper := pop_any(script, control_type);
             lower := pop_any(script, control_type);
+            
             upper_as_s64: int;
+            if !Convert.any_to_int(upper_as_s64, upper) {
+                set_execution_error(script, "Failed to convert upper bound of for loop iteration range to s64. Source value was % of type %", upper, as_type(upper.type), node = for_loop.range.upper);
+                return false;
+            }
+            
             lower_as_s64: int;
-            Convert.any_to_int(upper_as_s64, upper);
-            Convert.any_to_int(lower_as_s64, lower);
+            if !Convert.any_to_int(lower_as_s64, lower) {
+                set_execution_error(script, "Failed to convert lower bound of for loop iteration range to s64. Source value was % of type %", lower, as_type(lower.type), node = for_loop.range.lower);
+                return false;
+            }
             
             for lower_as_s64..upper_as_s64 {
-                _it: u64 = 0; // just need 8 bytes of zeros. we will just use this space as dst for dynamically typed int value for iterator
+                _it: Number_Union;
                 Convert.any_to_any(Any.{ control_type, *_it }, it);
                 
                 for_loop.it_decl.value_pointer = *_it;
                 // TODO: for now we just don't set it_index. 
                 // we should probably prevent using it_index for range-based loops in typecheck 
                 
-                if !execute_node(script, for_loop.statement) {
-                    dprint("failed to evaluate for loop statement!");
-                    return false;
-                }
+                if !execute_node(script, for_loop.statement)  return false;
             }
             return true;
             
@@ -564,15 +546,12 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 _it_index = it_index;
                 if !execute_node(script, it)  return false;
                 for_loop.it_decl.value_pointer = pop_any(script, for_loop.it_decl.value_type, true).value_pointer;
-                if !execute_node(script, for_loop.statement) {
-                    dprint("failed to evaluate for loop statement!");
-                    return false;
-                }
+                if !execute_node(script, for_loop.statement)  return false;
             }
             return true;
         }
         
-        return false;
+        assert(false, "Invalid control expression in for loop.");
     }
     
     assert(false);
