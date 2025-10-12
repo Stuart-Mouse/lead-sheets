@@ -41,11 +41,6 @@ Script :: struct {
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
     
-    // TODO: remove this fully for now
-    // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
-    get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
-    get_virtual_member_user_data:   *void;
-    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
@@ -69,7 +64,7 @@ deinit_script :: (using script: *Script) {
     }
 }
 
-init_script :: (script: *Script, stack_size := 1024) {
+init_script :: (script: *Script, stack_size := 2048) {
     script.* = .{};
     init(*script.pool);
     
@@ -280,18 +275,27 @@ Convert :: #import "Convert";
     #import "dyncall";
 }
 
-#if DEBUG { #add_context dprint_indent: int; }
+// TODO: we could improve indentation handling by splitting the formatted string on newlines and inserting indentation between each non-empty line
 
-dprint :: (format_string: string, args: .. Any) {
+#if DEBUG { #add_context dprint: struct { indent: int; skip_indent: bool; }; }
+
+dprint :: (format_string: string, args: ..Any, newline := true) {
     #if DEBUG {
-        for 0..context.dprint_indent  print("  ");
+        if !context.dprint.skip_indent {
+            for 1..context.dprint.indent  print("  ");
+        }
         print(format_string, ..args);
+        if newline {
+            // print("\n");
+        }
+        context.dprint.skip_indent = !newline;
     }
 }
+
 dprint_push_indent :: () #expand {
     #if DEBUG {
-        context.dprint_indent += 1;
-        `defer context.dprint_indent -= 1;
+        context.dprint.indent += 1;
+        `defer context.dprint.indent -= 1;
     }
 }
 

@@ -269,10 +269,19 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
-    if try_implicit_reference(script, node, type) {
-        dprint("took implicit reference to node with value_type '%'\n", as_type(node.value_type));
-        return true, null;  
+    
+    if is_valid_lvalue(script, node)
+    && can_do_implicit_reference(node, type) {
+        // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
+        node.flags |= .IS_LVALUE;
+        dprint("made implicit cast for implicit reference: %", as_type(type));
+        return true, make_implicit_cast(script, node, type);
     }
+    
+    // if try_implicit_reference(script, node, type) {
+    //     dprint("took implicit reference to node with value_type '%'\n", as_type(node.value_type));
+    //     return true, null;  
+    // }
     
     if node.node_type == Node_Literal {
         return coerce_literal_type(xx node, type), null;
@@ -295,6 +304,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
         new_number := Any_Number.zero_of_type(type);
         Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
         literal.number = new_number;
+        literal.value_type = type;
         return true;
     }
     log("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
@@ -317,16 +327,6 @@ can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     return false;
 }
 
-
-// just flags the node as an lvalue if successful
-try_implicit_reference :: (script: *Script, node: *Node, type: *Type_Info) -> bool {
-    if !is_valid_lvalue(script, node)  return false;
-    if !can_do_implicit_reference(node, type)  return false;
-    
-    // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
-    node.flags |= .IS_LVALUE;
-    return true;
-}
 
 set_as_lvalue :: (script: *Script, node: *Node) -> bool {
     ok, message := is_valid_lvalue(script, node);
@@ -956,6 +956,12 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         member_identifier.value_type = member_ti.type;
         member_identifier.flags |= .TYPECHECKED;
         dot.value_type = member_ti.type;
+        
+        // NOTE: if we are not implicitly dereferencing the left side here, we want to make sure left side only pushes the struct pointer to the stack
+        if left_type.type != .POINTER {
+            dot.left.flags |= .IS_LVALUE;
+        }
+        
         return; // no error
         
       // case .ENUM;

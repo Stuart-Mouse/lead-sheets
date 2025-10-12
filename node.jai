@@ -45,17 +45,12 @@ Node_Block :: struct {
     name:                   string;
     statements:             [] *Node;
     
-    // TODO: Maybe we should get this through some procedure, rather than just incrementing it here
-    // TODO: we should not have every single block as a stack frame. This is dumb, but I am doing it rn as a simple test
+    // TODO: figure out how to not have to store this on every block...?
     stack_frame_size:       int;
-    stack_frame_pointer:    *void;
 }
 
 get_stack_space :: (script: *Script, requested_size: int, scope: *Node) -> stack_offset: int {
     block := get_stack_frame_block(script, scope);
-    
-    // assert(parent_block.node_type == Node_Block);
-    // block := parent_block.(*Node_Block);
     
     current_offset := block.stack_frame_size;
     
@@ -89,33 +84,13 @@ Node_Cast :: struct {
 }
 
 /*
-    A note about identifiers and declarations:
-    Because identifiers can refer to both internal declarations and external variables and procedures, 
-        it is simpler to put the resolved type on the identifier node itself rather than 
-        creating and maintaining declaration nodes for the external variables and procedures.
-    The external variables in particular add complication because they can be subbed out, 
-        so we need an additional indirection in accessing them from scripts.
-    We could still make it work this way by holding a pointer to the corresponding declaration and then using that to update the declaration's value_pointer when the external variable is updated
-    BUT this means we NEED to have these declaration nodes in order to even use the external variables in expressions
-    and maybe we don't want that if we want the user to be able to purely use the script as a way of evaluating expressions whose nodes are just allocated in temp
-    and that use case would be completely broken, becuase we'd be absolutely forcing the use of the pool allocator...
-        but maybe we should just do that if it allows us to greatly simplify the identifier resolution code?
-    
-        
     NOTES:
-        identifier.name is now only valid when unresolved
+        identifier.name is only valid when identifier_type is UNRESOLVED
+            because of this, the identifer in Node_Declaration.left is always left as UNRESOLVED 
+            this is fine in this case because we never execute this node, and it is only ever accessed through the declaration
         after the identifier is resolved, the name must be retrieved indirectly, depending on the resolved type
         this indireciton means that we can change the identifier more dynamically now while the code is still in AST
         but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
-        
-        external variables, procedures, and types all now use the same index member in the union
-        
-        LITERAL has been added as an identifier type, to be used in place of ENUM
-            this will allow us to implement things like use of constant struct members
-    
-        left side of node_dot can now be null since we actually go through node_dot now for enums
-        
-    
 */
 Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
 
@@ -180,8 +155,7 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     if declaration.flags & .MACRO {
         return declaration.value_pointer;
     }
-    block := get_stack_frame_block(script, declaration);
-    return block.stack_frame_pointer + declaration.stack_offset;
+    return script.stack.frame + declaration.stack_offset;
 }
 
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
@@ -197,11 +171,6 @@ Node_Procedure_Call :: struct {
     arguments:              [] *Node;
     // return_ptr:             *void; // will point to some memory allocated in script pool if return type is an aggregate type
     return_value_stack_offset:  int;
-}
-
-get_return_value_pointer :: (script: *Script, procedure_call: *Node_Procedure_Call) -> *void {
-    block := get_stack_frame_block(script, procedure_call);
-    return block.stack_frame_pointer + procedure_call.return_value_stack_offset;
 }
 
 Node_Directive :: struct {
@@ -290,11 +259,6 @@ get_precedence :: inline (script: *Script, node: *Node_Operation) -> int {
 
 get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator.Kind {
     return get_operator(script, node).kind;
-}
-
-get_result_value_pointer :: (script: *Script, op: *Node_Operation) -> *void {
-    block := get_stack_frame_block(script, op);
-    return block.stack_frame_pointer + op.result_stack_offset;
 }
 
 // TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant

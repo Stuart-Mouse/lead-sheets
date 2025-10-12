@@ -239,7 +239,7 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
         NOTE: This doesn't perform any type checking on its own. 
               That can be done generically, so it's not included in the generated procedure body.
     */
-    call_procedure :: (procedure: $P, arguments: [] Any, return_values: [] Any) #modify {
+    call_procedure :: (procedure: $P, arguments: [] Any, return_values: [] Any, $check_types := true) #modify {
         return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type.";
     } {
         proc_info :: type_info(P);
@@ -257,6 +257,10 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
             }
             for 0..proc_info.return_types.count-1 {
                 print(*builder, "Tr%1 :: #run (*proc_info.return_types[%1]).(*Type).*;\n", it);
+            }
+            
+            for 0..proc_info.argument_types.count-1 {
+                print(*builder, "assert(xx Ta%1 == arguments[%1].type);\n", it);
             }
             
             for 0..proc_info.return_types.count-1 {

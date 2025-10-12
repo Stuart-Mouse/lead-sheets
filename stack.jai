@@ -9,10 +9,6 @@ Stack :: struct {
     allocated:      int;
     top:            *void;
     frame:          *void;
-    
-    // Word :: Number_Union;
-    WORD_SIZE :: size_of(*void);
-    // #assert(size_of(Word) == WORD_SIZE);
 }
 
 // TODO: ensure that stack base is aligned to 8 bytes
@@ -30,84 +26,71 @@ deinit_stack :: (stack: *Stack) {
     free(stack.memory);
 }
 
+/*
+    NOTE: 
+        the 'indirect' parameters are there so that we can use the same code path for cases where we want to push/pop some value directly and cases where we want to push/pop just a pointer
+        the parameter is also an auto-bake though, so you don't pay for the runtime flexibility it if you don't need it
+*/
+
 push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := false) -> bool {
-    if top >= memory + allocated  return false;
+    push_size := ifx indirect then 8 else (size + 7) & ~7;
+    if top + push_size >= memory + allocated  return false;
     
     if indirect {
         // store the pointer itself instead of the value
         top.(**void).* = pointer; 
     } else {
-        assert(size <= WORD_SIZE);
-        memset(top, 0, WORD_SIZE);          // in case element size is less than word size
-        memcpy(top, pointer, size); 
+        memcpy(top, pointer, size);
     }
     
-    top += WORD_SIZE;
+    top += push_size;
     return true;
 }
 
-pop :: inline (using stack: *Stack, $$indirect := false) -> *void {
-    top -= WORD_SIZE;
+pop :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
+    pop_size := ifx indirect then 8 else (size + 7) & ~7;
+    top -= pop_size;
     assert(top >= memory, "Invalid stack pop!");
     return ifx indirect then top.(**void).* else top;
 }
 
-peek :: inline (using stack: *Stack, $$indirect := false) -> *void {
-    pointer := top - WORD_SIZE;
+peek :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
+    pop_size := ifx indirect then 8 else (size + 7) & ~7;
+    pointer := top - pop_size;
     assert(pointer >= memory, "Invalid stack peek!");
     return ifx indirect then pointer.(**void).* else pointer;
 }
 
-push_zeroes :: (using script: *Script, count: int) -> bool {
-    if stack.top + count >= stack.memory + stack.allocated {
+push_zeroes :: (using script: *Script, size: int) -> bool {
+    push_size := (size + 7) & ~7;
+    if stack.top + push_size >= stack.memory + stack.allocated {
         set_execution_error(script, "Ran out of space on stack!", node = null);
         return false;
     }
     
-    memset(stack.top, 0, count);
-    stack.top += count;
+    memset(stack.top, 0, push_size);
+    stack.top += push_size;
     return true;
 }
 
 push_any :: (using script: *Script, any: Any, indirect := false) -> bool {
-    if stack.top >= stack.memory + stack.allocated {
-        set_execution_error(script, "Ran out of space on stack!", node = null);
-        return false;
-    }
-    
-    if is_aggr(any.type) || indirect {
-        // store the pointer itself instead of the value
-        stack.top.(**void).* = any.value_pointer; 
-    } else {
-        assert(any.type.runtime_size <= stack.WORD_SIZE);
-        memset(stack.top, 0, stack.WORD_SIZE);
-        memcpy(stack.top, any.value_pointer, stack.WORD_SIZE); 
-    }
-    
-    stack.top += stack.WORD_SIZE;
-    return true;
+    dprint("push_any(%, %)\n", as_type(any.type), indirect);
+    if indirect  dprint("pushed ptr value: %\n", any.value_pointer);
+    ok := push(*script.stack, any.value_pointer, any.type.runtime_size, indirect);
+    if !ok  set_execution_error(script, "Ran out of space on stack!", node = null);
+    return ok;
 }
 
-pop_any :: (using script: *Script, ti: *Type_Info, indirect := false) -> Any {
-    stack.top -= stack.WORD_SIZE;
-    assert(stack.top >= stack.memory, "Invalid stack pop!");
-    if is_aggr(ti) || indirect {
-        return Any.{ ti, stack.top.(**void).* }; // additional dereference to get pointer to value
-    } else {
-        assert(ti.runtime_size <= stack.WORD_SIZE);
-        return Any.{ ti, stack.top };
-    }
+pop_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
+    dprint("pop_any(%, %)\n", as_type(type), indirect);
+    value_pointer := pop(*script.stack, type.runtime_size, indirect);
+    if indirect  dprint("popped ptr value: %\n", value_pointer);
+    return Any.{ type, value_pointer };
 }
 
-peek_any :: (using script: *Script, ti: *Type_Info, indirect := false) -> Any {
-    pointer := stack.top - stack.WORD_SIZE;
-    assert(stack.top >= stack.memory, "Invalid stack peek!");
-    if is_aggr(ti) || indirect {
-        return Any.{ ti, pointer.(**void).* }; // additional dereference to get pointer to value
-    } else {
-        assert(ti.runtime_size <= stack.WORD_SIZE);
-        return Any.{ ti, pointer };
-    }
+peek_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
+    value_pointer := peek(*script.stack, type.runtime_size, indirect);
+    return Any.{ type, value_pointer };
 }
 
 is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {

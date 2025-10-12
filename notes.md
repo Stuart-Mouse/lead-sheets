@@ -1651,9 +1651,9 @@ It's not exaclty rigorous, but we could potentially just give eval a different t
 
 Stack Improvements Part 2:
     Make sure that Stack base is aligned to 8 bytes (probably already should be)
-    push bytes for all declarations in scope at beginning of scope
-    non-static declarations get some stack offset relative to stack base pointer for parent Node_Block
-    When declaration executes, we return either value_pointer (static decl) or scope.stack_pointer + stack_offset
+    -- push bytes for all declarations in scope at beginning of scope
+    -- non-static declarations get some stack offset relative to stack base pointer for parent Node_Block
+    -- When declaration executes, we return either value_pointer (static decl) or scope.stack_pointer + stack_offset
 
 For any node whose value type is not <= 8 bytes, and where there is no hint storage, we need to also allocate stack space for those that will get pushed on scope entry, just like for non-static declarations
 
@@ -1663,15 +1663,44 @@ to summarize:
 
 in theory, we could probably just push and pop even larger temporaries on the stack freely like we will do for small values
     however, we then need to make it a special case when we coerce to an Any
-        acutally, this will need to be a special case anyhow, since we will need persistent storage in any case, even for small intermediates
+        actually, this will need to be a special case anyhow, since we will need persistent storage in any case, even for small intermediates
 
-new problem:
-    if we use each block scope as a stack frame, we end up with a big problem
-    if we try to access a declaration form an outer scope, we will get the wrong value pointer, 
-        since it will use the local scope's frame pointer, not the frame pointer of the scope the declaration belongs to
-    so either we need to store a frame pointer on every block
-    or we need to use some more encompassing block as our stack frame reference point
-    really, we should probably only use the root block and named blocks (assuming we make those callable) as stack frames
+
+About Stack Frames:
+    Currently, each stack frame is associated with a named block, or with the root block of the script.
+    Until we introduce some way to call blocks from within scripts (and maybe pass parameters to those blocks, since we may as well just support function declarations at that point),
+        stack frames don't make a whole lot of practical difference to how we were allocating things before (using Dynamic_New with th script's pool allocator).
+
+Handling temporary values:
+    At current, we are allocating space in the base stack frame for all temporaries that are aggregates.
+    This is bad, and really these things don't even need to be pre-allocated when we can just push and pop them like anything else.
+    However, the main issue with doing so is that we can't peek a value on the top of the stack unless we know the size/type.
+        Which, maybe is not a problem at all, but it's something we have to be aware of now.
+    It also ---could--- would complicate the logic for builtin operations if we now no longer are guaranteed that all stack elements are the same size
+        So, we need to investigate this before making the change.
+
+
+For what nodes can we hint storage?
+    members of struct literals
+    rhs of assignment, declaration
+
+
+Stack improvements part 3
+    add ability to push aggregates to stack by value
+        what changes are required for builtin operations?
+        
+    reducing allocations in stack frame for temporary values
+        still require space in stack frame when we coerce to an Any in an assignment or declaration
+
+Now that we aren't just pushing all aggregates by pointer, we have some new problems
+    the first problem was to do with implicit referencing, but I think I fixed that
+    but the second problem (which is actually preventing me from fully testing the first problem's solution)
+    is that we really need some distinct flags to communicate that some node should push its value indirectly
+    and this should not be directly related to whether or not the value is an lvalue
+    for instance, in dot expressions, we only need the base pointer for the struct whose member we are accessing
+    and thus we should only push the pointer to the struct rather than pushing the whole ass thing
+    I think for now we can just test fixing this case by marking such nodes with .IS_LVALUE but as soon as this gets sorted out we should change the name of this flag to communicate the actual semantics better
+        PUSH_BY_POINTER (and thus also pop by pointer i guess)
 
 
 

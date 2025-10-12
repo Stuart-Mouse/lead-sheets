@@ -105,6 +105,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
+        dprint("name: %\n", get_identifier_name(script, identifier));
         if identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
@@ -155,13 +156,13 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return execute_node(script, operation.overload_procedure);
         }
         
+        result_value_pointer := script.stack.top;
+        
         _operator := get_operator(script, operation);
         if _operator.kind != .ASSIGNMENT {
-            if is_aggr(operation.value_type) {
-                if !push_any(script, Any.{ operation.value_type, get_result_value_pointer(script, operation) })  return false;         
-            } else {
-                if !push_zeroes(script, 8)  return false;
-            }
+            // TODO: don't push space for the return value if we have some hint storage
+            //       need to first implement some means to check if we will have hint storage during typechecking
+            if !push_zeroes(script, operation.value_type.runtime_size)  return false;
         }
         
         if !execute_node(script, operation.left)  return false;
@@ -179,25 +180,21 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return true;
         }
         
-        // TODO: maybe use the simpler version of execute_builtin_operation, but with this more dynamic stack popping
-        //       this is probably a little bit slower, but it may be worth it to reduce code bloat
-        //       the other benefit(?) of going this way is that we could do the swap args swizzle here, rather than swap them at the ast level
-        // op    := BUILTIN_OPERATIONS[operation.operator_index];
-        // right := null;
-        // if !is_unary  right = stack_pop (script, is_aggr(op.right));
-        // left  := stack_pop (script, is_aggr(op.left ));
-        // ret   := stack_peek(script, is_aggr(op.ret  ));
-        // if !execute_builtin_operation(operation.operator_index, left, right, ret)  return false;
+        dprint("operation name: %, index: %, kind: %\n", operation.name, operation.operator_index, _operator.kind);
         
-        // dprint("operation: %\n", op);
+        right: Any;
+        if !is_unary(_operator.kind) {
+            right = pop_any(script, operation.right.value_type, operation.right.flags & .IS_LVALUE != 0);
+        }
+        left := pop_any(script, operation.left.value_type, operation.left.flags & .IS_LVALUE != 0);
         
-        execute_builtin_operation(script, operation.builtin_operation_index);
+        // TODO: swizzle arguments if needed
         
-        result_any := Any.{ 
-            operation.value_type, 
-            ifx is_aggr(operation.value_type) then get_result_value_pointer(script, operation) else script.stack.top
-        };
-        dprint("returning result of binary operation: % %\n", as_type(operation.value_type), result_any);
+        dprint("left: %, right: %, result pointer: %\n", left, right, result_value_pointer);
+        if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return false;
+        
+        result_any := Any.{ operation.value_type, script.stack.top };
+        dprint("returning result of operation: % %\n", as_type(operation.value_type), result_any);
         return true;
         
         
@@ -215,29 +212,29 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
         proc_ptr   := procedure.value_pointer.(**void).*;
-        return_ptr := script.stack.top;
         
-        if is_aggr(procedure_call.value_type) {
-            return_ptr = get_return_value_pointer(script, procedure_call);
-            dprint("return_ptr: %\n", return_ptr);
-            dprint("return stack offset: %\n", procedure_call.return_value_stack_offset);
-            if !push_any(script, Any.{ procedure_call.value_type, return_ptr })  return false;
-        } else {
-            push_zeroes(script, 8);
-        }
-        arg_ptr_start := script.stack.top;
+        return_ptr := script.stack.top;
+        if !push_zeroes(script, procedure_call.value_type.runtime_size)  return false;
+        
+        spba := script.stack.top;
         
         for procedure_call.arguments  if !execute_node(script, it)  return false;
         
         arguments := NewArray(proc_info.argument_types.count, Any,, temp);
-        arg_ptr := arg_ptr_start;
-        for proc_info.argument_types {
-            value_pointer := arg_ptr;
-            if is_aggr(it)  value_pointer = value_pointer.(**void).*;
-            arguments[it_index] = Any.{ it, value_pointer };
-            dprint("argsument %: %\n", it_index, Any.{ it, value_pointer });
-            arg_ptr += size_of(*void);
+        for < proc_info.argument_types {
+            argument_node := procedure_call.arguments[it_index];
+            
+            // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
+            //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
+            argument_any := pop_any(script, it, argument_node.flags & .IS_LVALUE != 0);
+            arguments[it_index] = argument_any;
+            
+            if argument_any.type.runtime_size > 8
+                then dprint("argument % @ %\n", it_index, argument_any.value_pointer);
+                else dprint("argument % @ %: %\n", it_index, argument_any.value_pointer, argument_any);
         }
+        
+        assert(spba == script.stack.top);
         
         result := Any.{ procedure_call.value_type, return_ptr };
         result_array: [] Any; 
@@ -257,8 +254,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             }
         }
         
-        script.stack.top = arg_ptr_start;
-        
         dprint("returning result of procedure call: %\n", Any.{ procedure_call.value_type, return_ptr });
         
         if procedure_call.flags & .DISCARD_VALUE {
@@ -270,11 +265,26 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
+        src_type := node_cast.value.value_type;
+        dst_type := node_cast.value_type;
+        
+        // special case for implicitly taking a reference
+        if dst_type.type == .POINTER 
+        && dst_type.(*Type_Info_Pointer).pointer_to == src_type {
+            // Actually do nothing, but caller will pop the pointer as rvalue instead of as lvalue now
+            assert(node_cast.value.flags & .IS_LVALUE != 0);
+            assert(node_cast.flags & .IS_LVALUE == 0);
+            
+            if !execute_node(script, node_cast.value)  return false;
+            dprint("implicitly taking pointer to % @ %\n", as_type(node_cast.value_type), peek_any(script, type_info(*void)));
+            return true;
+        }
+        
         // TODO: special case to handle conversion from Any. 
-        // we just treat this as a type assertion at the moment
-        // if 
         
         // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
+        assert(!is_aggr(node_cast.value_type) && !is_aggr(node_cast.value.value_type));
+        
         dst := Any.{ node.value_type, script.stack.top };
         if !push_zeroes(script, 8)  return false;
         
@@ -322,7 +332,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;
-            struct_any := pop_any(script, left_type, true);
+            struct_any := pop_any(script, left_type, true); // NOTE: always pop inirectly here
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
             dprint("struct value ptr: %\n", struct_any.value_pointer);
@@ -407,16 +417,19 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         previous_frame := script.stack.frame;
         previous_top   := script.stack.top;
         
-        block.stack_frame_pointer = script.stack.top;
-        script.stack.frame = script.stack.top;
-        script.stack.top   = script.stack.frame + block.stack_frame_size;
+        // TODO: is_stack_frame_block
+        if block.name || block == script.ast_root {
+            script.stack.frame = script.stack.top;
+            script.stack.top   = script.stack.frame + block.stack_frame_size;
+        }
         
         for block.statements {
             if !execute_node(script, it)  return false;
         }
         
         // Check that we've popped ourselves back to where we started
-        assert(script.stack.top == script.stack.frame + block.stack_frame_size);
+        script.stack.top -= block.stack_frame_size;
+        assert(script.stack.top == previous_top, "stack.top does not match what it was when we entered this block! % != %", script.stack.top, previous_top);
         script.stack.frame = previous_frame;
         
         return true;
