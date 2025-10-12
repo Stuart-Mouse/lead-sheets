@@ -114,7 +114,6 @@ evaluate_node :: (
           case .TYPE;
             result = script.type_table[identifier.index].type;
             
-          case; #through; 
           case .STRUCT_MEMBER; #through; // we don't evaluate this case since the parent Node_Dot will just grab the struct member offset manually.
           case .UNRESOLVED;
             assert(false, "invalid case %", identifier.identifier_type);

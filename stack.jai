@@ -30,6 +30,8 @@ is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
     return pointer >= stack.memory && pointer < stack.memory + stack.allocated;
 }
 
+
+
 push_frame :: (using stack: *Stack, size: int) -> bool {
     new_frame_pointer := top;
     
@@ -43,7 +45,7 @@ push_frame :: (using stack: *Stack, size: int) -> bool {
 
 pop_frame :: (using stack: *Stack) {
     // check that stack.top is a pointer to itself
-    assert(pop_as(stack, *void) == stack.top, "Invalid stack frame pop!");
+    assert(pop_as(stack, *void) == stack.top, "Invalid stack frame pop! Did not see our magic number!");
     
     // restore previous stack frame
     size := pop_as(stack, int);

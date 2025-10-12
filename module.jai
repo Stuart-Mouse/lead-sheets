@@ -90,17 +90,6 @@ init_script :: (script: *Script, stack_size := 2048) {
 has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
 clear_error :: (script: *Script) { script.error = .{}; }
 
-// copy_script_static_variables :: (dst: *Script, src: *Script) {
-//     free_script(dst); // just in case data is already there...
-//     dst.* = .{};
-    
-//     init(*dst.pool);
-    
-//     // TODO: how to copy all of syntax tree...
-//     // this is annoying because we will have to clone the whole tree recursively and 
-    
-// }
-
 
 Name_And_Type :: struct {
     name:   string; 
@@ -126,8 +115,6 @@ get_named_block :: (script: *Script, name: string) -> *Node_Block {
     return null;
 }
 
-
-// STACK STUFF
 
 
 Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (bool, *Node);

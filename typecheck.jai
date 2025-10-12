@@ -48,7 +48,6 @@ typecheck_node :: (
     }
     
     // weird special case for assignment operators. needs to be done up top so we can remove the flag right away.
-    // TODO: print source code location on error as well. really, we need to support this in many places for better error reporting.
     if node.flags & .MUST_BE_STATEMENT_ROOT {
         if !(check_flags & .IS_STATEMENT_ROOT) {
             set_typecheck_error(script, "This expression '%' can only be used as the root of a statement, not just as an arbitrary expression.", sprint_node(script, node,, temp), node = node);
@@ -82,6 +81,7 @@ typecheck_node :: (
     }
     if has_error(script)  return null;
     
+    // TODO: move the logic for checking if some node is a valid lvalue back into the normal flow of typechecking logic
     if node.value_type != null {
         if check_flags & .EXPECT_LVALUE {
             if !set_as_lvalue(script, node)  return null;
@@ -104,7 +104,7 @@ typecheck_script :: (script: *Script) -> bool {
 
 // TODO: try to remove the need for 'need_lvalue' and make it so that we can just check the returned node with is_valid_lvalue if need be
 //       it appears the only reason we have this in place atm is to prevent using it_index as an lvalue
-resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope_block: *Node, need_lvalue := false) -> *Node_Declaration {
+resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope_block: *Node) -> *Node_Declaration {
     scope := scope_block;
     while scope {
         if scope.node_type == {
@@ -113,7 +113,7 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope
             if declaration  return declaration;
             
           case Node_For_Loop;
-            declaration := find_iterator_declaration(script, xx scope, identifier, need_lvalue);
+            declaration := find_iterator_declaration(script, xx scope, identifier);
             if declaration  return declaration;
         }
         scope = scope.scope;
@@ -137,16 +137,16 @@ find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: s
     return null;
 }
 
-find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string, need_lvalue := false) -> *Node_Declaration {
+find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string) -> *Node_Declaration {
     if get_declaration_name(script, *for_loop.it_decl) == identifier {
         return *for_loop.it_decl;
     }
     if get_declaration_name(script, *for_loop.it_index_decl) == identifier {
-        if need_lvalue {
-            // TODO: this is a bad error message since it's reported with the for loop's location and not the identifier's location.
-            log("%: Error: it_index cannot be used as an lvalue.", get_location(for_loop));
-            return null;
-        }
+        // if need_lvalue {
+        //     // TODO: this is a bad error message since it's reported with the for loop's location and not the identifier's location.
+        //     log("%: Error: it_index cannot be used as an lvalue.", get_location(for_loop));
+        //     return null;
+        // }
         return *for_loop.it_index_decl;
     }
     return null;
@@ -175,21 +175,6 @@ get_terminal_literal :: (node: *Node) -> *Node_Literal {
         }
     }
     return null;
-}
-
-is_aggr :: (t: Type) -> bool { return is_aggr(t.(*Type_Info)); }
-
-is_aggr :: (ti: *Type_Info) -> bool {
-    if ti.type == {
-        case .INTEGER;   return false;
-        case .FLOAT;     return false;
-        case .ENUM;      return false;
-        case .BOOL;      return false;
-        case .POINTER;   return false;
-        case .PROCEDURE; return false;
-        case .TYPE;      return false;
-    }
-    return true;
 }
 
 
@@ -545,7 +530,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     //       in this case we obviously don't want to check it again (not to mention accessing name will now be invalid!)
     if identifier.identifier_type != .UNRESOLVED  return;
     
-    declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope, need_lvalue = check_flags & .EXPECT_LVALUE != 0);
+    declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
         if declaration.value_type == null {
             set_typecheck_error(script, "Identifier '%' used before its declaration.", identifier.name, node = identifier);
@@ -813,26 +798,31 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
     
     if node_cast.flags & .IMPLICIT {
         node_cast.value_type = node_cast.implicit_type;
+        if is_aggregate(node_cast.value.value_type) {
+            assert(is_pointer_to(node_cast.value_type, node_cast.value.value_type), "Implicit cast with aggregate value was not an implicit reference.");
+        }
     } else {
         type_expression := node_cast.type_expression;
         type_type := typecheck_node(script, type_expression, hint_type = type_info(Type));
         if has_error(script)  return;
+        
         if type_type.type != .TYPE {
             set_typecheck_error(script, "Type expression in cast did not resolve to a Type.", node = type_expression);
             return;
         }
-        // TODO: make sure that type expression is constant before evaluating it
         if !(type_expression.flags & .IS_CONSTANT) {
             set_typecheck_error(script, "Type expression in cast must be constant.", node = type_expression);
             return;
         }
-        type_any := evaluate_node(script, type_expression);
-        if has_error(script)  return;
-        node_cast.value_type = type_any.value_pointer.(**Type_Info).*;
+        
+        if !execute_node(script, type_expression)  return;
+        node_cast.value_type = pop_as(*stack, *Type_Info);
+        
+        if is_aggregate(node_cast.value.value_type) {
+            set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = node_cast);
+        }
     }
     
-    // TODO: check if we can actually perform the cast here
-    //       for now, we won't precheck this since we will just use Convert.any_to_any
     return;
 }
 
@@ -840,41 +830,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     if dot.flags & .IS_ARROW {
         set_typecheck_error(script, "Arrow is not currently implemented.", node = dot);
         return;
-        
-        // // bad things will happen if we try to re-typecheck an arrow
-        // if dot.value_type != null  return;
-        
-        // assert(dot.left  != null);
-        // assert(dot.right != null);
-        // assert(dot.left.node_type  == Node_Identifier);
-        // assert(dot.right.node_type == Node_Identifier);
-        
-        // // left ident typechecks in standard way
-        // left_ident := dot.left.(*Node_Identifier);
-        
-        // // TODO: should we be passing check flags here?
-        // typecheck_node(script, left_ident);
-        // if has_error(script)  return;
-        
-        // #if false {
-        //     // TODO: if right side is declaration then do that extra stuff
-            
-        //     // cannot do anything with identifier by itself right now
-        //     // so for now, we just check if we have some hint type, and if not then we have a problem
-            
-        //     // we could pre-determine an index to the virtual member in VMS, then just verify this index at each use
-        //     // will not do that right now, but it's an option and it would aid performance
-        //     // however! 
-            
-        //     if hint_type {
-        //         dot.value_type = hint_type;
-        //     } else {
-        //         set_typecheck_error(script, "Virtual member must receive some hint type. Try using an explicit cast.", type = .MISSING_TYPE_HINT, node = right_ident);
-        //         return;
-        //     }
-        // }
-        
-        // return;
     }
     
     // Currently, the only valid case for dot.left being null is for unary dot enums.
@@ -956,9 +911,9 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                 set_typecheck_error(script, "Type expression on left-hand side of dot operator must be constant.", node = dot);
                 return;
             }
-            left_any := evaluate_node(script, dot.left);
-            if has_error(script)  return;
-            namespace = any_isa(left_any, *Type_Info).*;
+            
+            if !execute_node(script, dot.left)  return;
+            namespace = pop_as(*stack, *Type_Info);
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
                 set_typecheck_error(script, "Unary dot can only be used for enums, but hint_type was %", as_type(hint_type), type = .MISSING_TYPE_HINT, node = dot);
@@ -1068,9 +1023,9 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_typecheck_error(script, "Type expression in declaration must be constant.", node = declaration);
             return;
         }
-        type_any := evaluate_node(script, type_expression);
-        if has_error(script)  return;
-        explicit_type = type_any.value_pointer.(**Type_Info).*;
+        
+        if !execute_node(script, type_expression)  return;
+        explicit_type = pop_as(*stack, *Type_Info);
     }
     
     right_type: *Type_Info;
@@ -1118,8 +1073,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         literal.flags |= .IS_MALLEABLE;
         
         declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-        evaluate_node(script, declaration.init_expression, declaration.value_pointer);
-        if has_error(script)  return;
+        if !execute_node(script, declaration.init_expression)  return;
+        pop_any(script, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
     } else {
         declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
     }

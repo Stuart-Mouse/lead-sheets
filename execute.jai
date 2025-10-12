@@ -40,7 +40,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
     dprint_push_indent();
     
     dprint("stack_pointer offset: %  (%)", script.stack.top - script.stack.memory, script.stack.top);
-    if node.flags & .PUSH_BY_POINTER  dprint("expecting lvalue");
+    if should_push_by_pointer(node)  dprint("expecting lvalue");
     
     if !node.value_type {
         dprint("Warning: node has no set value type!");
@@ -62,7 +62,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_Literal;
         literal := node.(*Node_Literal);
-        if literal.flags & .PUSH_BY_POINTER {
+        if should_push_by_pointer(literal) {
             assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
         }
         
@@ -125,18 +125,20 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             return push_any(script, value, should_push_by_pointer(identifier));
             
           case .EXTERNAL_PROCEDURE;
+            assert(!should_push_by_pointer(identifier));
             procedure := *script.procedures[identifier.index];
-            dprint("returning external procedure with type % at %", as_type(procedure.proc_info), procedure.pointer);
-            assert(identifier.flags & .PUSH_BY_POINTER == 0);
             return push_any(script, procedure.pointer);
             
           case .LITERAL;
             return execute_node(script, identifier.literal);
             
+          case .TYPE;
+            assert(!should_push_by_pointer(identifier));
+            type := script.type_table[identifier.index].type;
+            return push_any(script, type, false);
             
             // identifier types that should never be executed:
           case .UNRESOLVED;
-          case .TYPE;
           case .STRUCT_MEMBER;
         }
         assert(false, "Invalid identifier type in execute_node: %", identifier.identifier_type);
@@ -185,10 +187,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         left := pop_any(script, operation.left.value_type, should_push_by_pointer(operation.left));
         
-        // TODO: swizzle arguments if needed
-        // if node.flags & .SWAP_OPERANDS {
-            // if left, right := right, left;
-        // }
+        if node.flags & .SWAP_OPERANDS {
+            left, right = right, left;
+        }
         
         dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
         if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return false;
@@ -235,7 +236,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 
                 // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
                 //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
-                argument_any := pop_any(script, it, argument_node.flags & .PUSH_BY_POINTER != 0);
+                argument_any := pop_any(script, it, should_push_by_pointer(argument_node));
                 arguments[it_index] = argument_any;
                 
                 if argument_any.type.runtime_size > 8
@@ -282,10 +283,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // special case for implicitly taking a reference
         if dst_type.type == .POINTER 
         && dst_type.(*Type_Info_Pointer).pointer_to == src_type {
-            // Actually do nothing, but caller will pop the pointer as rvalue instead of as lvalue now
-            assert(node_cast.value.flags & .PUSH_BY_POINTER != 0);
-            assert(node_cast.flags & .PUSH_BY_POINTER == 0);
+            assert(should_push_by_pointer(node_cast.value));
+            assert(!should_push_by_pointer(node_cast));
             
+            // Actually do nothing, but caller will pop the pointer as rvalue instead of as lvalue now
             if !execute_node(script, node_cast.value)  return false;
             return true;
         }
@@ -293,7 +294,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // TODO: special case to handle conversion from Any. 
         
         // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
-        assert(!is_aggr(node_cast.value_type) && !is_aggr(node_cast.value.value_type));
+        assert(!is_aggregate(node_cast.value_type) && !is_aggregate(node_cast.value.value_type));
         
         dst := Any.{ node.value_type, script.stack.top };
         if !push(*script.stack, null, 8)  return false;
@@ -340,7 +341,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %", struct_any.value_pointer);
             dprint("member value ptr: %", member_any.value_pointer);
             
-            if !push_any(script, member_any, (dot.flags & .PUSH_BY_POINTER) == .PUSH_BY_POINTER)  return false;
+            if !push_any(script, member_any, should_push_by_pointer(dot))  return false;
             return true;
             
           case .STRUCT;
@@ -351,7 +352,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %", struct_any.value_pointer);
             dprint("member value ptr: %", member_any.value_pointer);
             
-            if !push_any(script, member_any, (dot.flags & .PUSH_BY_POINTER) == .PUSH_BY_POINTER)  return false;
+            if !push_any(script, member_any, should_push_by_pointer(dot))  return false;
             return true;
             
           case .TYPE;
@@ -387,8 +388,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        if !push_any(script, element, node.flags & .PUSH_BY_POINTER == .PUSH_BY_POINTER)  return false;
-        // dprint("returning result of indexing operation: %", element);
+        if !push_any(script, element, should_push_by_pointer(node))  return false;
         
         if element.type.runtime_size > 8
             then dprint("returning result of indexing operation at %", element.value_pointer);
@@ -408,7 +408,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         if declaration.init_expression {
             if !execute_node(script, declaration.init_expression)  return false;
-            r_value := pop_any(script, declaration.init_expression.value_type);
+            r_value := pop_any(script, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
             
             dprint("l_value.value_pointer: %", l_value.value_pointer);
             dprint("r_value.value_pointer: %", r_value.value_pointer);
