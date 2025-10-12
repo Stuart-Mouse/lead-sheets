@@ -429,24 +429,22 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         block := node.(*Node_Block);
         if block.name && !explicit_call  return true; // we don't execute named blocks unless explicitly called
         
-        previous_frame := script.stack.frame;
-        previous_top   := script.stack.top;
+        is_stack_frame := block.name || block == script.ast_root;
         
-        // TODO: is_stack_frame_block
-        if block.name || block == script.ast_root {
-            script.stack.frame = script.stack.top;
-            script.stack.top += block.stack_frame_size;
+        // TODO: make an is_stack_frame_block(node) proc
+        if is_stack_frame {
+            if !push_frame(*script.stack, block.stack_frame_size) {
+                set_execution_error(script, type = .STACK_OVERFLOW, node = node);
+                return false;
+            }
         }
         
         for block.statements {
             if !execute_node(script, it)  return false;
         }
         
-        // Check that we've popped ourselves back to where we started
-        if block.name || block == script.ast_root {
-            script.stack.top -= block.stack_frame_size;
-            assert(script.stack.top == previous_top, "stack.top does not match what it was when we entered this block! % != %", script.stack.top, previous_top);
-            script.stack.frame = previous_frame;
+        if is_stack_frame {
+            pop_frame(*script.stack);
         }
         
         return true;

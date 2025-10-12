@@ -26,6 +26,33 @@ deinit_stack :: (stack: *Stack) {
     free(stack.memory);
 }
 
+is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
+    return pointer >= stack.memory && pointer < stack.memory + stack.allocated;
+}
+
+push_frame :: (using stack: *Stack, size: int) -> bool {
+    new_frame_pointer := top;
+    
+    if !push(stack, null, size)         return false;
+    if !push_value(stack, *size)        return false;
+    if !push_value(stack, *stack.top)   return false; // Push the address of stack.top to stack. We will check this when we pop the frame to make sure the frame pop is valid.
+    
+    frame = new_frame_pointer;
+    return true;
+}
+
+pop_frame :: (using stack: *Stack) {
+    // check that stack.top is a pointer to itself
+    assert(pop_as(stack, *void) == stack.top, "Invalid stack frame pop!");
+    
+    // restore previous stack frame
+    size := pop_as(stack, int);
+    assert(pop(stack, size) != null, "Invalid stack frame pop!");
+    
+    frame = stack.top;
+}
+
+
 /*
     NOTE: 
         the 'indirect' parameters are there so that we can use the same code path for cases where we want to push/pop some value directly and cases where we want to push/pop just a pointer
@@ -63,6 +90,10 @@ peek :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
     return ifx indirect then pointer.(**void).* else pointer;
 }
 
+push_value :: inline (using stack: *Stack, value: *$T) -> *T {
+    return push(stack, value, size_of(T));
+}
+
 pop_as :: inline (using stack: *Stack, $T: Type) -> T {
     return pop(stack, size_of(T)).(*T).*;
 }
@@ -74,6 +105,8 @@ pop_as :: inline (using stack: *Stack, $T: Type) -> T {
     In addition to pushing the array data, we also push the array count.
     This just seems like a very useful thing, and uses only marginally more stack space.
     You can always push jsut the array data manually if you really want to.
+    
+    TODO: maybe add a peek_array?
 */
 
 push_array :: inline (using stack: *Stack, array: [] $T, count: int) -> bool, [] T {
@@ -105,6 +138,13 @@ pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
 }
 
 
+/*
+    push / pop Any
+    
+    These procedures currently take the script rather than jsut the stack so that we can just set the execution error here if need be. 
+    This removes what would otherwise be a lot of repetition in execute.jai.
+    I still would ultimately like to not be passing the script here though, or at least we should also have version that just take the Stack.
+*/
 
 push_any :: (using script: *Script, any: Any, indirect := false) -> bool {
     dprint("push_any(%, %)", as_type(any.type), indirect);
@@ -124,8 +164,4 @@ pop_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
 peek_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
     value_pointer := peek(*script.stack, type.runtime_size, indirect);
     return Any.{ type, value_pointer };
-}
-
-is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
-    return pointer >= stack.memory && pointer < stack.memory + stack.allocated;
 }
