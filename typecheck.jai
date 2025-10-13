@@ -1012,6 +1012,10 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     //       this is different from how other statements are done, which all return void instead.
     //       may have to change this if it creates issues, I suppose.
     
+    // NOTE: we currently only allow declarations to be used as statements, so we flag them all with .VALUE_TYPE_IS_NOMINAL
+    //       this currently serves no funcitonal purpose other than to make our assertions happy in evaluate_node_or_return 
+    declaration.flags |= .VALUE_TYPE_IS_NOMINAL;
+    
     explicit_type: *Type_Info;
     if declaration.type_expression {
         type_expression := declaration.type_expression;

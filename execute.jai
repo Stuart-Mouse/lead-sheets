@@ -1,17 +1,4 @@
 
-
-/*
-    TODO: Cleaning up execute.jai, removing evaluate.jai
-    
-    need to implement callback like we have for evaluation
-        user callbacks will now need to push to script stack rather than return an Any
-        this means the user needs to be a bit more aware of lvalue/rvalue semantics, since they will need to know when to push indirectly
-        maybe we can aid in this by passing up .EXPECT_LVALUE in the execution callback, so at least we make the user aware of what is expected
-    
-    TODO: We should probably just let the user entirely override the evaluate_node with my_evaluate_node
-          That way, they can just call the standard evaluate_node as their default case.
-*/
-
 execute_script :: (script: *Script) -> bool {
     if !(script.flags & .PARSED) {
         set_execution_error(script, "Cannot execute script before AST has been constructed.\n", node = null);
@@ -52,11 +39,22 @@ evaluate_statement :: (script: *Script, expr: string, store_global_declarations 
 Execution_Flags :: enum_flags {
     NONE :: 0;
     EXPLICIT_CALL :: 1;  // used to indicate that we ought to run a named block
+    DISCARD_VALUE;
 }
 
 evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any #expand {
     value := script.my_evaluate_node(script, node, provided_storage, flags);
     if has_error(script)  `return NULL_ANY;
+    
+    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) {
+        assert(value.type == node.value_type, "% claims to have value_type %, but it returned type %", node.node_type, as_type(node.value_type), as_type(value.type));
+        
+        if flags & .DISCARD_VALUE {
+            dprint("Discarding unused result.");
+            pop_any(*script.stack, node.value_type);
+            return VOID_ANY;
+        }
+    }
     return value;
 }
 
@@ -201,7 +199,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             
           case .EXTERNAL_PROCEDURE;
             assert(!should_push_by_pointer(identifier));
-            return_result(identifier, script.procedures[identifier.index].pointer);
+            return_result(identifier, to_any(*script.procedures[identifier.index]));
             
           case .LITERAL;
             return script.my_evaluate_node(script, identifier.literal, provided_storage = provided_storage);
@@ -230,7 +228,8 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             assert(should_push_by_pointer(operation.left));
             evaluate_node_or_return(script, operation.left);
             value_pointer := pop_as(*script.stack, *void);
-            return script.my_evaluate_node(script, operation.right, provided_storage = value_pointer);
+            script.my_evaluate_node(script, operation.right, provided_storage = value_pointer);
+            return VOID_ANY; // NOTE: all assignments return void
         }
         
         _operator := get_operator(script, operation);
@@ -282,7 +281,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             assert(procedure_info.type == .PROCEDURE);
             dprint("procedure_info: %", as_type(procedure_info));
             
-            procedure_pointer := any_isa(evaluate_node_or_return(script, procedure_call.procedure_expression), *void).*;
+            procedure := evaluate_node_or_return(script, procedure_call.procedure_expression);
             
             {
                 // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
@@ -312,25 +311,18 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
                 if result.type != xx void then result_array = .[ result ];
                 
                 #if USING_DYNCALL {
-                    if !do_dyncall(script.dyncall_vm, Any.{ procedure_info, *procedure_pointer }, arguments, result_array) {
+                    if !do_dyncall(script.dyncall_vm, procedure, arguments, result_array) {
                         set_general_error(script, "Failed while trying to make dyncall.");
                         return NULL_ANY;
                     }
                 } else {
+                    procedure_pointer := procedure.value_pointer.(**void).*;
                     if !try_calling_procedure_with_wrapper(procedure_info, procedure_pointer, arguments, result_array) {
                         set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info));
                         return NULL_ANY;
                     }
                 }
             }
-        }
-        
-        // TODO: handle in a more systematic way, for other types of expressions that may be used as a statement.
-        if procedure_call.flags & .DISCARD_VALUE {
-            dprint("Discarding unused result of procedure call expression.");
-            assert(provided_storage == null);
-            pop_any(*script.stack, procedure_call.value_type);
-            return VOID_ANY;
         }
         
         result_any := Any.{ procedure_call.value_type, return_value_pointer };
@@ -449,10 +441,6 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
         
-        if element.type.runtime_size > 8
-            then dprint("returning result of indexing operation at %", element.value_pointer);
-            else dprint("returning result of indexing operation with value % at %", element, element.value_pointer);
-        
         return_result(node, element);
         
         
@@ -481,10 +469,6 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         // NOTE: we don't execute named blocks unless explicitly called
         if block.name && (flags & .EXPLICIT_CALL)  return VOID_ANY;
         
-        // for debugging purposes
-        stack_top_before := script.stack.top;
-        defer assert(script.stack.top == stack_top_before);
-        
         is_stack_frame := is_stack_frame_block(script, block);
         if is_stack_frame {
             if !push_frame(*script.stack, block.stack_frame_size) {
@@ -494,9 +478,9 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         }
         for block.statements {
             stack_top_before := script.stack.top;
-            defer assert(script.stack.top == stack_top_before, sprint_node(script, it));
+            defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %.", get_location(it));
             
-            evaluate_node_or_return(script, it);
+            evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
         }
         if is_stack_frame {
             pop_frame(*script.stack);
@@ -516,7 +500,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         if condition_as_bool {
             evaluate_node_or_return(script, if_statement.statement);
         }
-        return true;
+        return VOID_ANY;
         
         
       case Node_While_Loop;
@@ -556,7 +540,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
                 for_loop.it_decl.value_pointer += array_info.element_type.runtime_size;
                 it_index += 1;
             }
-            return true;
+            return VOID_ANY;
             
           case .RANGE;
             evaluate_node_or_return(script, for_loop.range.lower);
@@ -588,7 +572,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
                 
                 evaluate_node_or_return(script, for_loop.statement);
             }
-            return true;
+            return VOID_ANY;
             
           case .LIST;
             _it_index: int;

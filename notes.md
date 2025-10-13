@@ -1559,6 +1559,9 @@ preventing re-typechecking on nodes where doing so is problematic
 allowing for node replacement
     we really should have some systematic way to replace a node by returning some replacement form typecheck_node
 
+passing provided storage
+
+checking that execute_node_or_return's return value matches expected type 
 
 
 ## Bugs and minor fixes
@@ -1570,9 +1573,10 @@ we should really stamp serial numbers onto all nodes like the Jai compiler does
     since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
     and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
     actually even just having a serial number wouldn't solve it, but maybe it would help
-      
 
-Handle discarding of unreceived stack values in a more systematic way
+
+prevent user from adding operator overload for `=`, probably
+
 
 
 ## Simplifying Identifiers

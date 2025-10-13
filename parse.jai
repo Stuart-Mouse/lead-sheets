@@ -248,8 +248,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     }
     
     if expect_token_type(script, .SEMICOLON) || !expect_semicolon {
-        // do not allocate space for result if its an aggregate type and do not push anything to stack when executing
-        left.flags |= .DISCARD_VALUE; 
         return left;
     }
     

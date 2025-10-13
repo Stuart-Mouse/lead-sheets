@@ -113,8 +113,6 @@ print_node :: (
             
             // NOTE: we only want to serialize a struct using its current value if it is a malleable literal
             if (node.flags & .TYPECHECKED) && (node.flags & .IS_MALLEABLE) {
-                log("serializing struct literal with value: %", Any.{ node.value_type, literal.aggr.value_pointer });
-                
                 // ignoring #place members. Wish there were a better way to do this.
                 last_member_offset := -1;
                 for ti_struct.members {

@@ -19,7 +19,7 @@ Node :: struct {
         OVERLOAD;
         IMPLICIT;               // used for casts
         PARENTHESIZED;          // explicitly 
-        DISCARD_VALUE;
+        VALUE_TYPE_IS_NOMINAL;
         MUST_BE_STATEMENT_ROOT;
         IS_STATEMENT_ROOT;
         SWAP_OPERANDS;
