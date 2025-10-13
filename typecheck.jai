@@ -59,6 +59,7 @@ typecheck_node :: (
     if script.typecheck_callback {
         result := script.typecheck_callback(script, node, check_flags, hint_type);
         if has_error(script)  return null;
+        node.flags |= .TYPECHECKED;
         if result  return result;
     }
     

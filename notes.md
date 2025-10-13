@@ -1630,6 +1630,27 @@ then we just init the stack allocator with memoery allocated by some other alloc
 when we go to set up an execution / evaluation context, we provide a stack 
     maybe later this idea integrates with the idea of block contexts
 
+
+evaluate.jai has been removed
+
+Now that it's gone there's still a few loose ends to tie up
+firstly, we will probably bring it back, in a sense, because we will just rename all the execute stuff to evaluate, since that's kinda more accurate for an AST-based execution model
+then we cna use the execute name when it comes time to do bytecode
+
+secondly, I would like to fix up the interface and error handling of execute_node so that it is as easy to use and extend as evaluate_node was
+improvements to make:
+    execute_node could return a `*void` or `Any` as a second return value
+        this will have to be a peeked value and not a popped value, which segues into the next thing...
+    smoother handling for common stack pushing/popping patterns
+        in trivial cases, we jsut push_result and return true
+        in larger cases, we really just want to have the stack to play around with during the call to execute_node, and then manually reset it to where it should be so that it's correct for the caller
+            what this looks like is basically just calling get_result_storage at the top, doing what we need to do with whatever gets pushed to the stack,
+            and then resetting the stack pointer back to where it should be before we leave
+            we basically just want to use it like we would use temp storage if we were setting the watermark on entry and resetting it on exit
+            this is probably the endgame pattern to use, since it means we will almost never have to worry about manually popping many small values like we do, for instance, in executing a node_procedure_call
+            all that matters is where we leave the stack.top when we leave, so what happens in the middle is up to us
+
+
 ### Fixing Stack Operations
 
 Before I can really reconcile all the differences between exec and eval, I reall yneed to have a rigorous 

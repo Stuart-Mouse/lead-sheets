@@ -24,6 +24,27 @@ execute_script :: (script: *Script) -> bool {
     return execute_node(script, script.ast_root);
 }
 
+evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
+    root := parse_statement_string(script, expr);
+    if root == null {
+        log("root was null");
+        return NULL_ANY, false;
+    }
+    
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return NULL_ANY, false;
+    
+    value := New_Any(root.value_type, initialized = false,, temp);
+    if !execute_node(script, root, provided_storage = value.value_pointer)  return NULL_ANY, false;
+    
+    if store_global_declarations {
+        if root.node_type == Node_Declaration {
+            array_add(*script.global_declarations, xx root);
+        }
+    }
+    
+    return value, true;
+}
+
 Execution_Flags :: enum_flags {
     NONE :: 0;
     EXPLICIT_CALL :: 1;  // used to indicate that we ought to run a named block
@@ -60,6 +81,11 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
     if !node.flags & .TYPECHECKED {
         set_execution_error(script, "Cannot execute a node that has not been typechecked.", node = node);
         return false;
+    }
+    
+    if script.execute_callback {
+        if script.execute_callback(script, node, provided_storage, flags)  return true;
+        if has_error(script)  return false;
     }
     
     push_result :: (node: *Node, any: Any) -> bool #expand {

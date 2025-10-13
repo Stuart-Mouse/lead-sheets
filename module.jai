@@ -2,7 +2,6 @@
 // typechecking callbcak allows additional return value for replacement node
 Typecheck_Callback :: type_of(typecheck_node);
 Execute\ _Callback :: type_of(execute_node);
-Evaluate\_Callback :: type_of(evaluate_node);
 Serialize_Callback :: type_of(sprint_node);
 
 Script :: struct {
@@ -33,7 +32,6 @@ Script :: struct {
     // callbacks for handling custom node types
     typecheck_callback:     Typecheck_Callback;
     execute\ _callback:     Execute\ _Callback;
-    evaluate\_callback:     Evaluate\_Callback;
     serialize_callback:     Serialize_Callback;
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
@@ -233,7 +231,6 @@ register_common_types :: (script: *Script) {
 #load "parse.jai";
 #load "typecheck.jai";
 #load "execute.jai";
-#load "evaluate.jai";
 #load "serialize.jai";
 
 #load "variable.jai";
