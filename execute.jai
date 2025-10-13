@@ -183,7 +183,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
-            return execute_node(script, operation.overload_procedure);
+            return execute_node(script, operation.overload_procedure, provided_storage = provided_storage);
         }
         
         result_value_pointer: *void;
@@ -223,7 +223,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
         if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return false;
         
-        result_any := Any.{ operation.value_type, script.stack.top };
+        result_any := Any.{ operation.value_type, result_value_pointer };
         dprint("returning result of operation: % %", as_type(operation.value_type), result_any);
         return true;
         
@@ -322,8 +322,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
         assert(!is_aggregate(node_cast.value_type) && !is_aggregate(node_cast.value.value_type));
         
-        dst := Any.{ node.value_type, script.stack.top };
-        if !push(*script.stack, null, 8)  return false;
+        dst := Any.{ node.value_type, get_result_storage(node_cast) };
         
         if !execute_node(script, node_cast.value)  return false;
         src := pop_any(script, node_cast.value.value_type);
@@ -426,45 +425,40 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         if declaration.flags & .MACRO  return true;
         
         dprint("declaration name: %", get_declaration_name(script, declaration));
-        
-        l_value := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
+        value_pointer := get_value_pointer(script, declaration);
         
         if declaration.init_expression {
-            if !execute_node(script, declaration.init_expression)  return false;
-            r_value := pop_any(script, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
-            
-            dprint("l_value.value_pointer: %", l_value.value_pointer);
-            dprint("r_value.value_pointer: %", r_value.value_pointer);
-            
-            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
+            if !execute_node(script, declaration.init_expression, provided_storage = value_pointer)  return false;
         } else {
-            memset(l_value.value_pointer, 0, l_value.type.runtime_size);
+            // TODO: use initializer_of for aggregate types?
+            memset(value_pointer, 0, declaration.value_type.runtime_size);
         }
         return true;
         
         
       case Node_Block;
         block := node.(*Node_Block);
-        if block.name && (flags & .EXPLICIT_CALL)  return true; // we don't execute named blocks unless explicitly called
         
-        is_stack_frame := block.name || block == script.ast_root;
+        // NOTE: we don't execute named blocks unless explicitly called
+        if block.name && (flags & .EXPLICIT_CALL)  return true;
         
-        // TODO: make an is_stack_frame_block(node) proc
+        // for debugging purposes
+        stack_top_before := script.stack.top;
+        defer assert(script.stack.top == stack_top_before);
+        
+        is_stack_frame := is_stack_frame_block(script, block);
         if is_stack_frame {
             if !push_frame(*script.stack, block.stack_frame_size) {
                 set_execution_error(script, type = .STACK_OVERFLOW, node = node);
                 return false;
             }
         }
-        
         for block.statements {
             if !execute_node(script, it)  return false;
         }
-        
         if is_stack_frame {
             pop_frame(*script.stack);
         }
-        
         return true;
         
         

@@ -66,17 +66,20 @@ get_stack_space :: (script: *Script, requested_size: int, scope: *Node) -> stack
     return current_offset;
 }
 
-// TODO: resolve to closest named block
+// TODO: resolve to closest named block or ast root
 get_stack_frame_block :: (script: *Script, node: *Node) -> *Node_Block {
     scope := node;
     while scope {
-        if scope.node_type == Node_Block {
-            block := scope.(*Node_Block);
-            if block.name || block == script.ast_root  return block;
+        if is_stack_frame_block(script, scope) {
+            return xx scope;
         }
         scope = scope.scope;
     }
     return null;
+}
+
+is_stack_frame_block :: (script: *Script, node: *Node) -> bool {
+    return node.node_type == Node_Block && (node.(*Node_Block).name || node == script.ast_root);
 }
 
 Node_Cast :: struct {
