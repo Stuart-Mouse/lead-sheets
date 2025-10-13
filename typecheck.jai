@@ -513,10 +513,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             literal.flags |= .IS_CONSTANT;
         }
         
-        // TODO: we could reduce space required for storing intermediate values
-        //       if we pass a value_pointer alongside hint_type in typechecking
-        //       that way if hint type is accepted, then it can also use value_pointer 
-        //       for its backing value instead of allocating its own space for value
+        // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
         literal.value_type = ti_struct;
         literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
         dprint("allocated space for literal of type %, node %", literal.value_type, literal);
@@ -991,14 +988,15 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
         return;
     }
     
-    typecheck_node(script, subscript.indexing_expression);
+    indexing_type := typecheck_node(script, subscript.indexing_expression, hint_type = xx int);
     if has_error(script)  return;
     
-    indexing_type := subscript.indexing_expression.value_type;
-    if !is_numeric_type(indexing_type) {
+    ok, replacement := try_implicit_cast(script, subscript.indexing_expression, xx int);
+    if !ok {
         set_typecheck_error(script, "Type '%' cannot be used in an indexing expression!", as_type(indexing_type), node = subscript);
         return;
     }
+    if replacement  replace_node(*subscript.indexing_expression, replacement);
     
     subscript.value_type = base_type.element_type;
     return;

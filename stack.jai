@@ -31,27 +31,22 @@ is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
 }
 
 
+// TODO: if in debug mode, we should also push some magic number (e.g. the current stack top) in push_frame to check when we call pop_frame
 
 push_frame :: (using stack: *Stack, size: int) -> bool {
     new_frame_pointer := top;
     
-    if !push(stack, null, size)         return false;
-    if !push_value(stack, *size)        return false;
-    if !push_value(stack, *stack.top)   return false; // Push the address of stack.top to stack. We will check this when we pop the frame to make sure the frame pop is valid.
+    if !push(stack, null, size)    return false;
+    if !push_value(stack, *size)   return false;
+    if !push_value(stack, *frame)  return false;
     
     frame = new_frame_pointer;
     return true;
 }
 
-pop_frame :: (using stack: *Stack) {
-    // check that stack.top is a pointer to itself
-    assert(pop_as(stack, *void) == stack.top, "Invalid stack frame pop! Did not see our magic number!");
-    
-    // restore previous stack frame
-    size := pop_as(stack, int);
-    assert(pop(stack, size) != null, "Invalid stack frame pop!");
-    
-    frame = stack.top;
+pop_frame :: inline (using stack: *Stack) {
+    frame = pop_as(stack, *void);
+    pop(stack, pop_as(stack, int));
 }
 
 

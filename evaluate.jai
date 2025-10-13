@@ -116,7 +116,7 @@ evaluate_node :: (
             
           case .STRUCT_MEMBER; #through; // we don't evaluate this case since the parent Node_Dot will just grab the struct member offset manually.
           case .UNRESOLVED;
-            assert(false, "invalid case %", identifier.identifier_type);
+            assert(false, "Invalid identifier type in evaluate_node: %", identifier.identifier_type);
         }
         
         

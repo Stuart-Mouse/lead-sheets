@@ -24,31 +24,67 @@ execute_script :: (script: *Script) -> bool {
     return execute_node(script, script.ast_root);
 }
 
+Execution_Flags :: enum_flags {
+    NONE :: 0;
+    EXPLICIT_CALL :: 1;  // used to indicate that we ought to run a named block
+}
+
 /*
-    Even though the script has already been typechecked, I use push_any(scriptack_pop_any 
-        so that it's easier to get the type info when needed for debugging.
-    Using these procedures also just makes the code here a bit easier to read and captures the 
-        type-specific rules about additional indirections automatically.
-    When moving to bytecode though, we should be just use stack_push and stack_pop, 
-        which are probably slightly faster and don't require passing type info.
-        
-    The explicit_call param is now required for signalling that we are indeed wanting to run a named block.
-    Maybe this is sort of a back hack though...
+    When executing a node, we need to handle two different ways in which the result may be returned.
+    If there is provided_storage for the result, then we write the result directly to that memory location.
+    Otherwise, we push the result value (or a pointer to the result value, depending on should_push_by_pointer) to the stack.
+    
+    The contract for executing nodes is this:
+        If execute_node returns false
+            The script error will be set with some valid error.
+            This error should be propogated back up to the user.
+        If execute_node returns true
+            If provided_storage is not null
+                The result value must be written to the provided_storage.
+                script.stack.top must have the same value as execute_node was called.
+            If provided_storage is null
+                If should_push_by_pointer(node)
+                    A pointer to the result value must be pushed to top of the stack
+                If !should_push_by_pointer(node)
+                    The result value must be pushed to top of the stacks
 */
-execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
+execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> bool {
     dprint("executing node %: %", node, node.node_type);
     dprint_push_indent();
     
     dprint("stack_pointer offset: %  (%)", script.stack.top - script.stack.memory, script.stack.top);
     if should_push_by_pointer(node)  dprint("expecting lvalue");
     
-    if !node.value_type {
-        dprint("Warning: node has no set value type!");
-    }
+    if !node.value_type { dprint("Warning: node has no set value type!"); }
     
     if !node.flags & .TYPECHECKED {
         set_execution_error(script, "Cannot execute a node that has not been typechecked.", node = node);
         return false;
+    }
+    
+    push_result :: (node: *Node, any: Any) -> bool #expand {
+        if provided_storage {
+            memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
+            return true;
+        }
+        
+        dprint("push_any(%, %)", as_type(any.type), should_push_by_pointer(node));
+        if should_push_by_pointer(node)  dprint("pushed ptr value: %", any.value_pointer);
+        
+        result := push(*script.stack, any.value_pointer, any.type.runtime_size, should_push_by_pointer(node));
+        if !result  set_execution_error(script, "Ran out of space on stack!", node = null);
+        return result != null;
+    }
+    
+    get_result_storage :: (node: *Node) -> *void #expand {
+        if provided_storage  return provided_storage;
+        
+        result := push(*script.stack, null, node.value_type.runtime_size);
+        if !result {
+            set_execution_error(script, "Ran out of space on stack!", node = null);
+            `return false;
+        }
+        return result;
     }
     
     if node.node_type == {
@@ -68,26 +104,28 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         if #complete literal.literal_type == {
           case .ANY;
-            return push_any(script, literal.any, should_push_by_pointer(literal));
+            return push_result(literal, literal.any);
             
           case .STRING;
-            return push_any(script, literal.text, should_push_by_pointer(literal));
+            return push_result(literal, literal.text);
             
           case .BOOLEAN; #through;
           case .NUMBER;
-            return push_any(script, to_any(*literal.number), should_push_by_pointer(literal));
+            return push_result(literal, to_any(*literal.number));
             
           case .STRUCT;
-            if !push_any(script, Any.{ literal.value_type, literal.aggr.value_pointer }, should_push_by_pointer(literal))  return false;
-            write_ptr := literal.aggr.value_pointer;
-            // TODO: if we enhance typechecking to pass value pointer for these values, 
-            //       then we don't need to do any pushing or popping from stack here.
-            //       will require changes to almost all execute cases though...
-            //       if node.dst_provided  memcpy directly  else push stack
+            write_ptr: *void;
+            if provided_storage 
+                then write_ptr = get_result_storage(literal);
+                else write_ptr = literal.aggr.value_pointer;
+            
             for literal.aggr.expressions {
-                if !execute_node(script, it)  return false;
-                memcpy(write_ptr, pop_any(script, it.value_type).value_pointer, it.value_type.runtime_size);
+                if !execute_node(script, it, provided_storage = write_ptr)  return false;
                 write_ptr += it.value_type.runtime_size;
+            }
+            
+            if !provided_storage {
+                if !push_result(literal, Any.{ literal.value_type, literal.aggr.value_pointer })  return false;
             }
             return true;
         }
@@ -106,8 +144,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             
             variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
             dprint("returning internal variable with value % at %", variable_any, variable_any.value_pointer);
-            if !push_any(script, variable_any, should_push_by_pointer(identifier))  return false;
-            return true;
+            return push_result(identifier, variable_any);
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
@@ -122,20 +159,18 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
                 then dprint("returning external variable at %", variable.value_pointer);
                 else dprint("returning external variable with value % at %", value, variable.value_pointer);
             
-            return push_any(script, value, should_push_by_pointer(identifier));
+            return push_result(identifier, value);
             
           case .EXTERNAL_PROCEDURE;
             assert(!should_push_by_pointer(identifier));
-            procedure := *script.procedures[identifier.index];
-            return push_any(script, procedure.pointer);
+            return push_result(identifier, script.procedures[identifier.index].pointer);
             
           case .LITERAL;
             return execute_node(script, identifier.literal);
             
           case .TYPE;
             assert(!should_push_by_pointer(identifier));
-            type := script.type_table[identifier.index].type;
-            return push_any(script, type, false);
+            return push_result(identifier, script.type_table[identifier.index].type);
             
             // identifier types that should never be executed:
           case .UNRESOLVED;
@@ -155,13 +190,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         _operator := get_operator(script, operation);
         if _operator.kind != .ASSIGNMENT {
-            // TODO: don't push space for the return value if we have some hint storage
-            //       need to first implement some means to check if we will have hint storage during typechecking
-            result_value_pointer = push(*script.stack, null, operation.value_type.runtime_size);
-            if result_value_pointer == null {
-                set_execution_error(script, type = .STACK_OVERFLOW, node = node);
-                return false;
-            }
+            result_value_pointer = get_result_storage(operation);
         }
         
         if !execute_node(script, operation.left)  return false;
@@ -209,13 +238,9 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         dprint("proc_info: %", as_type(proc_info));
         
-        procedure  := pop_any(script, proc_info); // TODO: really no need to get an any here. but we need to fix the older stack_pop proc
-        
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
-        proc_ptr   := procedure.value_pointer.(**void).*;
-        
-        return_ptr := script.stack.top;
-        if !push(*script.stack, null, procedure_call.value_type.runtime_size)  return false;
+        proc_ptr   := pop_as(*script.stack, *void);
+        return_ptr := get_result_storage(procedure_call);
         
         {
             // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
@@ -267,6 +292,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         dprint("result of procedure call: %", Any.{ procedure_call.value_type, return_ptr });
         
         // TODO: handle in a more systematic way, for other types of expressions that may be used as a statement.
+        // NOTE: we are assuming here the DISCARD_VALUE being set and provided_storage being non-null are absolutely mutually exclusive 
         if procedure_call.flags & .DISCARD_VALUE {
             dprint("Discarding unused result of procedure call expression.");
             pop_any(script, procedure_call.value_type);
@@ -320,9 +346,10 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
         if dot.left == null {
             assert(node.value_type.type == .ENUM || node.value_type.type == .STRUCT);
-            return execute_node(script, dot.right);
+            return execute_node(script, dot.right, provided_storage = provided_storage);
         }
         
+        // TODO: should better utilize provided_storage in STRUCT and POINTER cases
         left_type := dot.left.value_type;
         if left_type.type == {
           case .POINTER;
@@ -341,8 +368,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %", struct_any.value_pointer);
             dprint("member value ptr: %", member_any.value_pointer);
             
-            if !push_any(script, member_any, should_push_by_pointer(dot))  return false;
-            return true;
+            return push_result(dot, member_any);
             
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;
@@ -352,12 +378,11 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("struct value ptr: %", struct_any.value_pointer);
             dprint("member value ptr: %", member_any.value_pointer);
             
-            if !push_any(script, member_any, should_push_by_pointer(dot))  return false;
-            return true;
+            return push_result(dot, member_any);
             
           case .TYPE;
             // type expression on left side is evaluated during typechecking
-            return execute_node(script, dot.right);
+            return execute_node(script, dot.right, provided_storage = provided_storage);
         }
         
         assert(false);
@@ -374,9 +399,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
         indexing_type := subscript.indexing_expression.value_type;
         
-        // get index as s64
-        // TODO: maybe improve this
-        //       for bytecode, could do an instruction for inplace type cast
         index_as_s64: s64;
         assert(Convert.any_to_int(index_as_s64, index_any));
         
@@ -388,13 +410,12 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         }
         
         element := Any.{ node.value_type, array_data + index_as_s64 * node.value_type.runtime_size };
-        if !push_any(script, element, should_push_by_pointer(node))  return false;
         
         if element.type.runtime_size > 8
             then dprint("returning result of indexing operation at %", element.value_pointer);
             else dprint("returning result of indexing operation with value % at %", element, element.value_pointer);
         
-        return true;
+        return push_result(node, element);
         
         
       case Node_Declaration;
@@ -403,6 +424,8 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         // early return on macro for now so that we don't overwrite value of malleable literal
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
         if declaration.flags & .MACRO  return true;
+        
+        dprint("declaration name: %", get_declaration_name(script, declaration));
         
         l_value := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
         
@@ -413,11 +436,6 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
             dprint("l_value.value_pointer: %", l_value.value_pointer);
             dprint("r_value.value_pointer: %", r_value.value_pointer);
             
-            dprint("l_value.type: %", as_type(l_value.type));
-            dprint("r_value.type: %", as_type(r_value.type));
-            
-            dprint("r_value: %", r_value);
-            
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
         } else {
             memset(l_value.value_pointer, 0, l_value.type.runtime_size);
@@ -427,7 +445,7 @@ execute_node :: (script: *Script, node: *Node, explicit_call := false) -> bool {
         
       case Node_Block;
         block := node.(*Node_Block);
-        if block.name && !explicit_call  return true; // we don't execute named blocks unless explicitly called
+        if block.name && (flags & .EXPLICIT_CALL)  return true; // we don't execute named blocks unless explicitly called
         
         is_stack_frame := block.name || block == script.ast_root;
         
