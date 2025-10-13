@@ -1696,6 +1696,18 @@ Stack improvements part 3
         still require space in stack frame when we coerce to an Any in an assignment or declaration
 
 
+Summary of some of the things I did:
+
+The stack structure is just a lot more robust now, with a pretty good interface for doing all the things one may want to do.
+Values of any size can now be pushed to or popped from the stack, with the small caveat that all pushes and pops are aligned to 8 bytes.
+In theory, we could even return things like strings on the stack, since we basically alloca any intermediate values we need space for.
+I probably should put some upper bound on the things we will actually push to the stack, though. (But that shall be a problem for another day.)
+
+In any case, we now also probably use a lot less stack space for intermediate values anyhow, since I finally implemented a sort of hint_storage equivalent for execute_node.
+Now, in execute_node there is a provided_storage parameter that must be used in place of a stack push if it is non-null.
+This means that a lot of nodes which previously would've had their intermediate values allocated up front or placed on the stack, they will now just write directly to the proper destination.
+
+
 ## IMGUI menu for showing AST node structure
 
 this would actually be pretty easy to do, and would allow for messing with the AST a bit more directly, which could be useful in some circumstances
@@ -1729,5 +1741,13 @@ defer if provided_storage {
 
 
 
+## Debug things
 
+procedure calls
+    try_calling_procedure_with_wrapper
+        make `_checked` and `_unchecked` variants
+        pick which to use based on whether debug flag is set
+    do_dyncall
+        also use unchecked variant for this when not in debug mode
+        
 

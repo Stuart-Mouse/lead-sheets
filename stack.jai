@@ -100,6 +100,10 @@ pop_as :: inline (using stack: *Stack, $T: Type) -> T {
     return pop(stack, size_of(T)).(*T).*;
 }
 
+peek_as :: inline (using stack: *Stack, $T: Type) -> T {
+    return peek(stack, size_of(T)).(*T).*;
+}
+
 
 /*
     push / pop arrays

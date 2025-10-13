@@ -166,7 +166,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             return push_result(identifier, script.procedures[identifier.index].pointer);
             
           case .LITERAL;
-            return execute_node(script, identifier.literal);
+            return execute_node(script, identifier.literal, provided_storage = provided_storage);
             
           case .TYPE;
             assert(!should_push_by_pointer(identifier));
@@ -186,6 +186,16 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             return execute_node(script, operation.overload_procedure, provided_storage = provided_storage);
         }
         
+        
+        // special case: operator = is always a simple memcpy
+        if operation.name == "=" {
+            assert(should_push_by_pointer(operation.left));
+            if !execute_node(script, operation.left)   return false;
+            value_pointer := pop_as(*script.stack, *void);
+            return execute_node(script, operation.right, provided_storage = value_pointer);
+        }
+        
+        
         result_value_pointer: *void;
         
         _operator := get_operator(script, operation);
@@ -194,18 +204,8 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         }
         
         if !execute_node(script, operation.left)  return false;
-        
         if !is_unary(_operator.kind) {
             if !execute_node(script, operation.right)  return false;
-        }
-        
-        // special case: operator = is always a simple memcpy
-        if operation.name == "=" {
-            assert(should_push_by_pointer(operation.left));
-            r_value := pop_any(*script.stack, operation.right.value_type);
-            l_value := pop_any(*script.stack, operation.left.value_type, true);
-            memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
-            return true;
         }
         
         dprint("operation name: %, index: %, kind: %", operation.name, operation.operator_index, _operator.kind);
@@ -230,23 +230,23 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
-        // TODO: this will have to be refactored later for bytecode (to push result ptr after popping args)
+        
+        return_value_pointer := get_result_storage(procedure_call);
+        dprint("return_value_pointer: %", return_value_pointer);
         
         if !execute_node(script, procedure_call.procedure_expression)  return false;
-        proc_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
-        assert(proc_info.type == .PROCEDURE);
-        
-        dprint("proc_info: %", as_type(proc_info));
+        procedure_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
+        assert(procedure_info.type == .PROCEDURE);
+        dprint("procedure_info: %", as_type(procedure_info));
         
         // we have to grab the actual procedure pointer value now before overwriting with another stack push below
-        proc_ptr   := pop_as(*script.stack, *void);
-        return_ptr := get_result_storage(procedure_call);
+        procedure_pointer := pop_as(*script.stack, *void);
         
         {
             // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
             ARGUMENTS_ARRAY_ELEMENT_TYPE :: Any;
             
-            push_ok, arguments := push_empty_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE, proc_info.argument_types.count);
+            push_ok, arguments := push_empty_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE, procedure_info.argument_types.count);
             if !push_ok {
                 set_execution_error(script, type = .STACK_OVERFLOW, node = node);
                 return false;
@@ -256,7 +256,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             
             for procedure_call.arguments  if !execute_node(script, it)  return false;
             
-            for < proc_info.argument_types {
+            for < procedure_info.argument_types {
                 argument_node := procedure_call.arguments[it_index];
                 
                 // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
@@ -270,26 +270,24 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             }
             
             
-            result := Any.{ procedure_call.value_type, return_ptr };
+            result := Any.{ procedure_call.value_type, return_value_pointer };
             result_array: [] Any; 
-            
-            dprint("return_ptr: %", return_ptr);
-            
             if result.type != xx void then result_array = .[ result ];
+            
             #if USING_DYNCALL {
-                if !do_dyncall(script.dyncall_vm, Any.{ proc_info, *proc_ptr }, arguments, result_array) {
+                if !do_dyncall(script.dyncall_vm, Any.{ procedure_info, *procedure_pointer }, arguments, result_array) {
                     set_general_error(script, "Failed while trying to make dyncall.");
                     return false;
                 }
             } else {
-                if !try_calling_procedure_with_wrapper(proc_info, proc_ptr, arguments, result_array) {
-                    set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(proc_info));
+                if !try_calling_procedure_with_wrapper(procedure_info, procedure_pointer, arguments, result_array) {
+                    set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info));
                     return false;
                 }
             }
         }
         
-        dprint("result of procedure call: %", Any.{ procedure_call.value_type, return_ptr });
+        dprint("result of procedure call: %", Any.{ procedure_call.value_type, return_value_pointer });
         
         // TODO: handle in a more systematic way, for other types of expressions that may be used as a statement.
         // NOTE: we are assuming here the DISCARD_VALUE being set and provided_storage being non-null are absolutely mutually exclusive 
@@ -303,6 +301,9 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         
+        // TODO: special case to handle conversion from Any.
+        
+        
         src_type := node_cast.value.value_type;
         dst_type := node_cast.value_type;
         
@@ -313,13 +314,10 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             assert(!should_push_by_pointer(node_cast));
             
             // Actually do nothing, but caller will pop the pointer as rvalue instead of as lvalue now
-            if !execute_node(script, node_cast.value)  return false;
-            return true;
+            return execute_node(script, node_cast.value);
         }
         
-        // TODO: special case to handle conversion from Any. 
-        
-        // TODO: right now this assumes we will only ever do casts between trivial types (we should actually check this!)
+        // NOTE: no conversions to or from aggregates (other than implicitly taking references) are currently supported
         assert(!is_aggregate(node_cast.value_type) && !is_aggregate(node_cast.value.value_type));
         
         dst := Any.{ node.value_type, get_result_storage(node_cast) };
@@ -348,7 +346,6 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             return execute_node(script, dot.right, provided_storage = provided_storage);
         }
         
-        // TODO: should better utilize provided_storage in STRUCT and POINTER cases
         left_type := dot.left.value_type;
         if left_type.type == {
           case .POINTER;
@@ -380,11 +377,11 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             return push_result(dot, member_any);
             
           case .TYPE;
-            // type expression on left side is evaluated during typechecking
+            // NOTE: the type expression on LHS was evaluated during typechecking
             return execute_node(script, dot.right, provided_storage = provided_storage);
         }
         
-        assert(false);
+        assert(false, "Invalid Node_Dot: %", dot.*);
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
