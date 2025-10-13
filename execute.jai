@@ -202,8 +202,8 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
             assert(should_push_by_pointer(operation.left));
-            r_value := pop_any(script, operation.right.value_type);
-            l_value := pop_any(script, operation.left.value_type, true);
+            r_value := pop_any(*script.stack, operation.right.value_type);
+            l_value := pop_any(*script.stack, operation.left.value_type, true);
             memcpy(l_value.value_pointer, r_value.value_pointer, r_value.type.runtime_size);
             return true;
         }
@@ -212,9 +212,9 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         
         right: Any;
         if !is_unary(_operator.kind) {
-            right = pop_any(script, operation.right.value_type, should_push_by_pointer(operation.right));
+            right = pop_any(*script.stack, operation.right.value_type, should_push_by_pointer(operation.right));
         }
-        left := pop_any(script, operation.left.value_type, should_push_by_pointer(operation.left));
+        left := pop_any(*script.stack, operation.left.value_type, should_push_by_pointer(operation.left));
         
         if node.flags & .SWAP_OPERANDS {
             left, right = right, left;
@@ -261,7 +261,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
                 
                 // NOTE: We provide an Any with the type from argument_node, which may not be the same as the formal argument type if we are doing an implicit reference.
                 //       The actual implicit reference is currently handled in the call_procedure wrapper, which is not really ideal, but it's what I've got to do for the time being.
-                argument_any := pop_any(script, it, should_push_by_pointer(argument_node));
+                argument_any := pop_any(*script.stack, it, should_push_by_pointer(argument_node));
                 arguments[it_index] = argument_any;
                 
                 if argument_any.type.runtime_size > 8
@@ -295,7 +295,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         // NOTE: we are assuming here the DISCARD_VALUE being set and provided_storage being non-null are absolutely mutually exclusive 
         if procedure_call.flags & .DISCARD_VALUE {
             dprint("Discarding unused result of procedure call expression.");
-            pop_any(script, procedure_call.value_type);
+            pop_any(*script.stack, procedure_call.value_type);
         }
         return true;
         
@@ -325,7 +325,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         dst := Any.{ node.value_type, get_result_storage(node_cast) };
         
         if !execute_node(script, node_cast.value)  return false;
-        src := pop_any(script, node_cast.value.value_type);
+        src := pop_any(*script.stack, node_cast.value.value_type);
         
         if !Convert.any_to_any(dst, src) {
             set_general_error(script, "Failed to execute cast from % to %. Source value was %", as_type(src.type), as_type(dst.type), src);
@@ -360,7 +360,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             
             if !execute_node(script, dot.left)  return false;
             
-            struct_any, did_dereference := dereference_any_pointer(pop_any(script, pointer_info, false));
+            struct_any, did_dereference := dereference_any_pointer(pop_any(*script.stack, pointer_info, false));
             assert(did_dereference);
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
@@ -371,7 +371,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             
           case .STRUCT;
             if !execute_node(script, dot.left)  return false;
-            struct_any := pop_any(script, left_type, true); // NOTE: always pop inirectly here
+            struct_any := pop_any(*script.stack, left_type, true); // NOTE: always pop inirectly here
             member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
             dprint("struct value ptr: %", struct_any.value_pointer);
@@ -392,8 +392,8 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         if !execute_node(script, subscript.base_expression)  return false;      
         if !execute_node(script, subscript.indexing_expression)  return false;      
         
-        index_any := pop_any(script, subscript.indexing_expression.value_type);
-        base_any  := pop_any(script, subscript.base_expression.value_type, true);
+        index_any := pop_any(*script.stack, subscript.indexing_expression.value_type);
+        base_any  := pop_any(*script.stack, subscript.base_expression.value_type, true);
         
         ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
         indexing_type := subscript.indexing_expression.value_type;
@@ -466,7 +466,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         if_statement := node.(*Node_If_Statement);
         if !execute_node(script, if_statement.condition)  return false;
         
-        condition := pop_any(script, if_statement.condition.value_type);
+        condition := pop_any(*script.stack, if_statement.condition.value_type);
         dprint("condition: % %", as_type(condition.type), condition);
         
         condition_as_bool: bool;
@@ -482,7 +482,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
         while loop := true {
             if !execute_node(script, while_loop.condition)  return false;
             
-            condition := pop_any(script, while_loop.condition.value_type);
+            condition := pop_any(*script.stack, while_loop.condition.value_type);
             dprint("condition: % %", as_type(condition.type), condition);
             
             condition_as_bool: bool;
@@ -501,7 +501,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             if !execute_node(script, for_loop.array_expression)  return false;
             
             ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
-            array := pop_any(script, ti_array, true); // TODO: maybe not use lvalue later?
+            array := pop_any(*script.stack, ti_array, true); // TODO: maybe not use lvalue later?
             
             array_count, array_data := get_array_count_and_data(array.value_pointer, xx array.type);
             
@@ -522,8 +522,8 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             if !execute_node(script, for_loop.range.upper)  return false;
             
             control_type := for_loop.range.lower.value_type;
-            upper := pop_any(script, control_type);
-            lower := pop_any(script, control_type);
+            upper := pop_any(*script.stack, control_type);
+            lower := pop_any(*script.stack, control_type);
             
             upper_as_s64: int;
             if !Convert.any_to_int(upper_as_s64, upper) {
@@ -555,7 +555,7 @@ execute_node :: (script: *Script, node: *Node, provided_storage: *void = null, f
             for for_loop.list {
                 _it_index = it_index;
                 if !execute_node(script, it)  return false;
-                for_loop.it_decl.value_pointer = pop_any(script, for_loop.it_decl.value_type, true).value_pointer;
+                for_loop.it_decl.value_pointer = pop_any(*script.stack, for_loop.it_decl.value_type, true).value_pointer;
                 if !execute_node(script, for_loop.statement)  return false;
             }
             return true;

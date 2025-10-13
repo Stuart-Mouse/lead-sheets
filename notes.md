@@ -1709,6 +1709,24 @@ We can probably use the osor_coroutine module for this.
 
 
 
+## Enforcing stack use contracts
+
+```
+// Enforcing the basic contract for stack use.
+// TODO: Once we have some basic mechanism for recovering from failed execution of statements, we should make this into an error type that we can propogate up to the user without crashing the whole program.
+// TODO: This does not actually work because not all nodes actually push something of their own. They may just execute another node to perform the push in their place...
+//       we could force some kind of call to notify_not_pushing() that turns off the check manaully, but I don't want to do that crap right now.
+//       leaving this code here for now though since I may want fix it up and use it later on.
+stack_top_before := script.stack.top;
+defer if provided_storage {
+    assert(script.stack.top == stack_top_before, "Unexpected stack push or pop. Node should have written to provided_storage.");
+} else {
+    expected_push := ifx should_push_by_pointer(node) then size_of(*void) else node.value_type.runtime_size;
+    actual_push   := script.stack.top - stack_top_before;
+    assert(actual_push == expected_push, "Stack push did not match expected push size: % (actual) vs % (expected).", actual_push, expected_push);
+}
+```
+
 
 
 

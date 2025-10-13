@@ -1072,7 +1072,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         
         declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
         if !execute_node(script, declaration.init_expression)  return;
-        pop_any(script, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
+        pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
     } else {
         declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
     }

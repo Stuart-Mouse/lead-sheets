@@ -1,7 +1,7 @@
 /*
     TODO:
         create debug flag
-        in debug mode, add a Stack.Push_Header that we can use to check for proper pushes/pops
+        in debug mode, add some mechanism to make sure the each push and pop size matches
 */
 
 Stack :: struct {
@@ -52,8 +52,13 @@ pop_frame :: inline (using stack: *Stack) {
 
 /*
     NOTE: 
-        the 'indirect' parameters are there so that we can use the same code path for cases where we want to push/pop some value directly and cases where we want to push/pop just a pointer
-        the parameter is also an auto-bake though, so you don't pay for the runtime flexibility it if you don't need it
+        The 'indirect' parameters are there so that we can use the same code path for cases where we want to push/pop some value directly and cases where we want to push/pop just a pointer.
+        The parameter is also an auto-bake though, so you don't pay for the runtime flexibility it if you don't need it.
+        
+        The value returned by push, pop, and peek depends on the value of the 'indirect' parameter.
+            If indirect == false, then the returned pointer points at stack.top.
+            If indirect == true,  then the returned pointer points at whatever stack.top (interpreted as a *void) is pointing at.
+            The idea here is that the returned pointer can always then be validly written to, whether or not one pushed 'indirectly'.
 */
 
 // NOTE: if pointer is null, we just memset the pushed bytes to zero
@@ -70,18 +75,18 @@ push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := fa
     }
     
     defer top += push_size;
-    return top;
+    return ifx indirect then pointer else top;
 }
 
 pop :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
-    pop_size := ifx indirect then 8 else (size + 7) & ~7;
+    pop_size := ifx indirect then size_of(*void) else (size + 7) & ~7;
     top -= pop_size;
     assert(top >= memory, "Invalid stack pop!");
     return ifx indirect then top.(**void).* else top;
 }
 
 peek :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
-    pop_size := ifx indirect then 8 else (size + 7) & ~7;
+    pop_size := ifx indirect then size_of(*void) else (size + 7) & ~7;
     pointer := top - pop_size;
     assert(pointer >= memory, "Invalid stack peek!");
     return ifx indirect then pointer.(**void).* else pointer;
@@ -143,22 +148,17 @@ pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
     I still would ultimately like to not be passing the script here though, or at least we should also have version that just take the Stack.
 */
 
-push_any :: (using script: *Script, any: Any, indirect := false) -> bool {
-    dprint("push_any(%, %)", as_type(any.type), indirect);
-    if indirect  dprint("pushed ptr value: %", any.value_pointer);
-    result := push(*script.stack, any.value_pointer, any.type.runtime_size, indirect);
-    if !result  set_execution_error(script, "Ran out of space on stack!", node = null);
-    return result != null;
+push_any :: (using stack: *Stack, any: Any, indirect := false) -> bool, Any {
+    result := push(stack, any.value_pointer, any.type.runtime_size, indirect);
+    return Any.{ any.type, result };
 }
 
-pop_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
-    dprint("pop_any(%, %)", as_type(type), indirect);
-    value_pointer := pop(*script.stack, type.runtime_size, indirect);
-    if indirect  dprint("popped ptr value: %", value_pointer);
+pop_any :: (using stack: *Stack, type: *Type_Info, indirect := false) -> Any {
+    value_pointer := pop(stack, type.runtime_size, indirect);
     return Any.{ type, value_pointer };
 }
 
-peek_any :: (using script: *Script, type: *Type_Info, indirect := false) -> Any {
-    value_pointer := peek(*script.stack, type.runtime_size, indirect);
+peek_any :: (using stack: *Stack, type: *Type_Info, indirect := false) -> Any {
+    value_pointer := peek(stack, type.runtime_size, indirect);
     return Any.{ type, value_pointer };
 }
