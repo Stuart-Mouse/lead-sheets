@@ -188,7 +188,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
             if procedure.argument_types[it_index + first_arg_index] == type_info(*Node) {
                 arguments[argument_index] = it.*; // pass *Node itself
             } else {
-                arguments[argument_index] = execute_node(script, it.*);
+                arguments[argument_index] = script.my_evaluate_node(script, it.*);
                 if has_error(script)  return false;
             }
             argument_index += 1;

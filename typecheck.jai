@@ -514,10 +514,13 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             literal.flags |= .IS_CONSTANT;
         }
         
-        // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
         literal.value_type = ti_struct;
-        literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
-        dprint("allocated space for literal of type %, node %", literal.value_type, literal);
+        
+        // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
+        if is_malleable(literal) {
+            literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
+            dprint("allocated space for literal of type %, node %", literal.value_type, literal);
+        }
     }
     
     assert(literal.value_type != null);
@@ -639,7 +642,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
                 if !ok  return;
                 if replacement  replace_node(*operation.right, replacement);
             }
-            operation.value_type = left_type;
+            operation.value_type = xx void;
             return;
         }
     }
@@ -657,7 +660,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
-        operation.value_type = BUILTIN_OPERATIONS[builtin_operation_index].ret.(*Type_Info);
+        operation.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
         if left_type.type == .ENUM && left_type == right_type {
             if operation.value_type != left_underlying_type {
                 set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type), node = operation);
@@ -665,7 +668,6 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
             }
             operation.value_type = left_type;
         }
-        
         return;
     }
     
@@ -673,9 +675,9 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     procedure_call := alloc_node(script, Node_Procedure_Call);
     procedure_call.procedure_expression = make_identifier(script, operation.name);
     
-    if is_unary(_operator)
-        then procedure_call.arguments = array_copy((*Node).[ operation.left ],, get_pool_allocator(*script.pool));
-        else procedure_call.arguments = array_copy((*Node).[ operation.left, operation.right ],, get_pool_allocator(*script.pool));
+    arguments_count := ifx is_unary(_operator) then 1 else 2;
+    procedure_call.arguments = array_copy(array_view((*Node).[ operation.left, operation.right ], 0, arguments_count),, get_pool_allocator(*script.pool));
+    
     operation.overload_procedure    = procedure_call;
     operation.flags                |= .OVERLOAD;
     
@@ -813,7 +815,8 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
             return;
         }
         
-        if !execute_node(script, type_expression)  return;
+        my_evaluate_node(script, type_expression);
+        if has_error(script)  return;
         node_cast.value_type = pop_as(*stack, *Type_Info);
         
         if is_aggregate(node_cast.value.value_type) {
@@ -910,7 +913,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                 return;
             }
             
-            if !execute_node(script, dot.left)  return;
+            my_evaluate_node(script, dot.left);
+            if has_error(script)  return;
             namespace = pop_as(*stack, *Type_Info);
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
@@ -1023,7 +1027,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             return;
         }
         
-        if !execute_node(script, type_expression)  return;
+        my_evaluate_node(script, type_expression);
+        if has_error(script)  return;
         explicit_type = pop_as(*stack, *Type_Info);
     }
     
@@ -1072,7 +1077,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         literal.flags |= .IS_MALLEABLE;
         
         declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-        if !execute_node(script, declaration.init_expression)  return;
+        my_evaluate_node(script, declaration.init_expression);
+        if has_error(script)  return;
         pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
     } else {
         declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);

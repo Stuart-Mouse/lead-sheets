@@ -260,7 +260,7 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
             }
             
             for 0..proc_info.argument_types.count-1 {
-                print(*builder, "assert(xx Ta%1 == arguments[%1].type);\n", it);
+                print(*builder, "assert(xx Ta%1 == arguments[%1].type, \"Expected type \%, but got \%\", Ta%1, as_type(arguments[%1].type));\n", it);
             }
             
             for 0..proc_info.return_types.count-1 {

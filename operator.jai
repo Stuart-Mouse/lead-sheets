@@ -177,7 +177,7 @@ Builtin_Operation_ID :: int;
 
     append(*builder, #string JAI
     BUILTIN_OPERATIONS :: (
-        struct { type: Operator.Kind; identifier: string; left: Type; right: Type; ret: Type; is_symmetric: bool; }
+        struct { type: Operator.Kind; identifier: string; left: Type; right: Type; result: Type; is_symmetric: bool; }
     ).[
     JAI);
     
@@ -197,13 +197,13 @@ Builtin_Operation_ID :: int;
     .{ .BINARY, "&", %1, %1, %1, false },
     .{ .BINARY, "^", %1, %1, %1, false },
     
-    .{ .ASSIGNMENT, "+=", %1, %1, %1, false },
-    .{ .ASSIGNMENT, "-=", %1, %1, %1, false },
-    .{ .ASSIGNMENT, "|=", %1, %1, %1, false },
-    .{ .ASSIGNMENT, "&=", %1, %1, %1, false },
-    .{ .ASSIGNMENT, "^=", %1, %1, %1, false },
+    .{ .ASSIGNMENT, "+=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "-=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "|=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "&=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "^=", %1, %1, void, false },
     
-    .{ type = .PREFIX, identifier = "~", left = %1,   ret = %1   },
+    .{ type = .PREFIX, identifier = "~", left = %1,   result = %1   },
     JAI;
     
     for (string.["u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64"]) {
@@ -212,7 +212,7 @@ Builtin_Operation_ID :: int;
     
     
     signed_integer_template :: #string JAI
-    .{ type = .PREFIX, identifier = "-", left = %1,   ret = %1   },
+    .{ type = .PREFIX, identifier = "-", left = %1,   result = %1   },
     JAI;
     
     for (string.["s8", "s16", "s32", "s64"]) {
@@ -245,22 +245,22 @@ Builtin_Operation_ID :: int;
         
         
         // PREFIX    (right type will be ignored)
-        .{ type = .PREFIX, identifier = "-", left = float,   ret = float },
-        .{ type = .PREFIX, identifier = "-", left = Vector2, ret = Vector2 },
+        .{ type = .PREFIX, identifier = "-", left = float,   result = float },
+        .{ type = .PREFIX, identifier = "-", left = Vector2, result = Vector2 },
         
         
         // ASSIGNMENT
-        // TODO: should we just assert that left and ret are the same type?
+        // TODO: should we just assert that left and result are the same type?
         
         .{ .ASSIGNMENT, "+=", float, float, float, false },
         .{ .ASSIGNMENT, "-=", float, float, float, false },
         
-        .{ .ASSIGNMENT, "+=", Vector2, Vector2, Vector2, false },
-        .{ .ASSIGNMENT, "-=", Vector2, Vector2, Vector2, false },
-        .{ .ASSIGNMENT, "*=", Vector2, Vector2, Vector2, false },
-        .{ .ASSIGNMENT, "/=", Vector2, Vector2, Vector2, false },
-        .{ .ASSIGNMENT, "*=", Vector2, float,   Vector2, false },
-        .{ .ASSIGNMENT, "/=", Vector2, float,   Vector2, false },
+        .{ .ASSIGNMENT, "+=", Vector2, Vector2, void, false },
+        .{ .ASSIGNMENT, "-=", Vector2, Vector2, void, false },
+        .{ .ASSIGNMENT, "*=", Vector2, Vector2, void, false },
+        .{ .ASSIGNMENT, "/=", Vector2, Vector2, void, false },
+        .{ .ASSIGNMENT, "*=", Vector2, float,   void, false },
+        .{ .ASSIGNMENT, "/=", Vector2, float,   void, false },
     ];
     JAI);
     
@@ -305,7 +305,7 @@ resolve_builtin_operation :: (
     return -1, false;
 }
 
-execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, ret: *void) -> bool {
+execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, result: *void) -> bool {
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;
@@ -315,9 +315,9 @@ execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *voi
             print_to_builder(*builder, "  case %;\n", it_index);
             if it.type == {
               case .PREFIX;
-                print_to_builder(*builder, "    ret.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
+                print_to_builder(*builder, "    result.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
               case .BINARY;
-                print_to_builder(*builder, "    ret.(*%).* = left.(*%).* % right.(*%).*;\n", it.ret, it.left, it.identifier, it.right);
+                print_to_builder(*builder, "    result.(*%).* = left.(*%).* % right.(*%).*;\n", it.result, it.left, it.identifier, it.right);
               case .ASSIGNMENT;
                 print_to_builder(*builder, "    left.(*%1).* %2 right.(*%3).*;\n", it.left, it.identifier, it.right);
             }

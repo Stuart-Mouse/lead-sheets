@@ -1,7 +1,6 @@
 
 // typechecking callbcak allows additional return value for replacement node
 Typecheck_Callback :: type_of(typecheck_node);
-Execute\ _Callback :: type_of(execute_node);
 Serialize_Callback :: type_of(sprint_node);
 
 Script :: struct {
@@ -31,13 +30,14 @@ Script :: struct {
     
     // callbacks for handling custom node types
     typecheck_callback:     Typecheck_Callback;
-    execute\ _callback:     Execute\ _Callback;
     serialize_callback:     Serialize_Callback;
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
     my_parse_expression := parse_expression;
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
+    
+    my_evaluate_node    := evaluate_node;
     
     Flags :: enum_flags {
         INITIALIZED;

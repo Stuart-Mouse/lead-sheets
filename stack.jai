@@ -154,7 +154,7 @@ pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
 
 push_any :: (using stack: *Stack, any: Any, indirect := false) -> bool, Any {
     result := push(stack, any.value_pointer, any.type.runtime_size, indirect);
-    return Any.{ any.type, result };
+    return result != null, Any.{ any.type, result };
 }
 
 pop_any :: (using stack: *Stack, type: *Type_Info, indirect := false) -> Any {
