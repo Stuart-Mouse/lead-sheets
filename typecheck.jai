@@ -556,6 +556,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
         identifier.value_type      = declaration.value_type;
+        log("%: identifier % (%) has value type %", get_location(identifier), get_identifier_name(script, identifier), identifier, as_type(identifier.value_type));
         return;
     }
     
@@ -837,12 +838,15 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below.
     left_type: *Type_Info;
     if dot.left {
-        // TODO: determing if check_flags should have EXPECT_LVALUE flag passed as well. Looked like we had faulty logic here for that before...
-        left_type = typecheck_node(script, dot.left, check_flags);
+        FLAGS_TO_PROPOGATE_FOR_DOT_LHS :: Typechecking_Flags.EXPECT_LVALUE;
+        left_type = typecheck_node(script, dot.left, check_flags & FLAGS_TO_PROPOGATE_FOR_DOT_LHS);
         if has_error(script)  return;
+        
+        log("LHS of dot (%) has value_type: %", dot.left, as_type(dot.left.value_type));
     } else {
         left_type = xx Type;
     }
+    defer if dot.left log("LHS of dot (%) has value_type: %", dot.left, as_type(dot.left.value_type));
     
     if left_type.type == {
       case .POINTER;
@@ -856,6 +860,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         struct_info := pointer_info.pointer_to.(*Type_Info_Struct);
         left_type = struct_info; // override for below struct case
         
+        // TODO: figure out some way to avoid this, it feels like a hack
         // NOTE: we also need to remove the EXPECT_LVALUE flag if it was set for the pointer iself.
         //       this is currently the only spot we ever do this, so its a bit weird!
         dot.left.flags &= ~.PUSH_BY_POINTER;
@@ -870,7 +875,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         member_identifier := dot.right.(*Node_Identifier);
         assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
         member_name := member_identifier.name;
-        dprint("typechecking struct member identifier at % with name '%'", member_identifier, member_name);
         
         member_ti, member_offset := get_field(xx left_type, member_name);
         if member_ti == null {
@@ -896,10 +900,16 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         member_identifier.flags |= .TYPECHECKED;
         dot.value_type = member_ti.type;
         
-        // NOTE: if we are not implicitly dereferencing the left side here, we want to make sure left side only pushes the struct pointer to the stack
-        if dot.left.value_type.type != .POINTER { dot.left.flags |= .PUSH_BY_POINTER; }
-        
-        return; // no error
+        // NOTE: If we are not implicitly dereferencing the left side here,
+        //       then we would prefer for the value to be pushed by pointer.
+        //       However, this may not be possible if the LHS is not a valid lvalue,
+        //       and in that case, we still should be able to access its members.
+        if dot.left.value_type.type != .POINTER { 
+            if is_valid_lvalue(script, dot.left) {
+                dot.left.flags |= .PUSH_BY_POINTER;
+            }
+        }
+        return;
         
       // case .ENUM;
         // TODO: access enum namespace through instance of enum type
@@ -1070,6 +1080,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     dprint("right_type: %", right_type);
     
     declaration.value_type = ifx explicit_type else right_type;
+    log("%: declaration % has value type %", get_location(declaration), get_declaration_name(script, declaration), as_type(declaration.value_type));
     
     if declaration.flags & .MACRO {
         // NOTE: currently, macro declarations are only used to bind to malleable literals
@@ -1172,6 +1183,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             value_type = ti_array.element_type,
             flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
         };
+        log("it_decl has value type: %", as_type(ti_array.element_type));
         
       case .LIST;
         first_type := typecheck_node(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);

@@ -1746,25 +1746,6 @@ We can probably use the osor_coroutine module for this.
 
 
 
-## Enforcing stack use contracts
-
-```
-// Enforcing the basic contract for stack use.
-// TODO: Once we have some basic mechanism for recovering from failed execution of statements, we should make this into an error type that we can propogate up to the user without crashing the whole program.
-// TODO: This does not actually work because not all nodes actually push something of their own. They may just execute another node to perform the push in their place...
-//       we could force some kind of call to notify_not_pushing() that turns off the check manaully, but I don't want to do that crap right now.
-//       leaving this code here for now though since I may want fix it up and use it later on.
-stack_top_before := script.stack.top;
-defer if provided_storage {
-    assert(script.stack.top == stack_top_before, "Unexpected stack push or pop. Node should have written to provided_storage.");
-} else {
-    expected_push := ifx should_push_by_pointer(node) then size_of(*void) else node.value_type.runtime_size;
-    actual_push   := script.stack.top - stack_top_before;
-    assert(actual_push == expected_push, "Stack push did not match expected push size: % (actual) vs % (expected).", actual_push, expected_push);
-}
-```
-
-
 
 ## Debug things
 
@@ -1776,3 +1757,51 @@ procedure calls
         also use unchecked variant for this when not in debug mode
         
 
+
+iterator declarations
+initializer_of for structs in declaration
+
+
+dedupe code in implicit deref struct logic
+    need to create some test case for this
+    
+    turning out to have a bit more complexity than expected
+    we need some means to hint that we would like to push some value by pointer, but also accept if it's not
+    
+    actually this problem may even be worse than I thought
+    what do we do if we have some dot member access where the LHS struct has to be pushed by value
+    
+    
+dot
+    push RHS `(*void)`
+    push LHS `struct on stack`
+    pop  LHS
+    return
+caller sees RHS ptr on top of stack, pointing to LHS further up stack
+but caller has no idea that LHS is still on the stack and has technically already been popped
+so we need ot be sure that there's no possible way caller messes up by accidentally overwriting RHS
+as far as the caller knows, if they just popped RHS (a small value)
+they are now safe to push whatever they want to to the stack
+but this is not really the case
+
+*maybe* it is OK if and only if we ensure that result values are always pushed before any other stack operations are done
+as it stands already, in most cases caller does not actually know if they are popping something off the stack by pointer or by value
+so besides a few very specific cases where we know the pushed value is a pointer, the caller already is in this situation where they should always be pushing the result value before evaluating child nodes
+
+In any case, this all feels a bit sketch and I worry about convoluted cases that could occur
+we may end up needing to allocate stack space up front for certain intermediates if some problems emerge with stack values getting corrupted before use
+
+I worry about a complex case like
+
+operator
+    dot
+        lhs
+        rhs
+    dot
+        lhs
+        rhs
+
+Another option if this type of situation becomes problematic would be to just make the dot node do some extra work in evaluation
+to push space for the member value before pushing the struct and then memcopying out just the single member before popping off the struct value
+
+TODO: check if we have similar issues for fixed arrays

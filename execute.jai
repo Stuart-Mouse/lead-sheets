@@ -43,11 +43,13 @@ Execution_Flags :: enum_flags {
 }
 
 evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any #expand {
+    // log("% -> %", node, as_type(node.value_type));
+    
     value := script.my_evaluate_node(script, node, provided_storage, flags);
     if has_error(script)  `return NULL_ANY;
     
     if !(node.flags & .VALUE_TYPE_IS_NOMINAL) {
-        assert(value.type == node.value_type, "% claims to have value_type %, but it returned type %", node.node_type, as_type(node.value_type), as_type(value.type));
+        assert(value.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(value.type));
         
         if flags & .DISCARD_VALUE {
             dprint("Discarding unused result.");
@@ -78,14 +80,10 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
                     The result value must be pushed to top of the stacks
 */
 evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
-    dprint("executing node %: %", node, node.node_type);
+    dprint("Evaluating % @ %", node.node_type, node);
     dprint_push_indent();
     
-    dprint("stack_pointer offset: %  (%)", script.stack.top - script.stack.memory, script.stack.top);
-    if provided_storage  dprint("provided storage is %", provided_storage);
-    if should_push_by_pointer(node)  dprint("expecting lvalue");
-    
-    if !node.value_type { dprint("Warning: node has no set value type!"); }
+    if !node.value_type  dprint("Warning: node's value_type is null!");
     
     if !node.flags & .TYPECHECKED {
         set_execution_error(script, "Cannot execute a node that has not been typechecked.", node = node);
@@ -94,32 +92,34 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     
     return_result :: (node: *Node, any: Any) -> bool #expand {
         if provided_storage {
+            dprint("Returning result using provided storage @ %: ", provided_storage, newline = false);
+            if !is_aggregate(any.type)  dprint("%", any);
+            dprint(" (%)", as_type(any.type));
+            
             memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
             `return Any.{ node.value_type, provided_storage };
         }
-        
         ok, result := push_any(*script.stack, any, should_push_by_pointer(node));
         if !ok  set_execution_error(script, "Ran out of space on stack!", node = null);
         
-        dprint("push_any(%, %)", as_type(any.type), should_push_by_pointer(node));
-        if should_push_by_pointer(node)  dprint("pushed ptr value: %", any.value_pointer);
-        if is_aggregate(result.type) {
-            dprint("result: @ %", result.value_pointer);
-        } else {
-            dprint("result: %", result);
-        }
-        
+        dprint("Returning result using stack @ %: ", result.value_pointer, newline = false);
+        if !is_aggregate(any.type)  dprint("%", any);
+        dprint(" (%)", as_type(any.type));
         `return result;
     }
     
     get_result_storage :: (node: *Node) -> *void #expand {
-        if provided_storage  return provided_storage;
+        if provided_storage {
+            dprint("Got provided storage @ % for result of type: %", provided_storage, as_type(node.value_type));
+            return provided_storage;
+        }
         
         result := push(*script.stack, null, node.value_type.runtime_size);
         if !result {
             set_execution_error(script, "Ran out of space on stack!", node = null);
             `return NULL_ANY;
         }
+        dprint("Got space on stack @ % for result of type: %", result, as_type(node.value_type));
         return result;
     }
     
@@ -171,7 +171,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
-        dprint("name: %", get_identifier_name(script, identifier));
+        dprint("Identifier name: %", get_identifier_name(script, identifier));
         if #complete identifier.identifier_type == {
           case .DECLARATION;
             declaration := identifier.declaration;
@@ -185,16 +185,10 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
             value    := get_value(variable);
-            
             if variable.value_pointer == null {
                 set_execution_error(script, "Unable to get value of external variable '%'.", variable.name, node = node);
                 return NULL_ANY;
             }
-            
-            if variable.type.runtime_size > 8
-                then dprint("returning external variable at %", variable.value_pointer);
-                else dprint("returning external variable with value % at %", value, variable.value_pointer);
-            
             return_result(identifier, value);
             
           case .EXTERNAL_PROCEDURE;
@@ -219,12 +213,14 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         operation := node.(*Node_Operation);
         
         if operation.flags & .OVERLOAD {
+            dprint("Evaluating overloaded operator...");
             return script.my_evaluate_node(script, operation.overload_procedure, provided_storage = provided_storage);
         }
         
         // TODO: special case for assignment to an Any. We should check that left and right types match.
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
+            dprint("Operation is simple assignment.");
             assert(should_push_by_pointer(operation.left));
             evaluate_node_or_return(script, operation.left);
             value_pointer := pop_as(*script.stack, *void);
@@ -233,6 +229,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         }
         
         _operator := get_operator(script, operation);
+        dprint("Operator name: %, index: %, kind: %", operation.name, operation.operator_index, _operator.kind);
         
         result_value_pointer: *void;
         if _operator.kind != .ASSIGNMENT {
@@ -242,86 +239,67 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
         right: Any;
         left := evaluate_node_or_return(script, operation.left);
-        dprint("left: %, %", as_type(left.type), left.value_pointer);
-        
         if !is_unary(_operator.kind) {
             right = evaluate_node_or_return(script, operation.right);
         }
-        dprint("left 2: %, %", as_type(left.type), left.value_pointer);
-        
-        dprint("operation name: %, index: %, kind: %", operation.name, operation.operator_index, _operator.kind);
         
         if node.flags & .SWAP_OPERANDS {
-            dprint("swapping operands");
+            dprint("Swapping operands...");
             left, right = right, left;
         }
         
         dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
         if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
         
-        if _operator.kind == .ASSIGNMENT {
-            assert(operation.value_type == xx void);
-            return VOID_ANY;
-        }
-        
-        result_any := Any.{ operation.value_type, result_value_pointer };
-        return result_any;
+        return Any.{ operation.value_type, result_value_pointer };
         
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
         
         return_value_pointer := get_result_storage(procedure_call);
-        {
-            defer_restore(*script.stack.top);
+        defer_restore(*script.stack.top);
+        
+        dprint("return_value_pointer: %", return_value_pointer);
+        
+        procedure_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
+        assert(procedure_info.type == .PROCEDURE);
+        dprint("procedure_info: %", as_type(procedure_info));
+        
+        procedure := evaluate_node_or_return(script, procedure_call.procedure_expression);
+        
+        // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
+        ARGUMENTS_ARRAY_ELEMENT_TYPE :: Any;
+        
+        push_ok, arguments := push_empty_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE, procedure_info.argument_types.count);
+        if !push_ok {
+            set_execution_error(script, type = .STACK_OVERFLOW, node = node);
+            return NULL_ANY;
+        }
+        
+        assert(procedure_call.arguments.count == procedure_info.argument_types.count);
+        for procedure_call.arguments {
+            arguments[it_index] = evaluate_node_or_return(script, it);
             
-            dprint("return_value_pointer: %", return_value_pointer);
-            
-            procedure_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
-            assert(procedure_info.type == .PROCEDURE);
-            dprint("procedure_info: %", as_type(procedure_info));
-            
-            procedure := evaluate_node_or_return(script, procedure_call.procedure_expression);
-            
-            {
-                // TODO: in the future, we should probably just use *void instead of Any for arguments array, only using Any in debug mode
-                ARGUMENTS_ARRAY_ELEMENT_TYPE :: Any;
-                
-                push_ok, arguments := push_empty_array(*script.stack, ARGUMENTS_ARRAY_ELEMENT_TYPE, procedure_info.argument_types.count);
-                if !push_ok {
-                    set_execution_error(script, type = .STACK_OVERFLOW, node = node);
-                    return NULL_ANY;
-                }
-                
-                assert(procedure_call.arguments.count == procedure_info.argument_types.count);
-                for procedure_info.argument_types {
-                    argument_node := procedure_call.arguments[it_index];
-                    argument_any  := evaluate_node_or_return(script, argument_node);
-                    
-                    assert(argument_node.value_type == it);
-                    arguments[it_index] = argument_any;
-                    
-                    if argument_any.type.runtime_size > 8
-                        then dprint("argument %, % @ %", it_index, as_type(argument_any.type), argument_any.value_pointer);
-                        else dprint("argument %, % @ %: %", it_index, as_type(argument_any.type), argument_any.value_pointer, argument_any);
-                }
-                
-                result := Any.{ procedure_call.value_type, return_value_pointer };
-                result_array: [] Any; 
-                if result.type != xx void then result_array = .[ result ];
-                
-                #if USING_DYNCALL {
-                    if !do_dyncall(script.dyncall_vm, procedure, arguments, result_array) {
-                        set_general_error(script, "Failed while trying to make dyncall.");
-                        return NULL_ANY;
-                    }
-                } else {
-                    procedure_pointer := procedure.value_pointer.(**void).*;
-                    if !try_calling_procedure_with_wrapper(procedure_info, procedure_pointer, arguments, result_array) {
-                        set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info));
-                        return NULL_ANY;
-                    }
-                }
+            if arguments[it_index].type.runtime_size > 8
+                then dprint("argument #%, % @ %",    it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer);
+                else dprint("argument #%, % @ %: %", it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer, arguments[it_index]);
+        }
+        
+        result := Any.{ procedure_call.value_type, return_value_pointer };
+        result_array: [] Any; 
+        if result.type != xx void then result_array = .[ result ];
+        
+        #if USING_DYNCALL {
+            if !do_dyncall(script.dyncall_vm, procedure, arguments, result_array) {
+                set_general_error(script, "Failed while trying to make dyncall.");
+                return NULL_ANY;
+            }
+        } else {
+            procedure_pointer := procedure.value_pointer.(**void).*;
+            if !try_calling_procedure_with_wrapper(procedure_info, procedure_pointer, arguments, result_array) {
+                set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info));
+                return NULL_ANY;
             }
         }
         
@@ -336,6 +314,8 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
         src_type := node_cast.value.value_type;
         dst_type := node_cast.value_type;
+
+        dst := Any.{ dst_type, get_result_storage(node_cast) };
         
         // special case for implicitly taking a reference
         if dst_type.type == .POINTER 
@@ -343,18 +323,15 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             assert(should_push_by_pointer(node_cast.value));
             assert(!should_push_by_pointer(node_cast));
             
-            dprint("implicit dereference from % to %", as_type(node_cast.value.value_type), as_type(node_cast.value_type));
+            log("Implicitly referencing: % -> %", as_type(node_cast.value.value_type), as_type(node_cast.value_type));
             
-            // NOTE: We use peek_any to reinterpret the indirectly pushed value as a pointer to that value. 
-            //       The only reason we have to do that here is so that the returned Any matches the type the caller is expecting.
-            evaluate_node_or_return(script, node_cast.value);
-            return peek_any(*script.stack, node.value_type);
+            src := evaluate_node_or_return(script, node_cast.value);
+            dst.value_pointer.(**void).* = src.value_pointer;
+            return dst;
         }
         
         // NOTE: no conversions to or from aggregates (other than implicitly taking references) are currently supported
         assert(!is_aggregate(node_cast.value_type) && !is_aggregate(node_cast.value.value_type));
-        
-        dst := Any.{ node.value_type, get_result_storage(node_cast) };
         
         evaluate_node_or_return(script, node_cast.value);
         src := pop_any(*script.stack, node_cast.value.value_type);
@@ -380,34 +357,51 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         }
         
         left_type := dot.left.value_type;
+        doing_implict_dereference := false;
+        
         if left_type.type == {
           case .POINTER;
+            assert(!should_push_by_pointer(dot.left));
+            
             pointer_info := left_type.(*Type_Info_Pointer);
             assert(pointer_info.pointer_to.type == .STRUCT);
-            // override left type for struct case so that we we pop the correct type
-            dprint("override left_type: % -> %", as_type(left_type), as_type(pointer_info.pointer_to));
+            
+            dprint("Implicitly dereferencing: % -> %", as_type(left_type), as_type(pointer_info.pointer_to));
             left_type = pointer_info.pointer_to;
-            
-            evaluate_node_or_return(script, dot.left);
-            
-            struct_any, did_dereference := dereference_any_pointer(pop_any(*script.stack, pointer_info, false));
-            assert(did_dereference);
-            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
-            
-            dprint("struct value ptr: %", struct_any.value_pointer);
-            dprint("member value ptr: %", member_any.value_pointer);
-            
-            return_result(dot, member_any);
+            doing_implict_dereference = true;
+            #through;
             
           case .STRUCT;
+            if should_push_by_pointer(dot.left) || doing_implict_dereference {
+                evaluate_node_or_return(script, dot.left);
+                struct_pointer := pop_as(*script.stack, *void);
+                member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+                return_result(dot, member_any);
+            }
+            
+            log("%: LHS is pushed by value.", get_location(dot));
+            
+            // NOTE: We may later find that this case is problematic and results in stack corruption issues!
+            //       So if something like that happens I hope I can identify it and remember to look here!
+            //       If the LHS struct value could not be pushed by pointer, then that means it's on the stack.
+            //       And if it's on the stack, we need to be careful about not overwriting it.
+            //       In the scope of this one node, we can do that pretty easily by pushing the result value (RHS) before pushing the LHS,
+            //       but it's possible there's convoluted cases I have not yet recognized in which other nodes further up the tree
+            //       may accidentally push some large value that overwrites the LHS we pushed here.
+            result := Any.{ node.value_type, get_result_storage(node) };
+            
             evaluate_node_or_return(script, dot.left);
-            struct_any := pop_any(*script.stack, left_type, true); // NOTE: always pop inirectly here
-            member_any := Any.{ dot.value_type, struct_any.value_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+            struct_pointer := pop(*script.stack, left_type.runtime_size);
             
-            dprint("struct value ptr: %", struct_any.value_pointer);
-            dprint("member value ptr: %", member_any.value_pointer);
+            member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
             
+            if should_push_by_pointer(dot) {
+                memcpy(result.value_pointer, *member_any.value_pointer, size_of(*void));
+            } else {
+                memcpy(result.value_pointer, member_any.value_pointer, member_any.type.runtime_size);
+            }
             return_result(dot, member_any);
+            
             
           case .TYPE;
             // NOTE: the type expression on LHS was evaluated during typechecking
