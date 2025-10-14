@@ -98,6 +98,7 @@ typecheck_script :: (script: *Script) -> bool {
     if script.ast_root.node_type != Node_Block  return false;
     
     typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
+    if has_error(script)  return false;
     
     script.flags |= .TYPECHECKED;
     return true;
@@ -139,16 +140,11 @@ find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: s
 }
 
 find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string) -> *Node_Declaration {
-    if get_declaration_name(script, *for_loop.it_decl) == identifier {
-        return *for_loop.it_decl;
+    if for_loop.it_decl && get_declaration_name(script, for_loop.it_decl) == identifier {
+        return for_loop.it_decl;
     }
-    if get_declaration_name(script, *for_loop.it_index_decl) == identifier {
-        // if need_lvalue {
-        //     // TODO: this is a bad error message since it's reported with the for loop's location and not the identifier's location.
-        //     log("%: Error: it_index cannot be used as an lvalue.", get_location(for_loop));
-        //     return null;
-        // }
-        return *for_loop.it_index_decl;
+    if for_loop.it_index_decl && get_declaration_name(script, for_loop.it_index_decl) == identifier {
+        return for_loop.it_index_decl;
     }
     return null;
 }
@@ -1129,55 +1125,73 @@ typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, ch
 }
 
 typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // value_pointer for it and it_index decls get set later when actually iterating for loop
-    for_loop.it_index_decl = .{
-        left       = make_identifier(script, "it_index"),
-        value_type = xx int,
-        flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
-    };
+    // NOTE: stack_offset for it and it_index decls get set later when actually iterating for loop
     
     if #complete for_loop.control_type == {
       case .RANGE;
         dprint("typechecking range lower");
         lower_type := typecheck_node(script, for_loop.range.lower, hint_type = xx int);
         if has_error(script)  return;
+        {
+            ok, replacement := try_implicit_cast(script, for_loop.range.lower, xx int);
+            if !ok {
+                set_typecheck_error(script, "Value must be of type int or implicitly convertable to int.", node = for_loop.range.lower);
+                return;
+            }
+            if replacement  replace_node(*for_loop.range.lower, replacement);
+        }
         
         dprint("typechecking range upper");
         upper_type := typecheck_node(script, for_loop.range.upper, hint_type = lower_type);
         if has_error(script)  return;
+        {
+            ok, replacement := try_implicit_cast(script, for_loop.range.upper, xx int);
+            if !ok {
+                set_typecheck_error(script, "Value must be of type int or implicitly convertable to int.", node = for_loop.range.upper);
+                return;
+            }
+            if replacement  replace_node(*for_loop.range.upper, replacement);
+        }
         
-        if lower_type != upper_type { 
-            set_typecheck_error(script, "Type mismatch on lower and upper bounds of range.\n", node = for_loop);
+        if !for_loop.it_decl {
+            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl.left = make_identifier(script, "it");
+        }
+        for_loop.it_decl.value_type = xx int;
+        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        
+        if for_loop.it_index_decl {
+            set_typecheck_error(script, "Cannot define an `it_index` in a range-based for loop.", node = for_loop.it_index_decl);
             return;
         }
         
-        // TODO: should probably not allow float here
-        if !is_numeric_type(lower_type) {
-            set_typecheck_error(script, "Iteration range bounds must be of numeric type, got %.", as_type(lower_type), node = for_loop);
-            return;
-        }
-        for_loop.it_decl = .{        
-            left       = make_identifier(script, "it"),
-            value_type = lower_type,
-            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
-        };
         
       case .ARRAY;
         typecheck_node(script, for_loop.array_expression, check_flags = .EXPECT_LVALUE);
         if has_error(script)  return;
-        ti_array := for_loop.array_expression.value_type.(*Type_Info_Array);
+        array_info := for_loop.array_expression.value_type.(*Type_Info_Array);
         
         // TODO: special case for something like a Many_Any / Any_Array_View
         // better option than creating new array view type info's dynamically
-        if ti_array.type != .ARRAY {
+        if array_info.type != .ARRAY {
             set_typecheck_error(script, "Expected an array type.", node = for_loop.array_expression);
             return;
         }
-        for_loop.it_decl = .{
-            left       = make_identifier(script, "it"),
-            value_type = ti_array.element_type,
-            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
-        };
+        
+        if !for_loop.it_decl {
+            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl.left = make_identifier(script, "it");
+        }
+        for_loop.it_decl.value_type = array_info.element_type;
+        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        
+        if !for_loop.it_index_decl {
+            for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_index_decl.left = make_identifier(script, "it_index");
+        }
+        for_loop.it_index_decl.value_type = xx int;
+        for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        
         
       case .LIST;
         first_type := typecheck_node(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);
@@ -1193,11 +1207,19 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             }
         }
         
-        for_loop.it_decl = .{
-            left       = make_identifier(script, "it"),
-            value_type = first_type,
-            flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
-        };
+        if !for_loop.it_decl {
+            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl.left = make_identifier(script, "it");
+        }
+        for_loop.it_decl.value_type = first_type;
+        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        
+        if !for_loop.it_index_decl {
+            for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_index_decl.left = make_identifier(script, "it_index");
+        }
+        for_loop.it_index_decl.value_type = xx int;
+        for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
     }
     
     typecheck_node(script, for_loop.statement, .IS_STATEMENT_ROOT);

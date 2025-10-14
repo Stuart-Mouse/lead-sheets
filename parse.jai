@@ -82,64 +82,65 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION");
-        expr := my_parse_expression(script, 0);
-        if !expr  return null;
+        exprs := parse_comma_separated_expressions(script,, temp);
+        if !exprs  return null;
         
-        if expect_token_type(script, .SPREAD) {
-            dprint("CONTROL TYPE IS RANGE");
-            for_loop.control_type = .RANGE;
-            for_loop.range.lower  = expr;
-            for_loop.range.upper  = my_parse_expression(script, 0);
-            if !for_loop.range.upper  return null;
+        if expect_token_type(script, .COLON) {
+            if exprs.count == {
+              case 2;
+                identifier := exprs[1].(*Node_Identifier);
+                if identifier.node_type != Node_Identifier {
+                    set_parse_error(script, "Expected an identifier for declaration of `it`.", node = identifier);
+                    return null;
+                }
+                for_loop.it_index_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                for_loop.it_index_decl.left = identifier;
+                #through;
+                
+              case 1;
+                identifier := exprs[0].(*Node_Identifier);
+                if identifier.node_type != Node_Identifier {
+                    set_parse_error(script, "Expected an identifier for declaration of `it_index`.", node = identifier);
+                    return null;
+                }
+                for_loop.it_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                for_loop.it_decl.left = identifier;
+                
+              case;
+                set_parse_error(script, "Unexpected expressions in iterator declaration slot.", node = exprs[0]);
+                return null;
+            }
+            
+            // parse expressions again for right side of colon
+            exprs = parse_comma_separated_expressions(script,, temp);
+            if !exprs  return null;
+        }
+        
+        if exprs.count == 1 {
+            if expect_token_type(script, .SPREAD) {
+                dprint("CONTROL TYPE IS RANGE");
+                for_loop.control_type = .RANGE;
+                for_loop.range.lower  = exprs[0];
+                for_loop.range.upper  = my_parse_expression(script, 0);
+                if !for_loop.range.upper  return null;
+            } else {
+                dprint("CONTROL TYPE IS ARRAY");
+                for_loop.control_type = .ARRAY;
+                for_loop.array_expression = exprs[0];
+            }
         } else {
-            dprint("CONTROL TYPE IS ARRAY");
-            for_loop.control_type = .ARRAY;
-            for_loop.array_expression = expr;
-            if for_loop.array_expression == null  return null;
+            dprint("CONTROL TYPE IS LIST");
+            for_loop.list = array_copy(exprs,, get_pool_allocator(*script.pool));
+            for_loop.control_type = .LIST;
         }
         
         dprint("STATEMENT");
         for_loop.statement = parse_statement(script, expect_semicolon);
         if for_loop.statement == null  return null;
         
-        current_scope = for_loop.scope; 
+        current_scope = for_loop.scope;
         return for_loop;
         
-      case .FOREACH;
-        dprint("FOREACH LOOP"); dprint_push_indent();
-        for_token := get_token(script);
-        for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
-        current_scope = for_loop; 
-        
-        dprint("ITERATOR LIST");
-        open_paren := get_token(script);
-        if open_paren.type != .OPEN_PAREN {
-            set_parse_error(script, "%: expected an open paren to begin a foreach iterator list.", open_paren.location);
-            return null;
-        }
-        if peek_token(script).type == .CLOSE_PAREN {
-            close_paren := peek_token(script);
-            set_parse_error(script, "%: foreach loop cannot have an empty iterator list.", close_paren.location);
-            return null;
-        }
-        expressions, ok := parse_comma_separated_expressions(script,, temp);
-        if !ok  return null;
-        
-        for_loop.list = array_copy(expressions,, get_pool_allocator(*script.pool));
-        for_loop.control_type = .LIST;
-        
-        close_paren := get_token(script);
-        if close_paren.type != .CLOSE_PAREN {
-            set_parse_error(script, "%: expected closing paren after foreach loop iterator list. Instead we saw %\n", close_paren.location, close_paren.text);
-            return null;
-        }
-        
-        dprint("STATEMENT");
-        for_loop.statement = parse_statement(script, expect_semicolon);
-        if for_loop.statement == null  return null;
-        
-        current_scope = for_loop.scope; 
-        return for_loop;
         
       case .OPEN_BRACE;
         dprint("BLOCK"); dprint_push_indent();
@@ -205,7 +206,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         dprint("DECLARATION"); dprint_push_indent();
         
-        declaration := alloc_node(script, Node_Declaration, loc = left.location, trivia = left.trivia);
+        declaration := alloc_node(script, Node_Declaration, loc = left.location);
         declaration.left = left.(*Node_Identifier);
         
         next_token := peek_token(script);
@@ -345,8 +346,8 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         if expect_token_type(script, .OPEN_PAREN) {
             if !expect_token_type(script, .CLOSE_PAREN) {
-                expressions, ok := parse_comma_separated_expressions(script,, temp);
-                if !ok  return null;
+                expressions := parse_comma_separated_expressions(script,, temp);
+                if !expressions  return null;
                 directive.arguments = array_copy(expressions,, get_pool_allocator(*script.pool));
                 
                 close_paren_token := get_token(script);
@@ -422,19 +423,18 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     return left;
 }
 
-// needs to also return bool since node can be null validly if there were no arguments
-parse_comma_separated_expressions :: (using script: *Script) -> ([] *Node, bool) {
+parse_comma_separated_expressions :: (using script: *Script) -> [] *Node {
     expressions: [..] *Node;
     while true {
         expr := my_parse_expression(script, 0);
         if expr == null {
             array_reset(*expressions);
-            return .[], false;
+            return .[];
         }
         array_add(*expressions, expr);
         if !expect_token_type(script, .COMMA)  break;
     }
-    return expressions, true;
+    return expressions;
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
@@ -545,8 +545,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
 parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) {
     if expect_token_type(script, .CLOSE_BRACE)  return .[], true;
     
-    expressions, ok := parse_comma_separated_expressions(script,, temp);
-    if !ok  return .[], false;
+    expressions := parse_comma_separated_expressions(script,, temp);
+    if !expressions  return .[], false;
     
     // TODO: if first expression is an assignment operation, then we should parse all struct literal inner expressions as such
     //       we will then also need to flag the struct literal as being by-name intialized for evaluation and serialization purposes
@@ -563,8 +563,8 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
 parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
     if expect_token_type(script, .CLOSE_PAREN)  return .[], true;
     
-    expressions, ok := parse_comma_separated_expressions(script,, temp);
-    if !ok  return .[], false;
+    expressions := parse_comma_separated_expressions(script,, temp);
+    if !expressions  return .[], false;
     
     close_paren_token := get_token(script);
     if close_paren_token.type != .CLOSE_PAREN {

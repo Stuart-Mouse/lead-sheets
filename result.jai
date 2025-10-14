@@ -161,6 +161,16 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
             print(builder, "Unexpected character: % %", token.text, token.trivia);
         }
         
+      case .PARSE_ERROR;
+        node := error.parse.node;
+        if node {
+            if append_script_location {
+                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
+            }
+        } else {
+            print(builder, "[node is null! error type is %] ", error.type);
+        }
+        
       case .TYPECHECK_ERROR;
         node := error.typecheck.node;
         if node {
@@ -223,9 +233,10 @@ set_general_error :: (script: *Script, format: string, args: ..Any, loc := #call
     script.error = .{ type = .GENERAL_ERROR, message = tprint(format, ..args), location = loc };
 } @PrintLike
 
-set_parse_error :: (script: *Script, format: string = "", args: ..Any, loc := #caller_location) {
+set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, loc := #caller_location) {
     // assert(type & .CLASS_MASK == .PARSE_ERROR);
     script.error = .{ type = .PARSE_ERROR, message = tprint(format, ..args), location = loc };
+    script.error.parse.node = node;
 } @PrintLike
 
 set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
@@ -237,7 +248,7 @@ set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node:
 set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, loc := #caller_location) {
     assert(type & .CLASS_MASK == .EXECUTION_ERROR);
     script.error = .{ type = type, message = tprint(format, ..args), location = loc };
-    // script.error.exec.node = node;
+    script.error.execution.node = node;
 } @PrintLike
 
 

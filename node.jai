@@ -301,8 +301,7 @@ Node_For_Loop :: struct {
     }
     statement:  *Node;
     
-    // just storing these directly on the for loop itself
-    it_decl, it_index_decl: Node_Declaration;
+    it_decl, it_index_decl:     *Node_Declaration;
 }
 
 

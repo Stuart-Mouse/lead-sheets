@@ -1764,7 +1764,6 @@ procedure calls
 
 ## TODO List
 
-iterator declarations
 allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
 fix lvalue checking so that it is actually usable for user-added nodes
 refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation
@@ -1774,6 +1773,9 @@ extended procedure info
     passing arguments by name
     varargs arguments?
 
+
+create some better flags, system for specifying how node's value is stored
+    for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
 
 
 

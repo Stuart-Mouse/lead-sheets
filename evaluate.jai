@@ -545,26 +545,14 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             upper := pop_any(*script.stack, control_type);
             lower := pop_any(*script.stack, control_type);
             
-            upper_as_s64: int;
-            if !Convert.any_to_int(upper_as_s64, upper) {
-                set_execution_error(script, "Failed to convert upper bound of for loop iteration range to s64. Source value was % of type %", upper, as_type(upper.type), node = for_loop.range.upper);
-                return NULL_ANY;
-            }
-            
-            lower_as_s64: int;
-            if !Convert.any_to_int(lower_as_s64, lower) {
-                set_execution_error(script, "Failed to convert lower bound of for loop iteration range to s64. Source value was % of type %", lower, as_type(lower.type), node = for_loop.range.lower);
-                return NULL_ANY;
-            }
+            // NOTE: for now, we are just requiring that the control type is actually int
+            //       the bounds will still be implicitly cast to int if needed.
+            assert(control_type == xx int);
+            upper_as_s64 := any_isa(upper, int).*;
+            lower_as_s64 := any_isa(lower, int).*;
             
             for lower_as_s64..upper_as_s64 {
-                _it: Number_Union;
-                Convert.any_to_any(Any.{ control_type, *_it }, it);
-                
-                for_loop.it_decl.value_pointer = *_it;
-                // TODO: for now we just don't set it_index. 
-                // we should probably prevent using it_index for range-based loops in typecheck 
-                
+                for_loop.it_decl.value_pointer = *it;
                 evaluate_node_or_return(script, for_loop.statement);
             }
             return VOID_ANY;

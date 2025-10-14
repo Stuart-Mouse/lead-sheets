@@ -93,7 +93,6 @@ Token_Type :: enum {
     IF;
     WHILE;
     FOR;
-    FOREACH;
 }
 
 
@@ -239,7 +238,6 @@ lex_next_token :: (script: *Script) -> Token {
           case "false";     type = .FALSE;
           case "if";        type = .IF;
           case "for";       type = .FOR;
-          case "foreach";   type = .FOREACH;
           case "while";     type = .WHILE;
         }
         return .{ type, token_text, token_location, trivia, .NO_ERROR };

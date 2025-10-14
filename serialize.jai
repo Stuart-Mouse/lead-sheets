@@ -277,7 +277,7 @@ print_node :: (
         indent -= INDENT_SIZE;
         append(builder, "\n");
         append_spaces(builder, indent);
-        append(builder, "}\n");
+        append(builder, "}");
         return true;
         
         
@@ -301,27 +301,41 @@ print_node :: (
         
       case Node_For_Loop;
         for_loop := node.(*Node_For_Loop);
+        append(builder, "for");
+        
+        // TODO: come up with better way to signify that default it and it_index declarations were used
+        if for_loop.it_decl {
+            if get_declaration_name(script, for_loop.it_decl) != "it" {
+                print_node_or_return(script, for_loop.it_decl.left, builder, indent);
+            }
+        }
+        if for_loop.it_index_decl {
+            if get_declaration_name(script, for_loop.it_index_decl) != "it_index" {
+                append(builder, ", ");
+                print_node_or_return(script, for_loop.it_index_decl.left, builder, indent);
+            }
+        }
+        
         if for_loop.control_type == {
           case .RANGE;
-            append(builder, "for");
+            if !for_loop.range.lower.trivia append(builder, " ");
             print_node_or_return(script, for_loop.range.lower, builder, indent);
             append(builder, "..");
             print_node_or_return(script, for_loop.range.upper, builder, indent);
             
           case .ARRAY;
-            append(builder, "for");
+            if !for_loop.array_expression.trivia append(builder, " ");
             print_node_or_return(script, for_loop.array_expression, builder, indent);
             
           case .LIST;
-            append(builder, "foreach");
-            append(builder, "(");
+            if !for_loop.list[0].trivia append(builder, " ");
             for for_loop.list {
                 print_node_or_return(script, it, builder, indent);
                 if it_index != for_loop.list.count-1 then append(builder, ",");
             }
-            append(builder, ")");
         }
-        // append(builder, "  ");
+        
+        if !for_loop.statement.trivia append(builder, " ");
         print_node_or_return(script, for_loop.statement, builder, indent);
         return true;
     }
