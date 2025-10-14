@@ -1745,7 +1745,12 @@ For as long as we are running scripts by walking the AST, we will probably need 
 We can probably use the osor_coroutine module for this.
 
 
+## random thoughts
 
+smarter iterators that can use offset semantics similar to pointers?
+    or some other way to say `previous` and `next` in a for loop
+    this is a very low priority thing, but could be a fun idea to try out
+    maybe best to first try implementing it with a directive, since I'd like to have more things to show off what those can do
 
 ## Debug things
 
@@ -1757,9 +1762,17 @@ procedure calls
         also use unchecked variant for this when not in debug mode
         
 
+## TODO List
 
 iterator declarations
 initializer_of for structs in declaration
+allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
+fix lvalue checking so that it is actually usable for user-added nodes
+refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation
+split up parsing of particular constructs more, so that user can more easily duplicate or leave out parts in my_parse_x procs
+
+
+
 
 
 dedupe code in implicit deref struct logic
