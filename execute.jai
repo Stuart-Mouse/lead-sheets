@@ -323,7 +323,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             assert(should_push_by_pointer(node_cast.value));
             assert(!should_push_by_pointer(node_cast));
             
-            log("Implicitly referencing: % -> %", as_type(node_cast.value.value_type), as_type(node_cast.value_type));
+            dprint("Implicitly referencing: % -> %", as_type(node_cast.value.value_type), as_type(node_cast.value_type));
             
             src := evaluate_node_or_return(script, node_cast.value);
             dst.value_pointer.(**void).* = src.value_pointer;
@@ -379,7 +379,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
                 return_result(dot, member_any);
             }
             
-            log("%: LHS is pushed by value.", get_location(dot));
+            dprint("%: LHS is pushed by value.", get_location(dot));
             
             // NOTE: We may later find that this case is problematic and results in stack corruption issues!
             //       So if something like that happens I hope I can identify it and remember to look here!

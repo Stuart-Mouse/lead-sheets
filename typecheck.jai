@@ -293,7 +293,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
         literal.value_type = type;
         return true;
     }
-    log("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
+    dprint("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
     return false;
 }
 
@@ -556,7 +556,6 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
         identifier.value_type      = declaration.value_type;
-        log("%: identifier % (%) has value type %", get_location(identifier), get_identifier_name(script, identifier), identifier, as_type(identifier.value_type));
         return;
     }
     
@@ -841,12 +840,9 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         FLAGS_TO_PROPOGATE_FOR_DOT_LHS :: Typechecking_Flags.EXPECT_LVALUE;
         left_type = typecheck_node(script, dot.left, check_flags & FLAGS_TO_PROPOGATE_FOR_DOT_LHS);
         if has_error(script)  return;
-        
-        log("LHS of dot (%) has value_type: %", dot.left, as_type(dot.left.value_type));
     } else {
         left_type = xx Type;
     }
-    defer if dot.left log("LHS of dot (%) has value_type: %", dot.left, as_type(dot.left.value_type));
     
     if left_type.type == {
       case .POINTER;
@@ -1080,7 +1076,6 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     dprint("right_type: %", right_type);
     
     declaration.value_type = ifx explicit_type else right_type;
-    log("%: declaration % has value type %", get_location(declaration), get_declaration_name(script, declaration), as_type(declaration.value_type));
     
     if declaration.flags & .MACRO {
         // NOTE: currently, macro declarations are only used to bind to malleable literals
@@ -1183,7 +1178,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             value_type = ti_array.element_type,
             flags = .MACRO // @HACK: we do this so it uses the value_pointer instead of trying to looking on stack
         };
-        log("it_decl has value type: %", as_type(ti_array.element_type));
         
       case .LIST;
         first_type := typecheck_node(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);
