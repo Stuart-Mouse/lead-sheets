@@ -1765,7 +1765,6 @@ procedure calls
 ## TODO List
 
 iterator declarations
-initializer_of for structs in declaration
 allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
 fix lvalue checking so that it is actually usable for user-added nodes
 refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation

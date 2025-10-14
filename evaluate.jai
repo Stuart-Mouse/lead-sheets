@@ -451,8 +451,9 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         if declaration.init_expression {
             evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
         } else {
-            // TODO: use initializer_of for aggregate types?
-            memset(value_pointer, 0, declaration.value_type.runtime_size);
+            // NOTE: initialize_any may be a somewhat nontrivial operation if we have some complex value type
+            value := Any.{ declaration.value_type, value_pointer };
+            initialize_any(value);
         }
         return VOID_ANY;
         

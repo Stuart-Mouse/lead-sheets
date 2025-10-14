@@ -230,7 +230,7 @@ register_common_types :: (script: *Script) {
 #load "lexer.jai";
 #load "parse.jai";
 #load "typecheck.jai";
-#load "execute.jai";
+#load "evaluate.jai";
 #load "serialize.jai";
 
 #load "variable.jai";

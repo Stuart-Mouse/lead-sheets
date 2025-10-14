@@ -1052,6 +1052,10 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         if declaration.init_expression.flags & .IS_CONSTANT {
             declaration.flags |= .IS_CONSTANT;
         }
+    } else {
+        // TODO: can we validly assume that default-initialized values are essentially constant?
+        // assert(explicit_type != null);
+        // declaration.flags |= .IS_CONSTANT;
     }
     
     if declaration.left.node_type == Node_Identifier {
