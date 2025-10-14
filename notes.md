@@ -1770,7 +1770,10 @@ allow subscript operator on non-lvalues, similar to what we did for dot member a
 fix lvalue checking so that it is actually usable for user-added nodes
 refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation
 split up parsing of particular constructs more, so that user can more easily duplicate or leave out parts in my_parse_x procs
-
+extended procedure info
+    default arguments
+    passing arguments by name
+    varargs arguments?
 
 
 

@@ -1014,10 +1014,6 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
 }
 
 typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // NOTE: currently I am placing the value type of the declared variable in the value_type slot of the declaration node.
-    //       this is different from how other statements are done, which all return void instead.
-    //       may have to change this if it creates issues, I suppose.
-    
     // NOTE: we currently only allow declarations to be used as statements, so we flag them all with .VALUE_TYPE_IS_NOMINAL
     //       this currently serves no funcitonal purpose other than to make our assertions happy in evaluate_node_or_return 
     declaration.flags |= .VALUE_TYPE_IS_NOMINAL;
