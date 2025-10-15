@@ -1773,6 +1773,15 @@ extended procedure info
     passing arguments by name
     varargs arguments?
 
+make renaming enemies in the game work properly
+once the referent is fixed for some declaration (e.g. to an external variable)
+we should have an unbreakable link there
+and the only other complication is that we should check that identifiers will not conflict before saving the script back
+but as of right now changing an entity's name does not work, because we are using the name to identify the external variable that the entity is linked to
+and we really should be using some index to the list of variable, which probably ought to be stored on the entity itself
+    what if entity is deleted?
+    what if entity name is empty string?
+    
 
 create some better flags, system for specifying how node's value is stored
     for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
