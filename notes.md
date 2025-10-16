@@ -41,7 +41,7 @@ that way we can avoid duplicating work by pulling out subexpressions, but still 
     
     tilemaps[1].offset = Vec2.{ 3 * cos(main_cycle), 5 * sin(main_cycle) };
 ``` 
-    
+
 
 if left of assignment is to a tilemap's position member
     analyze expressions for vec x and y components
@@ -1794,48 +1794,3 @@ when we declare some external variable, we should get back an index to that vari
 create some better flags, system for specifying how node's value is stored
     for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
 
-
-
-dedupe code in implicit deref struct logic
-    need to create some test case for this
-    
-    turning out to have a bit more complexity than expected
-    we need some means to hint that we would like to push some value by pointer, but also accept if it's not
-    
-    actually this problem may even be worse than I thought
-    what do we do if we have some dot member access where the LHS struct has to be pushed by value
-    
-    
-dot
-    push RHS `(*void)`
-    push LHS `struct on stack`
-    pop  LHS
-    return
-caller sees RHS ptr on top of stack, pointing to LHS further up stack
-but caller has no idea that LHS is still on the stack and has technically already been popped
-so we need ot be sure that there's no possible way caller messes up by accidentally overwriting RHS
-as far as the caller knows, if they just popped RHS (a small value)
-they are now safe to push whatever they want to to the stack
-but this is not really the case
-
-*maybe* it is OK if and only if we ensure that result values are always pushed before any other stack operations are done
-as it stands already, in most cases caller does not actually know if they are popping something off the stack by pointer or by value
-so besides a few very specific cases where we know the pushed value is a pointer, the caller already is in this situation where they should always be pushing the result value before evaluating child nodes
-
-In any case, this all feels a bit sketch and I worry about convoluted cases that could occur
-we may end up needing to allocate stack space up front for certain intermediates if some problems emerge with stack values getting corrupted before use
-
-I worry about a complex case like
-
-operator
-    dot
-        lhs
-        rhs
-    dot
-        lhs
-        rhs
-
-Another option if this type of situation becomes problematic would be to just make the dot node do some extra work in evaluation
-to push space for the member value before pushing the struct and then memcopying out just the single member before popping off the struct value
-
-TODO: check if we have similar issues for fixed arrays
