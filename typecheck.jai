@@ -8,7 +8,7 @@
 
 Typechecking_Flags :: enum_flags {
     NONE                    :: 0;
-    EXPECT_LVALUE           :: 1 << 0;
+    // EXPECT_LVALUE           :: 1 << 0;
     IS_STATEMENT_ROOT       :: 1 << 1;
 }
 
@@ -20,9 +20,10 @@ typecheck_node_or_return :: (
 ) -> (
     value_type:     *Type_Info
 ) #expand {
-    result := typecheck_node(script, node, check_flags, hint_type);
+    result := script.my_typecheck_node(script, node, check_flags, hint_type);
     if has_error(script) then `return;
-    assert(node.flags & .TYPECHECKED == .TYPECHECKED);
+    assert(node.flags & .TYPECHECKED == .TYPECHECKED, "Node was not flagged as typechecked, but no error was set!");
+    assert(node.value_type != null, "Node returned null value_type, but no error was set!");
     return result;
 }
 
@@ -34,7 +35,7 @@ typecheck_node :: (
 ) -> (
     value_type:     *Type_Info
 ) {
-    dprint("typechecking node % % (%)", node, node.node_type, get_location(node));
+    dprint("typechecking % (%) @ %", node.node_type, node, get_location(node));
     dprint("expecting type: %", as_type(hint_type));
     // dprint("%", sprint_node(script, node));
     dprint_push_indent();
@@ -55,13 +56,6 @@ typecheck_node :: (
     }
     check_flags &= ~.IS_STATEMENT_ROOT;
     
-    if script.typecheck_callback {
-        result := script.typecheck_callback(script, node, check_flags, hint_type);
-        if has_error(script)  return null;
-        node.flags |= .TYPECHECKED;
-        if result  return result;
-    }
-    
     if node.node_type == {
       case Node_Directive;       typecheck_directive       (script, xx node, check_flags, hint_type);
       case Node_Literal;         typecheck_literal         (script, xx node, check_flags, hint_type);
@@ -81,14 +75,7 @@ typecheck_node :: (
     }
     if has_error(script)  return null;
     
-    // TODO: move the logic for checking if some node is a valid lvalue back into the normal flow of typechecking logic
-    if node.value_type != null {
-        if check_flags & .EXPECT_LVALUE {
-            if !set_as_lvalue(script, node)  return null;
-        }
-        node.flags |= .TYPECHECKED;
-    }
-    
+    node.flags |= .TYPECHECKED;
     return node.value_type;
 }
 
@@ -96,7 +83,7 @@ typecheck_script :: (script: *Script) -> bool {
     if script.ast_root == null                  return false;
     if script.ast_root.node_type != Node_Block  return false;
     
-    typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
+    script.my_typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
     if has_error(script)  return false;
     
     script.flags |= .TYPECHECKED;
@@ -307,51 +294,53 @@ can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
     return false;
 }
 
-
+// NOTE: if this returns false, we have an error
 set_as_lvalue :: (script: *Script, node: *Node) -> bool {
-    ok, message := is_valid_lvalue(script, node);
-    if !ok {
-        // TODO: refactor is_valid_lvalue so that it sets the script error and attaches any dynamic info needed in each case.
-        // if node.node_type == Node_Identifier {
-        //     log("Identifier was '%'", get_identifier_name(script, xx node));
-        // }
-        set_typecheck_error(script, message, node = node);
-        return false;
-    }
+    if !script.my_is_valid_lvalue(script, node, need_lvalue = true)  return false;
     node.flags |= .PUSH_BY_POINTER;
     return true;
 }
 
-// second return value is an error string. In order to prevent spamming temp storage, I'm not using tprint to actually make the error message here more specific/situational.
-// so the caller (probably just typecheck_node) may want to follow up with some additional information such as the identifier name.
-// maybe we could come up with some standard system for inserting info from a node so that we can return a format string here...
-is_valid_lvalue :: (script: *Script, node: *Node) -> bool, string {
+// TODO: maybe add a unique error type for INVALID_LVALUE
+// NOTE: if need_lvalue is true, then we must set the script error if the node is not a valid lvlaue
+is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool {
     if node.node_type == {
       case Node_Literal;
         literal := node.(*Node_Literal);
         if (literal.flags & .IS_MALLEABLE) || literal.literal_type == .ANY {
-            return true, "";
+            return true;
         }
-        return false, "A literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.";
+        if need_lvalue then set_typecheck_error(script, "A literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.", node = node);
+        return false;
         
       case Node_Identifier;
         identifier := node.(*Node_Identifier);
         if #complete identifier.identifier_type == {
-          case .UNRESOLVED;         return false, "An unresolved identifier cannot be used as an lvalue.";
-          case .TYPE;               return false, "A type identifier cannot be used as an lvalue.";
-          case .EXTERNAL_PROCEDURE; return false, "An external procedure cannot be used as an lvalue.";
-          case .STRUCT_MEMBER;      return true,  "";
+          case .UNRESOLVED;         
+            if need_lvalue then set_typecheck_error(script, "An unresolved identifier cannot be used as an lvalue.", node = node);
+            return false;
+            
+          case .TYPE;               
+            if need_lvalue then set_typecheck_error(script, "A type identifier cannot be used as an lvalue.", node = node);
+            return false;
+            
+          case .EXTERNAL_PROCEDURE; 
+            if need_lvalue then set_typecheck_error(script, "An external procedure cannot be used as an lvalue.", node = node);
+            return false;
+            
+          case .STRUCT_MEMBER;
+            return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
             if variable.flags & .CONSTANT {
-                return false, "An external variable cannot be used as an lvalue when marked as constant.";
+                if need_lvalue then set_typecheck_error(script, "An external variable cannot be used as an lvalue when marked as constant.", node = node);
+                return false;
             }
-            return true,  "";
+            return true;
             
           case .LITERAL;
-            ok, msg := is_valid_lvalue(script, identifier.literal);
-            return ok, msg;
+            return script.my_is_valid_lvalue(script, identifier.literal);
             
           case .DECLARATION;
             // TODO: update this logic for the new semantics around constant declarations and macros
@@ -359,43 +348,58 @@ is_valid_lvalue :: (script: *Script, node: *Node) -> bool, string {
             // && !declaration_is_malleable_literal(identifier.declaration) {
             //     return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
             // }
-            return true, "";
+            return true;
         }
         
       case Node_Dot;
         dot := node.(*Node_Dot);
         if dot.left.value_type.type == .STRUCT {
-            ok, msg := is_valid_lvalue(script, dot.left);
-            return ok, msg;
+            return script.my_is_valid_lvalue(script, dot.left)
+                && script.my_is_valid_lvalue(script, dot.right);
         }
-        ok, msg := is_valid_lvalue(script, dot.right);
-        return ok, msg;
+        return script.my_is_valid_lvalue(script, dot.right);
         
       case Node_Subscript;          
         subscript := node.(*Node_Subscript);
-        ok, msg := is_valid_lvalue(script, subscript.base_expression);
-        return ok, msg;
+        return script.my_is_valid_lvalue(script, subscript.base_expression);
         
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
-      case Node_Operation;          return false, "Using the result of an operation as an lvalue is not currently supported";
-      case Node_Procedure_Call;     return false, "Using the result of a procedure call as an lvalue is not currently supported";
+      case Node_Operation;          
+        if need_lvalue then set_typecheck_error(script, "Using the result of an operation as an lvalue is not currently supported", node = node);
+        return false;
+        
+      case Node_Procedure_Call;     
+        if need_lvalue then set_typecheck_error(script, "Using the result of a procedure call as an lvalue is not currently supported", node = node);
+        return false;
+        
       case Node_Cast;
         node_cast := node.(*Node_Cast);
         if node_cast.value.value_type == xx Any {
-            
+            // TODO:
         }
-        return false, "Using the result of a cast as an lvalue is not currently supported";
+        if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported", node = node);
+        return false;
         
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
-      case Node_Declaration;        return false, "A declaration cannot be used as an lvalue;";
-      case Node_Block;              return false, "A block cannot be used as an lvalue;";
-      case Node_If_Statement;       return false, "An if statement cannot be used as an lvalue;";
-      case Node_While_Loop;         return false, "A while loop cannot be used as an lvalue;";
-      case Node_For_Loop;           return false, "A for loop cannot be used as an lvalue;";
+      case Node_Declaration;        
+        if need_lvalue then set_typecheck_error(script, "A declaration cannot be used as an lvalue", node = node);
+        return false;
+      case Node_Block;              
+        if need_lvalue then set_typecheck_error(script, "A block cannot be used as an lvalue", node = node);
+        return false;
+      case Node_If_Statement;       
+        if need_lvalue then set_typecheck_error(script, "An if statement cannot be used as an lvalue", node = node);
+        return false;
+      case Node_While_Loop;         
+        if need_lvalue then set_typecheck_error(script, "A while loop cannot be used as an lvalue", node = node);
+        return false;
+      case Node_For_Loop;           
+        if need_lvalue then set_typecheck_error(script, "A for loop cannot be used as an lvalue", node = node);
+        return false;
     }
     
     assert(false, "Invalid node type '%' in is_valid_lvalue.", node.node_type);
-    return false, "";
+    return false;
 }
 
 
@@ -513,7 +517,10 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
 typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: identifier may have already been typechecked e.g. in parameters of procedure call
     //       in this case we obviously don't want to check it again (not to mention accessing name will now be invalid!)
-    if identifier.identifier_type != .UNRESOLVED  return;
+    if identifier.identifier_type != .UNRESOLVED {
+        dprint("identifier was not UNRESOLVED");
+        return;
+    }
     
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
@@ -528,10 +535,11 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         // TODO: if the declaration is a macro though, and the init_expression of the macro is constant, then we can still go ahead and safely mark the identifier as constant
         //       this may be a good idea to go ahead and implement since it would allow us to use such an identifier in a type expression.
         if declaration.flags & .IS_CONSTANT {
-            if check_flags & .EXPECT_LVALUE {
-                dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue", get_declaration_name(script, declaration));
-                declaration.flags &= ~.IS_CONSTANT;
-            }
+            // TODO: probably fix this case, it will matter eventually
+            // if check_flags & .EXPECT_LVALUE {
+            //     dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue", get_declaration_name(script, declaration));
+            //     declaration.flags &= ~.IS_CONSTANT;
+            // }
             // if declaration.flags & .MACRO {
             //     identifier.flags |= .CONSTANT;
             // }
@@ -587,8 +595,8 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         
       case .BINARY;
         // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
-        left_type  = typecheck_node(script, operation.left,  check_flags, hint_type);
-        right_type = typecheck_node(script, operation.right, check_flags, hint_type);
+        left_type  = my_typecheck_node(script, operation.left,  check_flags, hint_type);
+        right_type = my_typecheck_node(script, operation.right, check_flags, hint_type);
         
         // If both come back null on first try, we return the upstream error.
         if left_type == null && right_type == null {
@@ -608,8 +616,10 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         }
         
       case .ASSIGNMENT;
-        // NOTE: we basically ignore hint_type in this case because assignment expressions must be used at statement-level anyhow.
-        left_type  = typecheck_node_or_return(script, operation.left,  check_flags | .EXPECT_LVALUE, null);
+        // NOTE: we ignore hint_type because assignment expressions must be used at statement-level anyhow.
+        left_type  = typecheck_node_or_return(script, operation.left, check_flags, null);
+        if !set_as_lvalue(script, operation.left)  return;
+        
         right_type = typecheck_node_or_return(script, operation.right, check_flags, left_type);
         
         // special case: operator = is always a simple memcpy
@@ -666,7 +676,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
     //       here, for instance, we could use some constnat like PASSTHROUGH_FLAGS_FOR_PROCEDURE_EXPRESSION and | with that 
     //       as it stands though, we don't actually have many check flags and maybe even the ones we do have could possibly be removed if we refactored some things...
     //       So, here is my little note in an obscure place where I will probably just forget about it and move on
-    proc_info := typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
+    proc_info := my_typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
     && procedure_call.procedure_expression.node_type == Node_Identifier {
@@ -679,7 +689,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         // In the first check, we do not provide any type hints, which means we may fail to typecheck arguments where the type hint is required.
         // But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
         for procedure_call.arguments {
-            typecheck_node(script, it);
+            my_typecheck_node(script, it);
             if script.error.type == .MISSING_TYPE_HINT  clear_error(script);
             if has_error(script)  return;
         }
@@ -810,8 +820,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below.
     left_type: *Type_Info;
     if dot.left {
-        FLAGS_TO_PROPOGATE_FOR_DOT_LHS :: Typechecking_Flags.EXPECT_LVALUE;
-        left_type = typecheck_node_or_return(script, dot.left, check_flags & FLAGS_TO_PROPOGATE_FOR_DOT_LHS);
+        left_type = typecheck_node_or_return(script, dot.left);
     } else {
         left_type = xx Type;
     }
@@ -828,10 +837,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         struct_info := pointer_info.pointer_to.(*Type_Info_Struct);
         left_type = struct_info; // override for below struct case
         
-        // TODO: figure out some way to avoid this, it feels like a hack
-        // NOTE: we also need to remove the EXPECT_LVALUE flag if it was set for the pointer iself.
-        //       this is currently the only spot we ever do this, so its a bit weird!
-        dot.left.flags &= ~.PUSH_BY_POINTER;
         #through;
         
       case .STRUCT;
@@ -873,9 +878,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         //       However, this may not be possible if the LHS is not a valid lvalue,
         //       and in that case, we still should be able to access its members.
         if dot.left.value_type.type != .POINTER { 
-            if is_valid_lvalue(script, dot.left) {
-                dot.left.flags |= .PUSH_BY_POINTER;
-            }
+            if !set_as_lvalue(script, dot.left)  return;
         }
         return;
         
@@ -961,7 +964,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
 }
 
 typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    typecheck_node_or_return(script, subscript.base_expression, check_flags & .EXPECT_LVALUE);
+    typecheck_node_or_return(script, subscript.base_expression);
+    if !set_as_lvalue(script, subscript.base_expression)  return;
     
     base_type := subscript.base_expression.value_type.(*Type_Info_Array);
     if base_type.type != .ARRAY {
@@ -1129,7 +1133,9 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         
         
       case .ARRAY;
-        typecheck_node_or_return(script, for_loop.array_expression, check_flags = .EXPECT_LVALUE);
+        typecheck_node_or_return(script, for_loop.array_expression);
+        if !set_as_lvalue(script, for_loop.array_expression)  return;
+    
         array_info := for_loop.array_expression.value_type.(*Type_Info_Array);
         
         // TODO: special case for something like a Many_Any / Any_Array_View
@@ -1155,11 +1161,14 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         
         
       case .LIST;
-        first_type := typecheck_node_or_return(script, for_loop.list[0], check_flags = .EXPECT_LVALUE);
+        first_type := typecheck_node_or_return(script, for_loop.list[0]);
+        if !set_as_lvalue(script, for_loop.list[0])  return;
         
         for 1..for_loop.list.count-1 {
             node := for_loop.list[it];
-            type := typecheck_node_or_return(script, node, check_flags = .EXPECT_LVALUE);
+            type := typecheck_node_or_return(script, node);
+            if !set_as_lvalue(script, node)  return;
+            
             if type != first_type {
                 set_typecheck_error(script, "All expressions in comma-separated iteration list must be of the same type. First type was %, type of element % was %", as_type(first_type), it + 2, as_type(type), node = node);
                 return;

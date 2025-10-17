@@ -84,7 +84,7 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
                     The result value must be pushed to top of the stacks
 */
 evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
-    dprint("Evaluating % @ %", node.node_type, node);
+    dprint("Evaluating % (%) @ %", node.node_type, node, get_location(node));
     dprint_push_indent();
     
     if !node.value_type  dprint("Warning: node's value_type is null!");

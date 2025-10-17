@@ -22,14 +22,13 @@ Script :: struct {
     stack:                  Stack;
     
     #if USING_DYNCALL {
-        dyncall_vm:             *DCCallVM;
+        dyncall_vm:         *DCCallVM;
     }
     
     lexer:                  Lexer;
     current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
     
     // callbacks for handling custom node types
-    typecheck_callback:     Typecheck_Callback;
     serialize_callback:     Serialize_Callback;
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
@@ -38,6 +37,9 @@ Script :: struct {
     my_parse_leaf       := parse_leaf;
     
     my_evaluate_node    := evaluate_node;
+    
+    my_typecheck_node   := typecheck_node;
+    my_is_valid_lvalue  := is_valid_lvalue;
     
     Flags :: enum_flags {
         INITIALIZED;

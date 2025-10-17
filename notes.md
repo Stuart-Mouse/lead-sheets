@@ -1765,6 +1765,7 @@ procedure calls
 ## TODO List
 
 allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
+allow use of non-lvalue array expressions in for loop
 fix lvalue checking so that it is actually usable for user-added nodes
 refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation
 split up parsing of particular constructs more, so that user can more easily duplicate or leave out parts in my_parse_x procs
@@ -1790,6 +1791,4 @@ and we really should be using some index to the list of variable, which probably
 create some better flags, system for specifying how node's value is stored
     for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
 
-
-
-need to implement a static buffer for error message so that we don't read it invalidly if someone resets temp storage
+when declaration is used as an lvalue, we should flag it as non-constant
