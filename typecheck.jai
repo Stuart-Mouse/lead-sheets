@@ -260,13 +260,12 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
         return true, make_implicit_cast(script, node, type);
     }
     
-    // if try_implicit_reference(script, node, type) {
-    //     dprint("took implicit reference to node with value_type '%'", as_type(node.value_type));
-    //     return true, null;  
-    // }
-    
     if node.node_type == Node_Literal {
-        return coerce_literal_type(xx node, type), null;
+        if !coerce_literal_type(xx node, type) {
+            set_typecheck_error(script, "Unable to coerce literal of type '%' to '%'", as_type(node.value_type), as_type(type), node = node, type = .FAILED_IMPLICIT_CAST);
+            return false, null;
+        }
+        return true, null;
     }
     
     if get_implicit_cast_distance(node, type) >= 0 {
@@ -739,7 +738,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
                     print(*builder, "\tProcedure identifier: '%'\n", procedure_name);
                     print(*builder, "\tArgument expression: '%'\n", sprint_node(script, node,, temp));
                     print(*builder, "\tExpected type '%', got '%'\n", expected_type, node.value_type);
-                    script.error.message = builder_to_string(*builder,, temp);
+                    copy_from_string(*script.error.message, builder_to_string(*builder,, temp));
                     return;
                 }
                 if replacement  replace_node(node_ptr_ptr, replacement);

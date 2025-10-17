@@ -1,5 +1,9 @@
 
-execute_script :: (script: *Script) -> bool {
+evaluate_script :: (script: *Script) -> bool {
+    if has_error(script) {
+        log("Attempted to execute script with error. Error must be cleared before calling evaluate_script.");
+        return false;
+    }
     if !(script.flags & .PARSED) {
         set_execution_error(script, "Cannot execute script before AST has been constructed.\n", node = null);
         return false;
@@ -462,7 +466,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         block := node.(*Node_Block);
         
         // NOTE: we don't execute named blocks unless explicitly called
-        if block.name && (flags & .EXPLICIT_CALL)  return VOID_ANY;
+        if block.name && !(flags & .EXPLICIT_CALL)  return VOID_ANY;
         
         is_stack_frame := is_stack_frame_block(script, block);
         if is_stack_frame {

@@ -42,10 +42,18 @@ reset_external_variables :: (script: *Script) {
     }
 }
 
-check_external_variables :: (script: *Script) {
-    for *script.variables {
-        if it.value_pointer == null {
-            log("Warning: Value of external variable '%' has not been set.", it.name);
+check_external_variables :: (script: *Script, check_names := false) {
+    for *var, var_index: script.variables {
+        if var.value_pointer == null {
+            log("Warning: Value of external variable '%' has not been set.", var.name);
+        }
+        if check_names {
+            for other_index: var_index..script.variables.count-1 {
+                other := *script.variables[other_index];
+                if var.name == other.name {
+                    log("Warning: Name conflict for external variables % and %: %", var_index, other_index, var.name);
+                }
+            }
         }
     }
 }
@@ -96,6 +104,10 @@ set_variable_by_index :: (script: *Script, index: int, any: Any, override := tru
 }
 
 set_variable_name :: (script: *Script, index: int, name: string) -> bool {
+    // if !(script.flags & .TYPECHECKED) {
+    //     log("Error: Cannot change name of external variable before script has been typechecked.", index);
+    //     return false;
+    // }
     if !is_valid_index(script.variables, index) {
         log("Error: Invalid index (%) to external variable.", index);
         return false;

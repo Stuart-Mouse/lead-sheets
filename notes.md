@@ -1558,7 +1558,7 @@ passing check flags up the AST
 
 checking for whether things are valid lvalues
     maybe we should move this back into individual typechecking cases
-    
+
 preventing re-typechecking on nodes where doing so is problematic
     need to create a thorough list of cases where re-typechecking is ok and those where it is not
     maybe we should refactor things so that it is always ok to re-typecheck?
@@ -1568,7 +1568,7 @@ allowing for node replacement
 
 
 ## Bugs and minor fixes
-    
+
 we should really stamp serial numbers onto all nodes like the Jai compiler does
     since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
     and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
@@ -1782,15 +1782,14 @@ and we really should be using some index to the list of variable, which probably
     what if entity is deleted?
     what if entity name is empty string?
         this is only a problem when we go to serialize. and we could just notify the user of the error when they go to save the level/script
-        
 
-when we declare some external variable, we should get back an index to that variable
-    so that we can update the name associated to a particular variable
-    I am almost tempted to make declarations use a `*string` rather than a string so that we can more automtically rename things and not need to notify/manually update on the script side
-    
+
     we should implement user error types for incorrect use of external variables, procedures, and declarations
     That way we can prevent the running of the script while such errors remain unresolved
 
 create some better flags, system for specifying how node's value is stored
     for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
 
+
+
+need to implement a static buffer for error message so that we don't read it invalidly if someone resets temp storage
