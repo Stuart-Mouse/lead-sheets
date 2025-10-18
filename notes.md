@@ -1766,8 +1766,6 @@ procedure calls
 
 allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
 allow use of non-lvalue array expressions in for loop
-fix lvalue checking so that it is actually usable for user-added nodes
-refactor typechecking to use a my_typecheck_node, similar to what we now do for evaluation
 split up parsing of particular constructs more, so that user can more easily duplicate or leave out parts in my_parse_x procs
 extended procedure info
     default arguments

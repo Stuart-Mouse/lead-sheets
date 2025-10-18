@@ -348,6 +348,10 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
             // && !declaration_is_malleable_literal(identifier.declaration) {
             //     return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
             // }
+            // if identifier.declaration.flags & .CANNOT_BE_USED_AS_LVALUE {
+            //     if need_lvalue then set_typecheck_error(script, "The declaration '%' cannot be used as an lvalue.", get_declaration_name(script, identifier.declaration), node = node);
+            //     return false;
+            // }
             return true;
         }
         
@@ -1125,6 +1129,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = xx int;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if for_loop.it_index_decl {
             set_typecheck_error(script, "Cannot define an `it_index` in a range-based for loop.", node = for_loop.it_index_decl);
@@ -1134,7 +1139,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         
       case .ARRAY;
         typecheck_node_or_return(script, for_loop.array_expression);
-        if !set_as_lvalue(script, for_loop.array_expression)  return;
+        // if !set_as_lvalue(script, for_loop.array_expression)  return;
     
         array_info := for_loop.array_expression.value_type.(*Type_Info_Array);
         
@@ -1151,6 +1156,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = array_info.element_type;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if !for_loop.it_index_decl {
             for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
@@ -1158,6 +1164,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_index_decl.value_type = xx int;
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        // for_loop.it_index_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         
       case .LIST;
@@ -1181,6 +1188,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = first_type;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if !for_loop.it_index_decl {
             for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
@@ -1188,6 +1196,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_index_decl.value_type = xx int;
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        // for_loop.it_index_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
     }
     
     typecheck_node_or_return(script, for_loop.statement, .IS_STATEMENT_ROOT);

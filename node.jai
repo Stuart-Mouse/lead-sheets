@@ -21,7 +21,7 @@ Node :: struct {
         PARENTHESIZED;          // explicitly 
         VALUE_TYPE_IS_NOMINAL;
         MUST_BE_STATEMENT_ROOT;
-        IS_STATEMENT_ROOT;
+        CANNOT_BE_USED_AS_LVALUE;
         SWAP_OPERANDS;
     };
 }

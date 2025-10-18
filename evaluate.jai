@@ -97,7 +97,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     return_result :: (node: *Node, any: Any) -> bool #expand {
         if provided_storage {
             dprint("Returning result using provided storage @ %: ", provided_storage, newline = false);
-            if !is_aggregate(any.type)  dprint("%", any);
+            if !is_aggregate(any.type)  dprint("%", any, newline = false);
             dprint(" (%)", as_type(any.type));
             
             memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
@@ -525,7 +525,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
           case .ARRAY;
             array_info := for_loop.array_expression.value_type.(*Type_Info_Array);
             evaluate_node_or_return(script, for_loop.array_expression);
-            array := pop_any(*script.stack, array_info, true); // TODO: maybe not use lvalue later?
+            array := pop_any(*script.stack, array_info, should_push_by_pointer(for_loop.array_expression));
             
             array_count, array_data := get_array_count_and_data(array.value_pointer, xx array.type);
             
