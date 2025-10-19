@@ -1765,7 +1765,6 @@ procedure calls
 ## TODO List
 
 allow subscript operator on non-lvalues, similar to what we did for dot member access on structs
-allow use of non-lvalue array expressions in for loop
 split up parsing of particular constructs more, so that user can more easily duplicate or leave out parts in my_parse_x procs
 extended procedure info
     default arguments
@@ -1781,7 +1780,6 @@ and we really should be using some index to the list of variable, which probably
     what if entity is deleted?
     what if entity name is empty string?
         this is only a problem when we go to serialize. and we could just notify the user of the error when they go to save the level/script
-
 
     we should implement user error types for incorrect use of external variables, procedures, and declarations
     That way we can prevent the running of the script while such errors remain unresolved

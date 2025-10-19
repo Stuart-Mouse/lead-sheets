@@ -258,7 +258,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
 
 
 parse_leaf :: (using script: *Script) -> *Node {
-    dprint("parse_leaf()");
     dprint_push_indent();
     token := get_token(script);
     
@@ -288,7 +287,6 @@ parse_leaf :: (using script: *Script) -> *Node {
             return make_dot(script, token, null, identifier);
         }
         else set_parse_error(script, "%: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
-
         
       case .OPEN_PAREN;
         open_paren_location := token.location;
@@ -322,11 +320,9 @@ parse_leaf :: (using script: *Script) -> *Node {
         dprint("NUMBER (%)", token.text);
         return make_number_literal(script, token);
         
-        
       case .STRING;
         dprint("STRING (\"%\")", token.text);
         return make_string_literal(script, token);
-        
     
       case .DIRECTIVE;
         dprint("DIRECTIVE"); dprint_push_indent();
@@ -363,7 +359,6 @@ parse_leaf :: (using script: *Script) -> *Node {
             return null;
         }
         return directive;
-        
         
       case .IDENTIFIER;
         dprint("IDENTIFIER (%)", token.text);
