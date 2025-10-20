@@ -28,6 +28,7 @@ External_Variable :: struct {
         STATIC :: 1; 
         CONSTANT; 
         ANY;
+        READONLY;
     }
 }
 

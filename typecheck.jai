@@ -296,14 +296,15 @@ can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
 
 // NOTE: if this returns false, we have an error
 set_as_lvalue :: (script: *Script, node: *Node) -> bool {
-    if !script.my_is_valid_lvalue(script, node, need_lvalue = true)  return false;
-    node.flags |= .PUSH_BY_POINTER;
-    return true;
+    return script.my_is_valid_lvalue(script, node, set_as_lvalue = true);
 }
 
 // TODO: maybe add a unique error type for INVALID_LVALUE
 // NOTE: if need_lvalue is true, then we must set the script error if the node is not a valid lvlaue
-is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool {
+is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_lvalue := false) -> bool {
+    need_lvalue ||= set_as_lvalue;
+    if set_as_lvalue then node.flags |= .PUSH_BY_POINTER;
+    
     if node.node_type == {
       case Node_Literal;
         literal := node.(*Node_Literal);
@@ -337,10 +338,14 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
                 if need_lvalue then set_typecheck_error(script, "An external variable cannot be used as an lvalue when marked as constant.", node = node);
                 return false;
             }
+            if variable.flags & .READONLY {
+                if need_lvalue then set_typecheck_error(script, "An external variable cannot be used as an lvalue when marked as readonly.", node = node);
+                return false;
+            }
             return true;
             
           case .LITERAL;
-            return script.my_is_valid_lvalue(script, identifier.literal, need_lvalue);
+            return script.my_is_valid_lvalue(script, identifier.literal, need_lvalue, set_as_lvalue);
             
           case .DECLARATION;
             // TODO: update this logic for the new semantics around constant declarations and macros
@@ -357,8 +362,9 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
         
       case Node_Dot;
         dot := node.(*Node_Dot);
+        // TODO: make sure that this covers all our cases properly
         if dot.left.value_type.type == .STRUCT {
-            return script.my_is_valid_lvalue(script, dot.left, need_lvalue)
+            return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue)
                 && script.my_is_valid_lvalue(script, dot.right, need_lvalue);
         }
         return script.my_is_valid_lvalue(script, dot.right, need_lvalue);
@@ -370,13 +376,13 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
       case Node_Cast;
         _cast := node.(*Node_Cast);
         if _cast.value.value_type == xx Any {
-            return script.my_is_valid_lvalue(script, _cast.value, need_lvalue);
+            return script.my_is_valid_lvalue(script, _cast.value, need_lvalue, set_as_lvalue);
         }
         if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported, unless casting from an Any", node = node);
         return false;
         
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
-      case Node_Operation;          
+      case Node_Operation;
         if need_lvalue then set_typecheck_error(script, "Using the result of an operation as an lvalue is not currently supported", node = node);
         return false;
         
@@ -969,7 +975,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
 
 typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, subscript.base_expression);
-    if !set_as_lvalue(script, subscript.base_expression)  return;
+    if !set_as_lvalue(script, subscript.base_expression)  return; // TODO
     
     base_type := subscript.base_expression.value_type.(*Type_Info_Array);
     if base_type.type != .ARRAY {

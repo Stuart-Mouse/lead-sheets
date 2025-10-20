@@ -322,19 +322,20 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         src_type := _cast.value.value_type;
         dst_type := _cast.value_type;
         
-        dst := Any.{ dst_type, get_result_storage(_cast) };
-        
         // special case to handle conversion from Any
         if src_type == xx Any {
-            src := evaluate_node_or_return(script, _cast.value);
-            pop_any(*script.stack, src.type, false);
-            if src.type != dst.type {
-                set_execution_error(script, "Failed type assertion on Any. Expected type was %, but got %", as_type(dst.type), as_type(src.type), node = _cast);
+            src := evaluate_node_or_return(script, _cast.value, provided_storage);
+            // pop_any(*script.stack, src.type, false);
+            if src.type != dst_type {
+                set_execution_error(script, "Failed type assertion on Any. Expected type was %, but got %", as_type(dst_type), as_type(src.type), node = _cast);
                 return NULL_ANY;
             }
-            memcpy(dst.value_pointer, src.value_pointer, dst.type.runtime_size);
-            return dst;
+            return src;
+            // memcpy(dst.value_pointer, src.value_pointer, dst.type.runtime_size);
+            // return dst;
         }
+        
+        dst := Any.{ dst_type, get_result_storage(_cast) };
         
         // special case for implicitly taking a reference
         if dst_type.type == .POINTER 
