@@ -156,7 +156,7 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
         }
         
         // returns the coercion distance, else -1 if arguments cannot be made to match through implicit coercions alone
-        typecheck_arguments :: (overload: *Procedure_Overload, expected_types: [] *Type_Info, arguments: [] *Node) -> bool {
+        typecheck_arguments :: (script: *Script, overload: *Procedure_Overload, expected_types: [] *Type_Info, arguments: [] *Node) -> bool {
             // the overall idea on the control flow here is just to `continue` if we are good, else we use the common reject case 
             for expected_type: expected_types {
                 argument      := arguments[it_index];
@@ -170,7 +170,7 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
                     if expected_type.type == .STRUCT  continue;
                 } else {
                     if get_implicit_cast_distance(argument, expected_type) >= 0  continue;
-                    if can_do_implicit_reference(argument, expected_type)  continue;
+                    if can_do_implicit_reference(script, argument, expected_type)  continue;
                 }
                 
                 // else argument absolutely does not match expected type
@@ -186,14 +186,14 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
             return true;
         }
         
-        ok := typecheck_arguments(it, proc.argument_types, arguments);
+        ok := typecheck_arguments(script, it, proc.argument_types, arguments);
         
         // fallback case to try reordering args for symmetric case
         if !ok && is_operator && (proc.procedure_flags & .IS_SYMMETRIC) {
             assert(proc.argument_types.count == 2);
             assert(arguments.count == 2);
             it.swap_args = true;
-            ok = typecheck_arguments(it, proc.argument_types, .[ arguments[1], arguments[0] ]);
+            ok = typecheck_arguments(script, it, proc.argument_types, .[ arguments[1], arguments[0] ]);
         }
         if !ok  continue;
         

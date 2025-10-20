@@ -1819,7 +1819,7 @@ stepping back
 TODO:
     / explicit cast from Any to static type
         ? preserves ability to use Any as lvalue through the cast
-    implicit conversion to Any for procedure arguments  
+    / implicit conversion to Any for procedure arguments  
         what to do about lack of additional indirection?
             should be fine to just use Any as Any in call_procedure, without additional indirection
             but perhaps it will be more problematic if we later try to use `*void` to pass arguments instead of `Any`

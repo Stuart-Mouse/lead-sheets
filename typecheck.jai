@@ -228,9 +228,8 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
         }
     }
     
-    // TODO
     if from == xx Any { return 0; }
-    if to   == xx Any { return 0; }
+    // if to   == xx Any { return 0; }  // TODO: we can't handle this yet, for declarations/assignments or for procedure calls
     
     return -1;
 }
@@ -238,11 +237,9 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
 try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bool, replacement: *Node) {
     if node.value_type == type  return true, null;
     
-    if is_valid_lvalue(script, node)
-    && can_do_implicit_reference(node, type) {
-        // TODO: we may need to recurse in order to check or fix up child nodes that didn't previously know they are expected to be an lvalue? 
-        node.flags |= .PUSH_BY_POINTER;
-        dprint("made implicit cast for implicit reference: %", as_type(type));
+    if can_do_implicit_reference(script, node, type) {
+        dprint("Made implicit cast for implicit reference: %", as_type(type));
+        if !set_as_lvalue(script, node)  return false, null;
         return true, make_implicit_cast(script, node, type);
     }
     
@@ -282,7 +279,9 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
     return ifx _cast.flags & .IMPLICIT then _cast.implicit_type else _cast.type_identifier.type_info_pointer;
 }
 
-can_do_implicit_reference :: (node: *Node, type: *Type_Info) -> bool {
+can_do_implicit_reference :: (script: *Script, node: *Node, type: *Type_Info) -> bool {
+    if !script.my_is_valid_lvalue(script, node)  return false;
+    
     ptr_info := type.(*Type_Info_Pointer);
     if ptr_info.type != .POINTER return false;
     
