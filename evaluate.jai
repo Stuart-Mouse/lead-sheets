@@ -367,8 +367,24 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         dot := node.(*Node_Dot);
         
         if dot.flags & .IS_ARROW {
-            assert(false, "Arrow is currently unimplemented. This should not have passed typechecking.");
-            // return script.my_evaluate_node(script, dot.right);
+            if script.get_virtual_member == null {
+                set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = node);
+                return false;
+            }
+            
+            evaluate_node_or_return(script, dot.left);
+            assert(should_push_by_pointer(dot.left));
+            owner := pop_any(*script.stack, dot.left.value_type, true);
+            
+            member_identifier := dot.right.(*Node_Identifier);
+            assert(member_identifier.identifier_type == .UNRESOLVED);
+            
+            ok, member_value := script.get_virtual_member(script, owner, member_identifier.name, dot.virtual_member_hint_type);
+            if !ok {
+                set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = node);
+                return false;
+            }
+            return_result(node, member_value);
         }
         
         if dot.left == null {

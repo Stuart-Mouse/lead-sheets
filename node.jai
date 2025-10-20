@@ -269,8 +269,9 @@ get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator
 //       if I'm thinking of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
 //       need to verify this, but if this is the case then we actually get the last dot node first in tree walking order, so we can easily short-circuit evaluate it if left side is some constant expression
 Node_Dot :: struct {
-    using #as node_base:    Node;
-    left, right:            *Node;
+    using #as node_base:        Node;
+    left, right:                *Node;
+    virtual_member_hint_type:   *Type_Info;
 }
 
 Node_Subscript :: struct {

@@ -363,6 +363,9 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
       case Node_Dot;
         dot := node.(*Node_Dot);
         // TODO: make sure that this covers all our cases properly
+        if dot.flags & .IS_ARROW {
+            return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue);
+        }
         if dot.left.value_type.type == .STRUCT {
             return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue)
                 && script.my_is_valid_lvalue(script, dot.right, need_lvalue);
@@ -525,12 +528,8 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
 }
 
 typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // NOTE: identifier may have already been typechecked e.g. in parameters of procedure call
-    //       in this case we obviously don't want to check it again (not to mention accessing name will now be invalid!)
-    if identifier.identifier_type != .UNRESOLVED {
-        dprint("identifier was not UNRESOLVED");
-        return;
-    }
+    // NOTE: prevent re-typechecking identifier which has already been resolved
+    if identifier.identifier_type != .UNRESOLVED  return;
     
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
@@ -627,7 +626,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         
       case .ASSIGNMENT;
         // NOTE: we ignore hint_type because assignment expressions must be used at statement-level anyhow.
-        left_type  = typecheck_node_or_return(script, operation.left, check_flags, null);
+        left_type = typecheck_node_or_return(script, operation.left, check_flags, null);
         if !set_as_lvalue(script, operation.left)  return;
         
         right_type = typecheck_node_or_return(script, operation.right, check_flags, left_type);
@@ -635,9 +634,29 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
             if left_type != right_type {
-                ok, replacement := try_implicit_cast(script, operation.right, left_type); 
-                if !ok  return;
-                if replacement  replace_node(*operation.right, replacement);
+                if left_type == xx Any {
+                    // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
+                    if operation.left.node_type == Node_Dot {
+                        dot := operation.left.(*Node_Dot);
+                        if dot.flags & .IS_ARROW {
+                            dot.virtual_member_hint_type = right_type;
+                            // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
+                            //       however, there's no dynamic type assertion being done in that case, which is not really safe.
+                            //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
+                            ok, replacement := try_implicit_cast(script, operation.left, right_type); 
+                            if !ok  return;
+                            if replacement  replace_node(*operation.left, replacement);
+                            if !set_as_lvalue(script, operation.left)  return;
+                        }
+                    }
+                } else {
+                    ok, replacement := try_implicit_cast(script, operation.right, left_type); 
+                    if !ok  return;
+                    if replacement  replace_node(*operation.right, replacement);
+                }
+                
+                // NOTE: this assertion enforces that the LHS Any case is wrapped in a cast
+                assert(operation.left.value_type == operation.right.value_type);
             }
             operation.value_type = xx void;
             return;
@@ -682,10 +701,6 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
 }
 
 typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // TODO: we should probably be more rigorous about how we filter check flags as we traverse the AST
-    //       here, for instance, we could use some constnat like PASSTHROUGH_FLAGS_FOR_PROCEDURE_EXPRESSION and | with that 
-    //       as it stands though, we don't actually have many check flags and maybe even the ones we do have could possibly be removed if we refactored some things...
-    //       So, here is my little note in an obscure place where I will probably just forget about it and move on
     proc_info := my_typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
@@ -711,7 +726,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         identifier.identifier_type = .EXTERNAL_PROCEDURE;
         identifier.index           = procedure_index;
         identifier.flags          |= .TYPECHECKED;
-        proc_info:, identifier.value_type = procedures[procedure_index].proc_info;
+        proc_info, identifier.value_type = procedures[procedure_index].proc_info;
         
         // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
         // We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.
@@ -749,57 +764,51 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         procedure_call.value_type = ifx proc_info.return_types 
             then proc_info.return_types[0] 
             else type_info(void);
-    }
-    // procedure was the result of some larger expression, so it already has a strict type
-    else {
-        if proc_info == null {
-            set_typecheck_error(script, "Failed to typecheck procedure_expression.", node = procedure_call);
-            return;
-        }
-        if proc_info.type != .PROCEDURE {
-            set_typecheck_error(script, "Attempt to call a non-procedure type as if it were a procedure.", node = procedure_call);
-            return;
-        }
-        if proc_info.return_types.count > 1 {
-            set_typecheck_error(script, "Attempt to call a procedure which returns more than one value. This is not currently supported.", node = procedure_call);
-            return;
-        }
         
-        // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
-        if proc_info.argument_types.count != procedure_call.arguments.count {
-            set_typecheck_error(script, "Incorrect number of arguments provided for procedure call. Expected %, got %.\n", proc_info.argument_types.count, procedure_call.arguments.count, node = procedure_call);
-            return;
-        }
-        for procedure_call.arguments {
-            expected_type := proc_info.argument_types[it_index];
-            argument_type := typecheck_node_or_return(script, it, hint_type = expected_type);
-            if argument_type != expected_type {
-                set_typecheck_error(script, "Mismatched types on argument % for procedure call. Expected %, got %.\n", it_index, as_type(expected_type), as_type(argument_type), node = it);
-                return;
-            }
-        }
-        
-        procedure_call.value_type = ifx proc_info.return_types 
-            then proc_info.return_types[0] 
-            else type_info(void);
+        return;
     }
     
-    assert(procedure_call.value_type != null);
+    // procedure was the result of some larger expression, so it already has a strict type
+    if proc_info == null {
+        set_typecheck_error(script, "Failed to typecheck procedure_expression.", node = procedure_call);
+        return;
+    }
+    if proc_info.type != .PROCEDURE {
+        set_typecheck_error(script, "Attempt to call a non-procedure type as if it were a procedure.", node = procedure_call);
+        return;
+    }
+    if proc_info.return_types.count > 1 {
+        set_typecheck_error(script, "Attempt to call a procedure which returns more than one value. This is not currently supported.", node = procedure_call);
+        return;
+    }
+    
+    // typecheck arguments. we know what they must be, so we just straightforwardly match, and can hint type trivially
+    if proc_info.argument_types.count != procedure_call.arguments.count {
+        set_typecheck_error(script, "Incorrect number of arguments provided for procedure call. Expected %, got %.\n", proc_info.argument_types.count, procedure_call.arguments.count, node = procedure_call);
+        return;
+    }
+    for procedure_call.arguments {
+        expected_type := proc_info.argument_types[it_index];
+        argument_type := typecheck_node_or_return(script, it, hint_type = expected_type);
+        if argument_type != expected_type {
+            set_typecheck_error(script, "Mismatched types on argument % for procedure call. Expected %, got %.\n", it_index, as_type(expected_type), as_type(argument_type), node = it);
+            return;
+        }
+    }
+    
+    procedure_call.value_type = ifx proc_info.return_types 
+        then proc_info.return_types[0] 
+        else type_info(void);
 }
 
 typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    value_type := typecheck_node_or_return(script, _cast.value);
-    
     if _cast.flags & .IMPLICIT {
+        typecheck_node_or_return(script, _cast.value);
         _cast.value_type = _cast.implicit_type;
         if is_aggregate(_cast.value.value_type) {
             assert(is_pointer_to(_cast.value_type, _cast.value.value_type), "Implicit cast with aggregate value was not an implicit reference.");
         }
     } else {
-        if is_aggregate(_cast.value.value_type) && _cast.value.value_type != xx Any {
-            set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = _cast);
-        }
-        
         type_expression := _cast.type_expression;
         type_type := typecheck_node_or_return(script, type_expression, hint_type = xx Type);
         
@@ -815,19 +824,32 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
         my_evaluate_node(script, type_expression);
         if has_error(script)  return;
         _cast.value_type = pop_as(*stack, *Type_Info);
+        
+        from_type := typecheck_node_or_return(script, _cast.value, hint_type = _cast.value_type);
+        if is_aggregate(from_type) && from_type != xx Any {
+            set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = _cast);
+        }
     }
-    
-    return;
 }
 
 typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if dot.flags & .IS_ARROW {
-        set_typecheck_error(script, "Arrow is not currently implemented.", node = dot);
+        // set_typecheck_error(script, "Arrow is not currently implemented.", node = dot);
+        typecheck_node_or_return(script, dot.left);
+        if !set_as_lvalue(script, dot.left)  return;
+        
+        if dot.right.node_type != Node_Identifier {
+            set_typecheck_error(script, "Right side of arrow must be an identifier.", node = dot.right);
+            return;
+        }
+        
+        dot.virtual_member_hint_type = hint_type;
+        dot.value_type = xx Any;
         return;
     }
     
-    // Currently, the only valid case for dot.left being null is for unary dot enums.
-    // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below.
+    // NOTE: dot.left may be null for unary dot enums and struct literals with no explicit type.
+    // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below, where we will try to use hint_type to resolve the struct literal or enum value name.
     left_type: *Type_Info;
     if dot.left {
         left_type = typecheck_node_or_return(script, dot.left);
@@ -844,24 +866,22 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             set_typecheck_error(script, "If left side of struct member dot dereference expression is a pointer, then it must point to a struct type.", node = dot.left);
             return;
         }
-        struct_info := pointer_info.pointer_to.(*Type_Info_Struct);
-        left_type = struct_info; // override for below struct case
+        left_type = pointer_info.pointer_to.(*Type_Info_Struct);
         
         #through;
         
       case .STRUCT;
-        if dot.right.node_type != Node_Identifier {
+        member_identifier := dot.right.(*Node_Identifier);
+        if member_identifier.node_type != Node_Identifier {
             set_typecheck_error(script, "Right side of struct member dot dereference expression must be an identifier.", node = dot.right);
             return;
         }
+        // NOTE: prevent re-typechecking identifier which has already been resolved
+        if member_identifier.identifier_type != .UNRESOLVED  return;
         
-        member_identifier := dot.right.(*Node_Identifier);
-        assert(member_identifier.node_type == Node_Identifier);
-        assert(member_identifier.identifier_type == .UNRESOLVED);
         member_name := member_identifier.name;
-        
-        member_ti, member_offset := get_field(xx left_type, member_name);
-        if member_ti == null {
+        member_info, member_offset := get_field(xx left_type, member_name);
+        if member_info == null {
             set_typecheck_error(script, "Attempt to access struct member which does not exist.", node = dot.right);
             return;
         }
@@ -869,7 +889,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         // tricky case. left may be some complex expression where the result is an instance of a struct type.
         // so we can't just set the left type to be a namespace.
         //      but we do still want to do this if left type is an identifier? or no, since it could be a type identifier? which maybe we want to leave as is?
-        if member_ti.flags & .CONSTANT {
+        if member_info.flags & .CONSTANT {
             set_typecheck_error(script, "Access of constant struct members is not yet allowed.", node = dot.right);
             return;
             // member_identifier.identifier_type = .LITERAL;
@@ -877,12 +897,12 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             // TODO: need to be able to call some simple make_literal() proc here and actually init the literal value
         } else {
             member_identifier.identifier_type = .STRUCT_MEMBER;
-            member_identifier.member = member_ti;
+            member_identifier.member = member_info;
         }
         
-        member_identifier.value_type = member_ti.type;
+        member_identifier.value_type = member_info.type;
         member_identifier.flags |= .TYPECHECKED;
-        dot.value_type = member_ti.type;
+        dot.value_type = member_info.type;
         
         // NOTE: If we are not implicitly dereferencing the left side here,
         //       then we would prefer for the value to be pushed by pointer.
@@ -928,7 +948,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                     return;
                 }
                 dot.value_type = namespace;
-                return; // no error
+                return;
                 
               // case .Node_Identifier;
             }
@@ -1138,7 +1158,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = xx int;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
-        // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if for_loop.it_index_decl {
             set_typecheck_error(script, "Cannot define an `it_index` in a range-based for loop.", node = for_loop.it_index_decl);
@@ -1173,7 +1192,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_index_decl.value_type = xx int;
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
-        // for_loop.it_index_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         
       case .LIST;
@@ -1197,7 +1215,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = first_type;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
-        // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if !for_loop.it_index_decl {
             for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
@@ -1205,7 +1222,6 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_index_decl.value_type = xx int;
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
-        // for_loop.it_index_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
     }
     
     typecheck_node_or_return(script, for_loop.statement, .IS_STATEMENT_ROOT);

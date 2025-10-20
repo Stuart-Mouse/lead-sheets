@@ -41,6 +41,11 @@ Script :: struct {
     my_typecheck_node   := typecheck_node;
     my_is_valid_lvalue  := is_valid_lvalue;
     
+    
+    // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
+    get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
+    get_virtual_member_user_data:   *void;
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
