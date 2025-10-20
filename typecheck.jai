@@ -889,9 +889,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         //       However, this may not be possible if the LHS is not a valid lvalue,
         //       and in that case, we still should be able to access its members.
         if dot.left.value_type.type != .POINTER { 
-            if !set_as_lvalue(script, dot.left) {
-                // clear_error(script);
-                return;
+            if is_valid_lvalue(script, dot.left) {
+                assert(set_as_lvalue(script, dot.left));
             }
         }
         return;
