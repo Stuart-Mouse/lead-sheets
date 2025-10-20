@@ -856,7 +856,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         }
         
         member_identifier := dot.right.(*Node_Identifier);
-        assert(member_identifier.node_type == Node_Identifier && member_identifier.identifier_type == .UNRESOLVED);
+        assert(member_identifier.node_type == Node_Identifier);
+        assert(member_identifier.identifier_type == .UNRESOLVED);
         member_name := member_identifier.name;
         
         member_ti, member_offset := get_field(xx left_type, member_name);
@@ -888,7 +889,10 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         //       However, this may not be possible if the LHS is not a valid lvalue,
         //       and in that case, we still should be able to access its members.
         if dot.left.value_type.type != .POINTER { 
-            if !set_as_lvalue(script, dot.left)  return;
+            if !set_as_lvalue(script, dot.left) {
+                // clear_error(script);
+                return;
+            }
         }
         return;
         
