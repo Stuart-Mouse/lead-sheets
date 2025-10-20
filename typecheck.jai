@@ -340,7 +340,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
             return true;
             
           case .LITERAL;
-            return script.my_is_valid_lvalue(script, identifier.literal);
+            return script.my_is_valid_lvalue(script, identifier.literal, need_lvalue);
             
           case .DECLARATION;
             // TODO: update this logic for the new semantics around constant declarations and macros
@@ -358,14 +358,22 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
       case Node_Dot;
         dot := node.(*Node_Dot);
         if dot.left.value_type.type == .STRUCT {
-            return script.my_is_valid_lvalue(script, dot.left)
-                && script.my_is_valid_lvalue(script, dot.right);
+            return script.my_is_valid_lvalue(script, dot.left, need_lvalue)
+                && script.my_is_valid_lvalue(script, dot.right, need_lvalue);
         }
-        return script.my_is_valid_lvalue(script, dot.right);
+        return script.my_is_valid_lvalue(script, dot.right, need_lvalue);
         
       case Node_Subscript;          
         subscript := node.(*Node_Subscript);
-        return script.my_is_valid_lvalue(script, subscript.base_expression);
+        return script.my_is_valid_lvalue(script, subscript.base_expression, need_lvalue);
+        
+      case Node_Cast;
+        _cast := node.(*Node_Cast);
+        if _cast.value.value_type == xx Any {
+            return script.my_is_valid_lvalue(script, _cast.value, need_lvalue);
+        }
+        if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported, unless casting from an Any", node = node);
+        return false;
         
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
       case Node_Operation;          
@@ -374,14 +382,6 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false) -> bool 
         
       case Node_Procedure_Call;     
         if need_lvalue then set_typecheck_error(script, "Using the result of a procedure call as an lvalue is not currently supported", node = node);
-        return false;
-        
-      case Node_Cast;
-        node_cast := node.(*Node_Cast);
-        if node_cast.value.value_type == xx Any {
-            // TODO:
-        }
-        if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported", node = node);
         return false;
         
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
@@ -572,7 +572,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         if it.name == identifier.name {
             identifier.identifier_type = .EXTERNAL_VARIABLE;
             identifier.index           = it_index;
-            identifier.value_type      = variables[it_index].type;
+            identifier.value_type      = ifx it.flags & .ANY then xx Any else variables[it_index].type;
             return;
         }
     }
@@ -781,16 +781,20 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
     assert(procedure_call.value_type != null);
 }
 
-typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    value_type := typecheck_node_or_return(script, node_cast.value);
+typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    value_type := typecheck_node_or_return(script, _cast.value);
     
-    if node_cast.flags & .IMPLICIT {
-        node_cast.value_type = node_cast.implicit_type;
-        if is_aggregate(node_cast.value.value_type) {
-            assert(is_pointer_to(node_cast.value_type, node_cast.value.value_type), "Implicit cast with aggregate value was not an implicit reference.");
+    if _cast.flags & .IMPLICIT {
+        _cast.value_type = _cast.implicit_type;
+        if is_aggregate(_cast.value.value_type) {
+            assert(is_pointer_to(_cast.value_type, _cast.value.value_type), "Implicit cast with aggregate value was not an implicit reference.");
         }
     } else {
-        type_expression := node_cast.type_expression;
+        if is_aggregate(_cast.value.value_type) && _cast.value.value_type != xx Any {
+            set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = _cast);
+        }
+        
+        type_expression := _cast.type_expression;
         type_type := typecheck_node_or_return(script, type_expression, hint_type = xx Type);
         
         if type_type.type != .TYPE {
@@ -804,11 +808,7 @@ typecheck_cast :: (using script: *Script, node_cast: *Node_Cast, check_flags := 
         
         my_evaluate_node(script, type_expression);
         if has_error(script)  return;
-        node_cast.value_type = pop_as(*stack, *Type_Info);
-        
-        if is_aggregate(node_cast.value.value_type) {
-            set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = node_cast);
-        }
+        _cast.value_type = pop_as(*stack, *Type_Info);
     }
     
     return;

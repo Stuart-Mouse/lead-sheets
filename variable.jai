@@ -27,6 +27,7 @@ External_Variable :: struct {
         NONE :: 0; 
         STATIC :: 1; 
         CONSTANT; 
+        ANY;
     }
 }
 
@@ -71,6 +72,9 @@ declare_variable :: (script: *Script, name: string, any: Any, flags := External_
             return false, -1;
         }
     }
+    if any.type == xx Any {
+        flags |= .ANY;
+    }
     array_add(*script.variables, .{ 
         name = name, 
         type = any.type,
@@ -85,7 +89,7 @@ declare_variable :: (script: *Script, name: string, type: Type, flags := Externa
     return ok, index;
 }
 
-set_variable :: (script: *Script, name: string, any: Any, override := true) -> bool {
+set_variable :: (script: *Script, name: string, any: Any, override := false) -> bool {
     for *script.variables {
         if it.name == name {
             return __internal_set_variable(it, any, override);
@@ -95,7 +99,7 @@ set_variable :: (script: *Script, name: string, any: Any, override := true) -> b
     return false;
 }
 
-set_variable_by_index :: (script: *Script, index: int, any: Any, override := true) -> bool {
+set_variable_by_index :: (script: *Script, index: int, any: Any, override := false) -> bool {
     if !is_valid_index(script.variables, index) {
         log("Error: Invalid index (%) to external variable.", index);
         return false;
@@ -118,8 +122,8 @@ set_variable_name :: (script: *Script, index: int, name: string) -> bool {
 
 #scope_module
 
-__internal_set_variable :: (var: *External_Variable, any: Any, override := true) -> bool {
-    if var.type != any.type {
+__internal_set_variable :: (var: *External_Variable, any: Any, override := false) -> bool {
+    if !(var.flags & .ANY) && var.type != any.type {
         log("Error: Cannot set value of external variable which was declared with type % using a value of type %.", as_type(var.type), as_type(any.type));
         return false;
     }
@@ -131,6 +135,7 @@ __internal_set_variable :: (var: *External_Variable, any: Any, override := true)
         log("Error: Cannot set the value of constant external variable '%'.", var.name);
         return false;
     }
+    var.type          = any.type;
     var.value_pointer = any.value_pointer;
     return true;
 }

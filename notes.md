@@ -1489,59 +1489,6 @@ We should check that the literal expression being used as a malleable literal is
     since we can have struct literals that are not constants
 
 
-## Improving Handling of Any in Scripts
-
-need to be able to push an Any or pop an Any from the stack
-
-when casting to an Any, need to make sure intermediate value will stay valid
-    should be fine for larger values, but will be a problem for smaller values, since those are always on the stack
-    so we will need to catch the case where a small value is assigned to an Any and stash those values in some small value storage, elsewhere
-when casting an Any to something else, need to make sure we can still use that as an lvalue
-    e.g., the cast node should be a valid lvalue when the value expression's value type is Any
-
-we need to overload the assignment operator for Any to Any case
-    needs to perform a check to assert that right type is coercible to left
-    if not, we get a runtime error
-    
-for unary operators, we could dynamically typecheck and resolve the operator to use, then apply it
-for binary operators, 
-
-Yet another choice to make:
-    either we can allow assignment to change the type of a virtual member, 
-    or we can assert that the right type coerces to what the virtual member type currently is
-        then we can only change the virtual member's type by redeclaring it
-        this seems like the way to go...
-
-now that I think about it, for something to be a valid lvalue essentially just means that the address of the value is the same as some declaration's value pointer
-so if in any situation we copy some value (and thus change the memory location being passed down the tree) then the value is no longer a valid lvalue
-
-
-If we have some value of type Any that we want to pass around within a script
-or for, example we have somethign declared as type Any
-then when we pass that thing up, do we need to have an Any that points to another Any?
-that's not really ideal!
-
-that extra indirection is sort of problematic and since we can't really make an any of an any without really forcing it
-
-any_any := Any.{ type = xx Any, value = *any };
-
-i mean, I suppose we could do this, but maybe while we're at it we should just make our own result type again
-one that is essentailly just an Any, but with some kind of small value optimization, like Any_Number
-
-Then we can just turn our stack into a `[] Value` or something
-
-Maybe having this standardized value type thing will also make it easier to swap between execution and evaluation?
-    could we use eval logic for handling Any's in execute?
-        probably not, thats not how evaluate works
-        we actually typecheck fully before evaluating, so uh, yeah..
-
-
-Consider creating some conditional assignment operator like `?=` for assigning to / declaring  an Any
-    main reason for such a thing would be to make it easier to use some arbitrary expression on LHS, such as virtual members
-    and, so that we can declare something with the implicit understanding that its type could change later
-    if we did this, would need to come up with some other way of marking malleable literals
-
-
 
 ## Implementing builtin casts
 
@@ -1788,3 +1735,97 @@ create some better flags, system for specifying how node's value is stored
     for example, for loop declarations should not need to be marked as a macro in order that caller knows to use value_pointer rather than stack offset
 
 when declaration is used as an lvalue, we should flag it as non-constant
+
+
+
+## Improving Handling of Any in Scripts
+
+need to be able to push an Any or pop an Any from the stack
+
+when casting to an Any, need to make sure intermediate value will stay valid
+    should be fine for larger values, but will be a problem for smaller values, since those are always on the stack
+    so we will need to catch the case where a small value is assigned to an Any and stash those values in some small value storage, elsewhere
+when casting an Any to something else, need to make sure we can still use that as an lvalue
+    e.g., the cast node should be a valid lvalue when the value expression's value type is Any
+
+we need to overload the assignment operator for Any to Any case
+    needs to perform a check to assert that right type is coercible to left
+    if not, we get a runtime error
+    
+for unary operators, we could dynamically typecheck and resolve the operator to use, then apply it
+for binary operators, 
+
+Yet another choice to make:
+    either we can allow assignment to change the type of a virtual member, 
+    or we can assert that the right type coerces to what the virtual member type currently is
+        then we can only change the virtual member's type by redeclaring it
+        this seems like the way to go...
+
+now that I think about it, for something to be a valid lvalue essentially just means that the address of the value is the same as some declaration's value pointer
+so if in any situation we copy some value (and thus change the memory location being passed down the tree) then the value is no longer a valid lvalue
+
+
+If we have some value of type Any that we want to pass around within a script
+or for, example we have somethign declared as type Any
+then when we pass that thing up, do we need to have an Any that points to another Any?
+that's not really ideal!
+
+that extra indirection is sort of problematic and since we can't really make an any of an any without really forcing it
+
+any_any := Any.{ type = xx Any, value = *any };
+
+i mean, I suppose we could do this, but maybe while we're at it we should just make our own result type again
+one that is essentailly just an Any, but with some kind of small value optimization, like Any_Number
+
+Then we can just turn our stack into a `[] Value` or something
+
+Maybe having this standardized value type thing will also make it easier to swap between execution and evaluation?
+    could we use eval logic for handling Any's in execute?
+        probably not, thats not how evaluate works
+        we actually typecheck fully before evaluating, so uh, yeah..
+
+
+Consider creating some conditional assignment operator like `?=` for assigning to / declaring  an Any
+    main reason for such a thing would be to make it easier to use some arbitrary expression on LHS, such as virtual members
+    and, so that we can declare something with the implicit understanding that its type could change later
+    if we did this, would need to come up with some other way of marking malleable literals
+
+
+push/pop any
+    need to be able to push and pop any by value
+    so we will just push value and then type
+    so we can peek/pop type before value
+    don't even need to do this for evaluation actually, since we just return an Any
+    although... perhaps we should not make it a requirement that the direct return value is received?
+
+interaction with other nodes
+    we will need to implement some basic loigic to 'interpret' some ast node rather then evaluate
+    this will essentially be what the eval stuff was originally supposed to be
+    (we will typecheck as we execute nodes)
+    
+    we already have an Any literal, but we currently treat it as if it is statically typed
+        this will probably have to change
+    identifier can refer to an Any
+    operation with an Any as operand will have to do some interpretation
+    procedure call receving any as parameters can just attempt an implicit type conversion
+    
+
+stepping back
+    having a generalized interpret_node procedure or other interpreted operations is going to be a lot of work actually
+    so a better first step for supporting the smallest subset of functionality (but with the most usefulness)
+    will be to implement casts and implicit type assertions for values of type Any in evaluation
+    this bare minimum should be enough to then implement some form of virtual members again, which will add a lot of value in terms of my ability to design levels
+    
+TODO:
+    / explicit cast from Any to static type
+        ? preserves ability to use Any as lvalue through the cast
+    implicit type assertion in operation between Any and other operand of static type (assumes both types are the same)
+    implicit type assertion when assigning to or from an Any where other side of assignment is statically known
+    better way to denote that declared type of some external variable is Any
+        maybe we just set some flag for this...
+
+
+ASIDE:
+    could implement dereference operator if we added some PRODUCES_VALID_LVALUE flag to Operator 
+    and maybe cast can just be implemented as an operator, TBH
+    

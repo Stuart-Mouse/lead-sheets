@@ -52,7 +52,8 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
     value := script.my_evaluate_node(script, node, provided_storage, flags);
     if has_error(script)  `return NULL_ANY;
     
-    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) {
+    // #if DEBUG
+    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type != xx Any {
         assert(value.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(value.type));
         
         if flags & .DISCARD_VALUE {
@@ -94,8 +95,11 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         return NULL_ANY;
     }
     
+    // TODO: pare this down or create a helper funciton inside to prevent code bloat
     return_result :: (node: *Node, any: Any) -> bool #expand {
         if provided_storage {
+            assert(node.value_type != xx Any);
+            
             dprint("Returning result using provided storage @ %: ", provided_storage, newline = false);
             if !is_aggregate(any.type)  dprint("%", any, newline = false);
             dprint(" (%)", as_type(any.type));
@@ -104,7 +108,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             `return Any.{ node.value_type, provided_storage };
         }
         ok, result := push_any(*script.stack, any, should_push_by_pointer(node));
-        if !ok  set_execution_error(script, "Ran out of space on stack!", node = null);
+        if !ok  set_execution_error(script, "Ran out of space on stack!", node = node);
         
         dprint("Returning result using stack @ %: ", result.value_pointer, newline = false);
         if !is_aggregate(any.type)  dprint("%", any);
@@ -114,13 +118,14 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     
     get_result_storage :: (node: *Node) -> *void #expand {
         if provided_storage {
+            assert(node.value_type != xx Any);
             dprint("Got provided storage @ % for result of type: %", provided_storage, as_type(node.value_type));
             return provided_storage;
         }
         
         result := push(*script.stack, null, node.value_type.runtime_size);
         if !result {
-            set_execution_error(script, "Ran out of space on stack!", node = null);
+            set_execution_error(script, "Ran out of space on stack!", node = node);
             `return NULL_ANY;
         }
         dprint("Got space on stack @ % for result of type: %", result, as_type(node.value_type));
@@ -312,36 +317,46 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
         
       case Node_Cast;
-        node_cast := node.(*Node_Cast);
+        _cast := node.(*Node_Cast);
         
-        // TODO: special case to handle conversion from Any.
+        src_type := _cast.value.value_type;
+        dst_type := _cast.value_type;
         
-        src_type := node_cast.value.value_type;
-        dst_type := node_cast.value_type;
-
-        dst := Any.{ dst_type, get_result_storage(node_cast) };
+        dst := Any.{ dst_type, get_result_storage(_cast) };
+        
+        // special case to handle conversion from Any
+        if src_type == xx Any {
+            src := evaluate_node_or_return(script, _cast.value);
+            pop_any(*script.stack, src.type, false);
+            if src.type != dst.type {
+                set_execution_error(script, "Failed type assertion on Any. Expected type was %, but got %", as_type(dst.type), as_type(src.type), node = _cast);
+                return NULL_ANY;
+            }
+            memcpy(dst.value_pointer, src.value_pointer, dst.type.runtime_size);
+            return dst;
+        }
         
         // special case for implicitly taking a reference
         if dst_type.type == .POINTER 
         && dst_type.(*Type_Info_Pointer).pointer_to == src_type {
-            assert(should_push_by_pointer(node_cast.value));
-            assert(!should_push_by_pointer(node_cast));
+            assert(should_push_by_pointer(_cast.value));
+            assert(!should_push_by_pointer(_cast));
             
-            dprint("Implicitly referencing: % -> %", as_type(node_cast.value.value_type), as_type(node_cast.value_type));
+            dprint("Implicitly referencing: % -> %", as_type(_cast.value.value_type), as_type(_cast.value_type));
             
-            src := evaluate_node_or_return(script, node_cast.value);
+            src := evaluate_node_or_return(script, _cast.value);
             dst.value_pointer.(**void).* = src.value_pointer;
             return dst;
         }
         
         // NOTE: no conversions to or from aggregates (other than implicitly taking references) are currently supported
-        assert(!is_aggregate(node_cast.value_type) && !is_aggregate(node_cast.value.value_type));
+        assert(!is_aggregate(_cast.value_type) && !is_aggregate(_cast.value.value_type));
         
-        evaluate_node_or_return(script, node_cast.value);
-        src := pop_any(*script.stack, node_cast.value.value_type);
+        evaluate_node_or_return(script, _cast.value);
+        src := pop_any(*script.stack, _cast.value.value_type);
         
         if !Convert.any_to_any(dst, src) {
-            set_general_error(script, "Failed to execute cast from % to %. Source value was %", as_type(src.type), as_type(dst.type), src);
+            set_execution_error(script, "Failed to execute cast from % to %. Source value was %", as_type(src.type), as_type(dst.type), src, node = _cast);
             return NULL_ANY;
         }
         return dst;
