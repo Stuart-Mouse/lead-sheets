@@ -218,12 +218,10 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
         if to.type == from.type {
             if to.type == {
               case .FLOAT;
-                distance := to.runtime_size - from.runtime_size;
-                return distance;
+                return to.runtime_size - from.runtime_size;
                 
               case .INTEGER;
-                distance := get_integer_cast_distance(xx from, xx to);
-                return distance;
+                return get_integer_cast_distance(xx from, xx to);
             }
         }
     }

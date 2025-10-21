@@ -169,8 +169,12 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
                     // if they are implicitly typed structs, they can still be resolved after overload resolution
                     if expected_type.type == .STRUCT  continue;
                 } else {
-                    if get_implicit_cast_distance(argument, expected_type) >= 0  continue;
                     if can_do_implicit_reference(script, argument, expected_type)  continue;
+                    cast_distance := get_implicit_cast_distance(argument, expected_type);
+                    if cast_distance >= 0 {
+                        overload.coercion_distance = cast_distance;
+                        continue;
+                    }
                 }
                 
                 // else argument absolutely does not match expected type
@@ -182,7 +186,6 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
                 };
                 return false;
             }
-            
             return true;
         }
         
@@ -192,8 +195,8 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
         if !ok && is_operator && (proc.procedure_flags & .IS_SYMMETRIC) {
             assert(proc.argument_types.count == 2);
             assert(arguments.count == 2);
-            it.swap_args = true;
             ok = typecheck_arguments(script, it, proc.argument_types, .[ arguments[1], arguments[0] ]);
+            it.swap_args = ok;
         }
         if !ok  continue;
         

@@ -1818,13 +1818,15 @@ stepping back
     
 TODO:
     / explicit cast from Any to static type
-        ? preserves ability to use Any as lvalue through the cast
+        / preserves ability to use Any as lvalue through the cast
     / implicit conversion to Any for procedure arguments  
         what to do about lack of additional indirection?
             should be fine to just use Any as Any in call_procedure, without additional indirection
             but perhaps it will be more problematic if we later try to use `*void` to pass arguments instead of `Any`
-    implicit type assertion in operation between Any and other operand of static type (assumes both types are the same)
-    implicit type assertion when assigning to or from an Any where other side of assignment is statically known
+    ? implicit type assertion in operation between Any and other operand of static type (assumes both types are the same)
+    / implicit type assertion when assigning to or from an Any where other side of assignment is statically known
+        / when assigning to an Any, add an implicit cast to match RHS type
+        / no special logic needed when assigning from an Any (for now) since we can use hint type
     better way to denote that declared type of some external variable is Any
         maybe we just set some flag for this...
 
