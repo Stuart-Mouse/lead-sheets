@@ -1517,7 +1517,7 @@ allowing for node replacement
 ## Bugs and minor fixes
 
 we should really stamp serial numbers onto all nodes like the Jai compiler does
-    since if we decide to do stuff liek storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
+    since if we decide to do stuff like storing block contexts or preserving malleable literals in some nontextual way, we need to be able to patch scripts reliably
     and the only way to do this would be to keep serial numbers for the nodes we modified so that we have a real 
     actually even just having a serial number wouldn't solve it, but maybe it would help
 
@@ -1829,8 +1829,38 @@ TODO:
         / no special logic needed when assigning from an Any (for now) since we can use hint type
     better way to denote that declared type of some external variable is Any
         maybe we just set some flag for this...
-
+        
+    virtual members
+        separate declaration and get into 2 different procs
+        reimplement virtual member declarations
+            if we have a virtual member declaration in scope, we can use that to hint the type at the locations where that member is referenced
+            we can also warn the user when a virtual member is redeclared using a different type
+        virtual member declarations should probably be implicitly static for now
+        
+        
+        
 ASIDE:
     could implement dereference operator if we added some PRODUCES_VALID_LVALUE flag to Operator 
     and maybe cast can just be implemented as an operator, TBH
-    
+
+
+
+Exploring a particular virtual member use case:
+
+In scripts, we will want to be able to do something like this:
+```
+entity_offset += #edit_ellipse(entity, "vms_id");
+```
+And this edit_ellipse directive would do the work of creating an entry in VMS for some struct type like Edit_Ellipse_Parameters or soemthing
+    and then also doing the ui stuff for the ellipse in the editor.
+
+This should be pretty strightforward except for the fact that we would then need to add these special struct types to the enum tagged union for virtual member values
+    and if this struct is decently large then we are going to waste a lot of space in VMS for small values
+    So really, VMS should probably just use some custom values struct that works like an Any but with some optimization to store small values directly instead of by pointer
+
+The other annoyance is just needing to add all these new struct types manually, and if we change the name of them, we break everything
+We could use some metaprogram stuff or just tag structs that can be used as VMS values with some uuid for the type
+And this is fine I guess, but at that point its like, why not just go all out and make a decent `Type_Libarary` plugin...
+
+
+
