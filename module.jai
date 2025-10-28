@@ -1,8 +1,4 @@
 
-// typechecking callbcak allows additional return value for replacement node
-Typecheck_Callback :: type_of(typecheck_node);
-Serialize_Callback :: type_of(sprint_node);
-
 Script :: struct {
     ast_root:               *Node_Block;
     flags:                  Flags;
@@ -26,21 +22,20 @@ Script :: struct {
     }
     
     lexer:                  Lexer;
-    current_scope:          *Node;    // perhaps this should be passed on stack, only used during parsing
+    current_scope:          *Node;
     
-    // callbacks for handling custom node types
-    serialize_callback:     Serialize_Callback;
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
     my_parse_expression := parse_expression;
     my_parse_binary     := parse_binary;
     my_parse_leaf       := parse_leaf;
     
-    my_evaluate_node    := evaluate_node;
-    
     my_typecheck_node   := typecheck_node;
     my_is_valid_lvalue  := is_valid_lvalue;
     
+    my_evaluate_node    := evaluate_node;
+    
+    my_print_node       := print_node;
     
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
     get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
@@ -206,6 +201,57 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
     return true;
 }
 
+
+/*
+    Would be nice to implement an assertion_failed proc to use while we are parsing/typechecking/executing a script.
+    We could store the current node being dealt with and print out some location information for that node, or something akin to a stack trace.
+    This will only reall ybe super useful if the assertion_failed proc is also triggered for things like invalid array indexing, null pointer dereferences, and out-of-range integer casts as well. 
+*/
+script_assertion_failed :: (loc := Source_Code_Location, message: string) -> bool {
+    write_loc(loc, to_standard_error = true);
+	write_string(": Assertion failed while executing script", to_standard_error = true);
+	
+	// TODO: write info about node/location in script which we were dealing with when error ocurred
+    
+	if message {
+		write_strings(": ", message, "\n", to_standard_error = true);
+	} else {
+		write_string("!\n", to_standard_error = true);
+	}
+
+    print_stack_trace :: (node: *Stack_Trace_Node) {  // @Copypasta from modules/Basic, but without calling print.
+        while node {
+            // There are two different line numbers available.
+            // node.info.location has a line number, but this is the location of
+            // the start of the procedure. That may be useful in some cases, but often
+            // what we really want is the line number of the procedure call, which is
+            // stored in node.line_number. That's what we print in this case.
+
+            if node.info {
+                write_string(node.info.location.fully_pathed_filename, to_standard_error = true);
+                write_string(":", to_standard_error = true);
+                write_nonnegative_number(node.line_number, to_standard_error = true);
+                write_string(": ", to_standard_error = true);
+                if node.info.name write_string(node.info.name, to_standard_error = true);
+                else write_string("(anonymous procedure)", to_standard_error = true);
+                write_string("\n", to_standard_error = true);
+            }
+
+            node = node.next;
+        }
+    }
+
+    if context.stack_trace {
+        write_string("\nStack trace:\n", to_standard_error = true);
+        print_stack_trace(context.stack_trace);
+    } else {
+        write_string("Exiting.\n", to_standard_error = true);
+    }
+
+    __runtime_support_disable_stack_trace = true;
+
+    return true;
+}
 
 
 // CONVENIENCE STUFF

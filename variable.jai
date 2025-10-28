@@ -69,13 +69,12 @@ declare_variable :: (script: *Script, name: string, any: Any, flags := External_
                 it.value_pointer = any.value_pointer;
                 return true, it_index;
             }
-            log("Error: External variable '%' has already been declared with type %.", name, as_type(it.type));
+            set_general_error(script, "External variable '%' has already been declared with type %.", name, as_type(it.type));
             return false, -1;
         }
     }
-    if any.type == xx Any {
-        flags |= .ANY;
-    }
+    if any.type.type == .ANY then flags |= .ANY;
+    
     array_add(*script.variables, .{ 
         name = name, 
         type = any.type,
@@ -93,28 +92,28 @@ declare_variable :: (script: *Script, name: string, type: Type, flags := Externa
 set_variable :: (script: *Script, name: string, any: Any, override := false) -> bool {
     for *script.variables {
         if it.name == name {
-            return __internal_set_variable(it, any, override);
+            return __internal_set_variable(script, it, any, override);
         }
     }
-    log("Error: External variable '%' has not been declared.", name);
+    set_general_error(script, "External variable '%' has not been declared.", name);
     return false;
 }
 
 set_variable_by_index :: (script: *Script, index: int, any: Any, override := false) -> bool {
     if !is_valid_index(script.variables, index) {
-        log("Error: Invalid index (%) to external variable.", index);
+        set_general_error(script, "Invalid index (%) to external variable.", index);
         return false;
     }
-    return __internal_set_variable(*script.variables[index], any, override);
+    return __internal_set_variable(script, *script.variables[index], any, override);
 }
 
 set_variable_name :: (script: *Script, index: int, name: string) -> bool {
-    // if !(script.flags & .TYPECHECKED) {
-    //     log("Error: Cannot change name of external variable before script has been typechecked.", index);
-    //     return false;
-    // }
+    if !(script.flags & .TYPECHECKED) {
+        set_general_error(script, "Cannot change name of external variable before script has been typechecked.");
+        return false;
+    }
     if !is_valid_index(script.variables, index) {
-        log("Error: Invalid index (%) to external variable.", index);
+        set_general_error(script, "Invalid index (%) to external variable.", index);
         return false;
     }
     script.variables[index].name = name;
@@ -123,17 +122,17 @@ set_variable_name :: (script: *Script, index: int, name: string) -> bool {
 
 #scope_module
 
-__internal_set_variable :: (var: *External_Variable, any: Any, override := false) -> bool {
+__internal_set_variable :: (script: *Script, var: *External_Variable, any: Any, override := false) -> bool {
     if !(var.flags & .ANY) && var.type != any.type {
-        log("Error: Cannot set value of external variable which was declared with type % using a value of type %.", as_type(var.type), as_type(any.type));
+        set_general_error(script, "Cannot set value of external variable which was declared with type % using a value of type %.", as_type(var.type), as_type(any.type));
         return false;
     }
     if !override && var.value_pointer != null {
-        log("Error: External variable '%' has already had its value set.", var.name);
+        set_general_error(script, "External variable '%' has already had its value set.", var.name);
         return false;
     }
     if !override && var.flags & .CONSTANT {
-        log("Error: Cannot set the value of constant external variable '%'.", var.name);
+        set_general_error(script, "Cannot set the value of constant external variable '%'.", var.name);
         return false;
     }
     var.type          = any.type;

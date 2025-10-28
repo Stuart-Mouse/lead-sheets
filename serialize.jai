@@ -39,7 +39,7 @@ print_script :: (
 
 sprint_node :: (script: *Script, node: *Node) -> string {
     builder: String_Builder;
-    print_node(script, node, *builder, 0);
+    script.my_print_node(script, node, *builder, 0);
     return builder_to_string(*builder);
 }
 
@@ -53,10 +53,9 @@ print_node_or_return :: (
     builder:        *String_Builder,
     indent:         int
 ) #expand {
-    if !print_node(script, node, builder, indent)  `return false;
+    if !script.my_print_node(script, node, builder, indent)  `return false;
 }
 
-// TODO: make sure this works when node has not passed typechecking, so that we can at least still print parts of AST in error messages
 print_node :: (
     using script:   *Script, 
     node:           *Node, 
@@ -75,7 +74,7 @@ print_node :: (
     }
     
     
-    // wrap expression in parenthesized if explicitly flagged as such
+    // wrap expression in parentheses if explicitly flagged as such
     if       node.flags & .PARENTHESIZED  append(builder, "(");
     defer if node.flags & .PARENTHESIZED  append(builder, ")");
     
@@ -129,7 +128,7 @@ print_node :: (
                 }
             } else {
                 for literal.aggr.expressions {
-                    print_node(script, it, builder, indent);
+                    print_node_or_return(script, it, builder, indent);
                     if it_index != literal.aggr.expressions.count-1  append(builder, ",");
                 }
             }
@@ -160,11 +159,11 @@ print_node :: (
         if _operator.kind == {
           case .PREFIX;
             append(builder, operation.name);
-            print_node(script, operation.left, builder, indent);
+            print_node_or_return(script, operation.left, builder, indent);
             return true;
             
           case .POSTFIX;
-            print_node(script, operation.left, builder, indent);
+            print_node_or_return(script, operation.left, builder, indent);
             append(builder, operation.name);
             return true;
         }
@@ -183,21 +182,21 @@ print_node :: (
         }
         
         if do_parenthesize_left  append(builder, "(");
-        print_node(script, operation.left, builder, indent);
+        print_node_or_return(script, operation.left, builder, indent);
         if do_parenthesize_left  append(builder, ")");
         // append(builder, " ");
         append_trivia(builder, node);
         append(builder, operation.name);
         // append(builder, " ");
         if do_parenthesize_right  append(builder, "(");
-        print_node(script, operation.right, builder, indent);
+        print_node_or_return(script, operation.right, builder, indent);
         if do_parenthesize_right  append(builder, ")");
         return true;
         
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);
-        print_node(script, procedure_call.procedure_expression, builder, indent);
+        print_node_or_return(script, procedure_call.procedure_expression, builder, indent);
         append(builder, "(");
         for procedure_call.arguments {
             print_node_or_return(script, it, builder, indent);
