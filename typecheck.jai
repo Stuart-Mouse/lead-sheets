@@ -7,9 +7,10 @@
 */
 
 Typechecking_Flags :: enum_flags {
-    NONE                    :: 0;
-    // EXPECT_LVALUE           :: 1 << 0;
-    IS_STATEMENT_ROOT       :: 1 << 1;
+    NONE                        :: 0;
+    // EXPECT_LVALUE            :: 1 << 0;
+    IS_STATEMENT_ROOT           :: 1 << 1;
+    PERMIT_IMPLICIT_CAST_TO_ANY :: 1 << 2;
 }
 
 typecheck_node_or_return :: (

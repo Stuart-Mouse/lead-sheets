@@ -168,7 +168,7 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
                 print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
             }
         } else {
-            print(builder, "[node is null! error type is %] ", error.type);
+            // print(builder, "[node is null! error type is %] ", error.type);
         }
         
       case .TYPECHECK_ERROR;
