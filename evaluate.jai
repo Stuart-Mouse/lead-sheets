@@ -98,7 +98,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     }
     
     // TODO: pare this down or create a helper funciton inside to prevent code bloat
-    return_result :: (node: *Node, any: Any) -> bool #expand {
+    return_result :: (node: *Node, any: Any) #expand {
         if provided_storage {
             assert(node.value_type != xx Any);
             
