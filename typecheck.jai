@@ -919,7 +919,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
       case .TYPE;
         namespace: *Type_Info;
         if dot.left {
-            // TODO: make sure that type expression is constant before evaluating it
             if !(dot.left.flags & .IS_CONSTANT) {
                 set_typecheck_error(script, "Type expression on left-hand side of dot operator must be constant.", node = dot);
                 return;

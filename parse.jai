@@ -537,8 +537,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
 }
 
 
-parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) {
-    if expect_token_type(script, .CLOSE_BRACE)  return .[], true;
+parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := Token_Type.CLOSE_BRACE) -> ([] *Node, bool) {
+    if expect_token_type(script, scope_end_token)  return .[], true;
     
     expressions := parse_comma_separated_expressions(script,, temp);
     if !expressions  return .[], false;
@@ -546,24 +546,24 @@ parse_contents_of_struct_literal :: (using script: *Script) -> ([] *Node, bool) 
     // TODO: if first expression is an assignment operation, then we should parse all struct literal inner expressions as such
     //       we will then also need to flag the struct literal as being by-name intialized for evaluation and serialization purposes
     
-    close_brace := get_token(script);
-    if close_brace.type != .CLOSE_BRACE {
-        set_parse_error(script, "%: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", close_brace.location, close_brace.type, close_brace.text);
+    scope_end := get_token(script);
+    if scope_end.type != scope_end_token {
+        set_parse_error(script, "%: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", scope_end.location, scope_end.type, scope_end.text);
         return .[], false;
     }
     
     return array_copy(expressions,, get_pool_allocator(*script.pool)), true;
 }
 
-parse_procedure_arguments :: (using script: *Script) -> ([] *Node, bool) {
-    if expect_token_type(script, .CLOSE_PAREN)  return .[], true;
+parse_procedure_arguments :: (using script: *Script, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool) {
+    if expect_token_type(script, scope_end_token)  return .[], true;
     
     expressions := parse_comma_separated_expressions(script,, temp);
     if !expressions  return .[], false;
     
-    close_paren_token := get_token(script);
-    if close_paren_token.type != .CLOSE_PAREN {
-        set_parse_error(script, "%: expected a closing paren after arguments of procedure call. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
+    scope_end := get_token(script);
+    if scope_end.type != scope_end_token {
+        set_parse_error(script, "%: expected a closing paren after arguments of procedure call. Instead we saw %\n", scope_end.location, scope_end.text);
         return .[], false;
     }
     

@@ -83,6 +83,8 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
                     A pointer to the result value must be pushed to top of the stack
                 If !should_push_by_pointer(node)
                     The result value must be pushed to top of the stacks
+                    
+    TODO: consider returning bool as first parameter to signify whether some error has ocurred.
 */
 evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     dprint("Evaluating % (%) @ %", node.node_type, node, get_location(node));
