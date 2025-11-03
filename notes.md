@@ -1837,7 +1837,8 @@ TODO:
             we can also warn the user when a virtual member is redeclared using a different type
         virtual member declarations should probably be implicitly static for now
         
-        
+    fix type hinting for number literals in binary operations
+        I noticed while trying to update Mooviz that we no longer handle this very gracefully and we fail to resolve expressions like `3.0/2`, where we should jsut coerce the 2 to a float
         
 ASIDE:
     could implement dereference operator if we added some PRODUCES_VALID_LVALUE flag to Operator 
@@ -1860,7 +1861,7 @@ This should be pretty strightforward except for the fact that we would then need
 
 The other annoyance is just needing to add all these new struct types manually, and if we change the name of them, we break everything
 We could use some metaprogram stuff or just tag structs that can be used as VMS values with some uuid for the type
-And this is fine I guess, but at that point its like, why not just go all out and make a decent `Type_Libarary` plugin...
+And this is fine I guess, but at that point its like, why not just go all out and make a decent `Type_Library` plugin...
 
 
 
