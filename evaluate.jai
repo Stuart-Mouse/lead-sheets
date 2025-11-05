@@ -381,7 +381,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             member_identifier := dot.right.(*Node_Identifier);
             assert(member_identifier.identifier_type == .UNRESOLVED);
             
-            ok, member_value := script.get_virtual_member(script, owner, member_identifier.name, dot.virtual_member_hint_type);
+            ok, member_value := script.get_virtual_member(script, owner, member_identifier.name);
             if !ok {
                 set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = node);
                 return false;
@@ -479,6 +479,38 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_Declaration;
         declaration := node.(*Node_Declaration);
         
+        // virtual member delaration
+        if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
+            if script.declare_virtual_member == null {
+                set_execution_error(script, "Script's declare_virtual_member procedure was not provided by user!", node = node);
+                return false;
+            }
+            dot := declaration.left.(*Node_Dot);
+            
+            evaluate_node_or_return(script, dot.left);
+            assert(should_push_by_pointer(dot.left));
+            owner := pop_any(*script.stack, dot.left.value_type, true);
+            
+            member_identifier := dot.right.(*Node_Identifier);
+            assert(member_identifier.identifier_type == .UNRESOLVED);
+            
+            ok, member_value, redeclared := script.declare_virtual_member(script, owner, member_identifier.name, declaration.value_type);
+            if !ok {
+                set_execution_error(script, "declare_virtual_member failed with owning type: %", as_type(owner.type), node = node);
+                return false;
+            }
+            
+            if !(declaration.flags & .MACRO) || !redeclared {
+                if declaration.init_expression {
+                    evaluate_node_or_return(script, declaration.init_expression, provided_storage = member_value.value_pointer);
+                } else {
+                    initialize_any(member_value);
+                }
+            }
+            return VOID_ANY;
+        }
+        
+        
         // early return on macro for now so that we don't overwrite value of malleable literal
         // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
         if declaration.flags & .MACRO  return VOID_ANY;
@@ -489,9 +521,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         if declaration.init_expression {
             evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
         } else {
-            // NOTE: initialize_any may be a somewhat nontrivial operation if we have some complex value type
-            value := Any.{ declaration.value_type, value_pointer };
-            initialize_any(value);
+            initialize_any(Any.{ declaration.value_type, value_pointer });
         }
         return VOID_ANY;
         

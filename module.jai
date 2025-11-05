@@ -38,8 +38,11 @@ Script :: struct {
     my_print_node       := print_node;
     
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
-    get_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any;
+    get_virtual_member:             (*Script, Any, string) -> bool, Any;
     get_virtual_member_user_data:   *void;
+    
+    declare_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any, bool;
+    declare_virtual_member_user_data:   *void;
     
     Flags :: enum_flags {
         INITIALIZED;

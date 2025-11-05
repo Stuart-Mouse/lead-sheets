@@ -227,8 +227,8 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
         }
     }
     
-    if from == xx Any { return 0; }
-    // if to   == xx Any { return 0; }  // TODO: we can't handle this yet, for declarations/assignments or for procedure calls
+    if from.type == .ANY { return 0; }
+    // if to.type   == .ANY { return 0; }  // TODO: we can't handle this yet, for declarations/assignments or for procedure calls
     
     return -1;
 }
@@ -376,7 +376,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         
       case Node_Cast;
         _cast := node.(*Node_Cast);
-        if _cast.value.value_type == xx Any {
+        if _cast.value.value_type.type == .ANY {
             return script.my_is_valid_lvalue(script, _cast.value, need_lvalue, set_as_lvalue);
         }
         if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported, unless casting from an Any", node = node);
@@ -632,12 +632,11 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         // special case: operator = is always a simple memcpy
         if operation.name == "=" {
             if left_type != right_type {
-                if left_type == xx Any {
+                if left_type.type == .ANY {
                     // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
                     if operation.left.node_type == Node_Dot {
                         dot := operation.left.(*Node_Dot);
                         if dot.flags & .IS_ARROW {
-                            dot.virtual_member_hint_type = right_type;
                             // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
                             //       however, there's no dynamic type assertion being done in that case, which is not really safe.
                             //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
@@ -824,7 +823,7 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
         _cast.value_type = pop_as(*stack, *Type_Info);
         
         from_type := typecheck_node_or_return(script, _cast.value, hint_type = _cast.value_type);
-        if is_aggregate(from_type) && from_type != xx Any {
+        if is_aggregate(from_type) && from_type.type != .ANY {
             set_typecheck_error(script, "No explicit casts are permitted on aggregate types at this time.", type = .INVALID_CAST, node = _cast);
         }
     }
@@ -832,7 +831,6 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
 
 typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if dot.flags & .IS_ARROW {
-        // set_typecheck_error(script, "Arrow is not currently implemented.", node = dot);
         typecheck_node_or_return(script, dot.left);
         if !set_as_lvalue(script, dot.left)  return;
         
@@ -841,7 +839,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             return;
         }
         
-        dot.virtual_member_hint_type = hint_type;
         dot.value_type = xx Any;
         return;
     }
@@ -1068,8 +1065,11 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_typecheck_error(script, "Redeclaration of identifier '%'.", identifier.name, node = declaration);
             return;
         }
+    } else if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
+        dot := declaration.left.(*Node_Dot);
+        typecheck_node_or_return(script, dot);
     } else {
-        set_typecheck_error(script, "Left-hand side of declaration must be a simple identifier.", node = declaration);
+        set_typecheck_error(script, "Left-hand side of declaration must be a simple identifier or a virtual member expresion.", node = declaration);
         return;
     }
     
@@ -1078,23 +1078,29 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     
     declaration.value_type = ifx explicit_type else right_type;
     
-    if declaration.flags & .MACRO {
-        // NOTE: currently, macro declarations are only used to bind to malleable literals
-        literal := get_terminal_literal(declaration.init_expression);
-        if !literal || !is_malleable(literal) {
-            set_typecheck_error(script, "Macro declarations can only be made to simple literals at this time.", node = declaration);
-            return;
-        }
-        literal.flags |= .IS_MALLEABLE;
-        
-        declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-        my_evaluate_node(script, declaration.init_expression);
-        if has_error(script)  return;
-        pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
+    // set value pointer or stack offset
+    if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
+        // NOTE: currently we do nothing here because we need neither a value pointer or stack space
+        //       and we don't want to do the standard .MACRO case, since for a virtual member we handle static assignment differently
     } else {
-        declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
+        if declaration.flags & .MACRO {
+            // NOTE: currently, macro declarations are only used to bind to malleable literals
+            // TODO: rethink the semantics/syntax for static declarations and malleable literals
+            literal := get_terminal_literal(declaration.init_expression);
+            if !literal || !is_malleable(literal) {
+                set_typecheck_error(script, "Macro declarations can only be made to simple literals at this time.", node = declaration);
+                return;
+            }
+            literal.flags |= .IS_MALLEABLE;
+            
+            declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
+            my_evaluate_node(script, declaration.init_expression);
+            if has_error(script)  return;
+            pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
+        } else {
+            declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
+        }
     }
-    
     return;
 }
 

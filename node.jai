@@ -54,6 +54,7 @@ Node_Block :: struct {
     stack_frame_size:       int;
 }
 
+// TODO: push/pop stack subframes per every block, even though the actual stack frame is only per named block
 get_stack_space :: (script: *Script, requested_size: int, scope: *Node) -> stack_offset: int {
     block := get_stack_frame_block(script, scope);
     
@@ -271,7 +272,6 @@ get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator
 Node_Dot :: struct {
     using #as node_base:        Node;
     left, right:                *Node;
-    virtual_member_hint_type:   *Type_Info;
 }
 
 Node_Subscript :: struct {
