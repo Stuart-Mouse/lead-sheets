@@ -1817,25 +1817,25 @@ stepping back
     this bare minimum should be enough to then implement some form of virtual members again, which will add a lot of value in terms of my ability to design levels
     
 TODO:
-    / explicit cast from Any to static type
-        / preserves ability to use Any as lvalue through the cast
-    / implicit conversion to Any for procedure arguments  
+    (x) explicit cast from Any to static type
+        (x) preserves ability to use Any as lvalue through the cast
+    (x) implicit conversion to Any for procedure arguments  
         what to do about lack of additional indirection?
             should be fine to just use Any as Any in call_procedure, without additional indirection
             but perhaps it will be more problematic if we later try to use `*void` to pass arguments instead of `Any`
-    ? implicit type assertion in operation between Any and other operand of static type (assumes both types are the same)
-    / implicit type assertion when assigning to or from an Any where other side of assignment is statically known
-        / when assigning to an Any, add an implicit cast to match RHS type
-        / no special logic needed when assigning from an Any (for now) since we can use hint type
-    better way to denote that declared type of some external variable is Any
+    (?) implicit type assertion in operation between Any and other operand of static type (assumes both types are the same)
+    (x) implicit type assertion when assigning to or from an Any where other side of assignment is statically known
+        (x) when assigning to an Any, add an implicit cast to match RHS type
+        (x) no special logic needed when assigning from an Any (for now) since we can use hint type
+    (/) better way to denote that declared type of some external variable is Any
         maybe we just set some flag for this...
         
     virtual members
-        separate declaration and get into 2 different procs
-        reimplement virtual member declarations
-            if we have a virtual member declaration in scope, we can use that to hint the type at the locations where that member is referenced
-            we can also warn the user when a virtual member is redeclared using a different type
-        virtual member declarations should probably be implicitly static for now
+        (x) separate declaration and get into 2 different procs
+        (x) reimplement virtual member declarations
+            ( ) if we have a virtual member declaration in scope, we can use that to hint the type at the locations where that member is referenced
+            ( ) we can also warn the user when a virtual member is redeclared using a different type
+        (/) virtual member declarations should probably be implicitly static for now
         
     fix type hinting for number literals in binary operations
         I noticed while trying to update Mooviz that we no longer handle this very gracefully and we fail to resolve expressions like `3.0/2`, where we should jsut coerce the 2 to a float
@@ -1864,4 +1864,6 @@ We could use some metaprogram stuff or just tag structs that can be used as VMS 
 And this is fine I guess, but at that point its like, why not just go all out and make a decent `Type_Library` plugin...
 
 
+
+TODO: fix apparent bug with assignment to union member
 
