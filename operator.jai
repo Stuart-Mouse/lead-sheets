@@ -100,6 +100,7 @@ default_operator_table :: Operator.[
     .{ .BINARY, "||", 2, "" },
     
     .{ .BINARY, "==", 3, "" },
+    .{ .BINARY, "!=", 3, "" },
     .{ .BINARY, ">=", 3, "" },
     .{ .BINARY, "<=", 3, "" },
     .{ .BINARY, ">",  3, "" },
@@ -117,6 +118,7 @@ default_operator_table :: Operator.[
     
     .{ .PREFIX, "-",  7, "" },
     .{ .PREFIX, "~",  7, "" },
+    .{ .PREFIX, "!",  7, "" },
 ];
 
 Operator :: struct {
@@ -190,6 +192,7 @@ Builtin_Operation_ID :: int;
     .{ .BINARY, ">",  %1, %1, bool, false },
     .{ .BINARY, "<",  %1, %1, bool, false },
     .{ .BINARY, "==", %1, %1, bool, false },
+    .{ .BINARY, "!=", %1, %1, bool, false },
     .{ .BINARY, ">=", %1, %1, bool, false },
     .{ .BINARY, "<=", %1, %1, bool, false },
     
@@ -204,6 +207,7 @@ Builtin_Operation_ID :: int;
     .{ .ASSIGNMENT, "^=", %1, %1, void, false },
     
     .{ type = .PREFIX, identifier = "~", left = %1,   result = %1   },
+    .{ type = .PREFIX, identifier = "!", left = %1,   result = bool },
     JAI;
     
     for (string.["u8", "s8", "u16", "s16", "u32", "s32", "u64", "s64"]) {
@@ -228,6 +232,7 @@ Builtin_Operation_ID :: int;
         .{ .BINARY, ">",  float, float, bool, false },
         .{ .BINARY, "<",  float, float, bool, false },
         .{ .BINARY, "==", float, float, bool, false },
+        .{ .BINARY, "!=", float, float, bool, false },
         .{ .BINARY, ">=", float, float, bool, false },
         .{ .BINARY, "<=", float, float, bool, false },
         
@@ -242,10 +247,14 @@ Builtin_Operation_ID :: int;
         .{ .BINARY, "/", Vector2, float,   Vector2, false },
         
         .{ .BINARY, "==", Vector2, Vector2, bool, false },
+        .{ .BINARY, "!=", Vector2, Vector2, bool, false },
         
         
         // PREFIX    (right type will be ignored)
         .{ type = .PREFIX, identifier = "-", left = float,   result = float },
+        .{ type = .PREFIX, identifier = "!", left = float,   result = bool  },
+        .{ type = .PREFIX, identifier = "!", left = bool,    result = bool  },
+        
         .{ type = .PREFIX, identifier = "-", left = Vector2, result = Vector2 },
         
         
@@ -315,7 +324,7 @@ execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *voi
             print_to_builder(*builder, "  case %;\n", it_index);
             if it.type == {
               case .PREFIX;
-                print_to_builder(*builder, "    result.(*%1).* = %2left.(*%1).*;\n", it.left, it.identifier);
+                print_to_builder(*builder, "    result.(*%3).* = %2left.(*%1).*;\n", it.left, it.identifier, it.result);
               case .BINARY;
                 print_to_builder(*builder, "    result.(*%).* = left.(*%).* % right.(*%).*;\n", it.result, it.left, it.identifier, it.right);
               case .ASSIGNMENT;

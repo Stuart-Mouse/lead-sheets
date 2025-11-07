@@ -46,15 +46,16 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if_token := get_token(script);
         if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
         current_scope = if_statement; 
-        
-        dprint("CONDITION"); dprint_push_indent();
-        if_statement.condition = my_parse_expression(script, 0);
-        if if_statement.condition == null  return null;
-        
-        dprint("STATEMENT"); dprint_push_indent();
-        if_statement.statement = parse_statement(script, expect_semicolon);
-        if if_statement.statement == null  return null;
-        
+        {
+            dprint("CONDITION"); dprint_push_indent();
+            if_statement.condition = my_parse_expression(script, 0);
+            if if_statement.condition == null  return null;
+        }
+        {
+            dprint("STATEMENT"); dprint_push_indent();
+            if_statement.statement = parse_statement(script, expect_semicolon);
+            if if_statement.statement == null  return null;
+        }
         current_scope = if_statement.scope; 
         return if_statement;
         
@@ -175,13 +176,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     if left == null  return null;
     
     if expect_token_type(script, .COLON) {
-        // maybe a bit of a hack, but for now I will just throw away the 
-        // identifier node here and transfer the name/source_location to a declaration node 
-        // if left.node_type != Node_Identifier {
-        //     set_parse_error(script, "%: left hand side of a declaration must be an identifier.", get_location(left));
-        //     return null;
-        // }
-        
         // colon followed by open brace is a named block, not a standard declaration
         // maybe we should make a named block a type of declaration so that we can resolve it by identifier in the standard way? idk yet...
         // also, for now we will require that all named blocks are top-level, since we will actually just push these blocks into a special array
