@@ -61,6 +61,8 @@ check_external_variables :: (script: *Script, check_names := false) {
 }
 
 declare_variable :: (script: *Script, name: string, any: Any, flags := External_Variable.Flags.NONE, override := false) -> bool, int {
+    if name == ""  return false, -1;
+    
     for *script.variables {
         if it.name == name {
             if override {

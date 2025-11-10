@@ -236,6 +236,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         if !expect_token_type(script, .SEMICOLON) && expect_semicolon {
+            set_parse_error(script, "%: Expected semicolon after statement.", script.lexer.location);
             return null;
         }
         

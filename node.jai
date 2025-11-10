@@ -110,7 +110,7 @@ Node_Identifier :: struct {
         name:           string;
         index:          int;    // external variable, procedure, or type
         declaration:    *Node_Declaration;
-        member:         *Type_Info_Struct_Member;
+        member:         struct { info: *Type_Info_Struct_Member; offset: int; };
         literal:        *Node_Literal;  // we may end up needing to also store a name for this, in case the literal was not an enum...
     }
 }
@@ -127,7 +127,7 @@ get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string
       case .TYPE;               return script.type_table[identifier.index].name;
       case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
       case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
-      case .STRUCT_MEMBER;      return identifier.member.name;
+      case .STRUCT_MEMBER;      return identifier.member.info.name;
       case .DECLARATION;        return get_declaration_name(script, identifier.declaration);
       case .LITERAL;
         assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));

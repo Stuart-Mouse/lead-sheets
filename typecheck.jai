@@ -877,7 +877,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         member_name := member_identifier.name;
         member_info, member_offset := get_field(xx left_type, member_name);
         if member_info == null {
-            set_typecheck_error(script, "Attempt to access struct member which does not exist.", node = dot.right);
+            set_typecheck_error(script, "No such field '%' exists on struct type '%'.", member_name, as_type(left_type), node = dot.right);
             return;
         }
         
@@ -892,7 +892,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             // TODO: need to be able to call some simple make_literal() proc here and actually init the literal value
         } else {
             member_identifier.identifier_type = .STRUCT_MEMBER;
-            member_identifier.member = member_info;
+            member_identifier.member = .{ member_info, member_offset };
         }
         
         member_identifier.value_type = member_info.type;

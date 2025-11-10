@@ -413,7 +413,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             if should_push_by_pointer(dot.left) || doing_implict_dereference {
                 evaluate_node_or_return(script, dot.left);
                 struct_pointer := pop_as(*script.stack, *void);
-                member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+                member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset };
                 return_result(dot, member_any);
             }
             
@@ -431,7 +431,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             evaluate_node_or_return(script, dot.left);
             struct_pointer := pop(*script.stack, left_type.runtime_size);
             
-            member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset_in_bytes };
+            member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset };
             
             if should_push_by_pointer(dot) {
                 memcpy(result.value_pointer, *member_any.value_pointer, size_of(*void));
