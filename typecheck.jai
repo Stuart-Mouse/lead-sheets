@@ -183,7 +183,7 @@ get_terminal_literal :: (node: *Node) -> *Node_Literal {
 
 
 make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node {
-    _cast := alloc_node(script, Node_Cast);
+    _cast := alloc_node(script, Node_Cast, scope = node.scope, loc = node.location);
     _cast.flags |= .IMPLICIT | .TYPECHECKED;
     _cast.implicit_type = type;
     _cast.value         = node;
@@ -685,7 +685,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     }
     
     // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
-    procedure_call := alloc_node(script, Node_Procedure_Call);
+    procedure_call := alloc_node(script, Node_Procedure_Call, scope = operation.scope, loc = operation.location);
     procedure_call.procedure_expression = make_identifier(script, operation.name);
     
     arguments_count := ifx is_unary(_operator) then 1 else 2;
@@ -1156,7 +1156,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         
         if !for_loop.it_decl {
-            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = xx int;
@@ -1182,7 +1182,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         
         if !for_loop.it_decl {
-            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = array_info.element_type;
@@ -1190,7 +1190,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if !for_loop.it_index_decl {
-            for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_index_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_index_decl.left = make_identifier(script, "it_index");
         }
         for_loop.it_index_decl.value_type = xx int;
@@ -1213,14 +1213,14 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         
         if !for_loop.it_decl {
-            for_loop.it_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = first_type;
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
         
         if !for_loop.it_index_decl {
-            for_loop.it_index_decl      = alloc_node(script, Node_Declaration);
+            for_loop.it_index_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_index_decl.left = make_identifier(script, "it_index");
         }
         for_loop.it_index_decl.value_type = xx int;
