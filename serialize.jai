@@ -14,6 +14,19 @@
         
 */
 
+// TODO: need to figure out how to organize things so that we don't need to call this before being able to print things properly.
+// we can probably just pass Formatters manually in the places where it matters, but for now this is a little hotfix of sorts
+push_print_style :: () #expand {
+    previous_print_style := context.print_style;
+    
+    context.print_style = .{
+        default_format_float = .{
+            zero_removal = .ONE_ZERO_AFTER_DECIMAL,
+        }
+    };
+    
+    `defer context.print_style = previous_print_style;
+}
 
 SPACES_STRING :: "                "; // 16 characters long
 INDENT_SIZE :: 4;
@@ -27,6 +40,7 @@ print_script :: (
     using script:   *Script, 
     builder:        *String_Builder
 ) -> bool {
+    push_print_style();
     for ast_root.statements {
         print_node_or_return(script, it, builder, 0);
         if !should_skip_placing_semicolon(it) {
@@ -38,6 +52,7 @@ print_script :: (
 }
 
 sprint_node :: (script: *Script, node: *Node) -> string {
+    push_print_style();
     builder: String_Builder;
     script.my_print_node(script, node, *builder, 0);
     return builder_to_string(*builder);
