@@ -14,6 +14,11 @@
         
 */
 
+get_type_name :: (script: *Script, type: *Type_Info) -> string {
+    for script.type_table  if it.type == type  return it.name;
+    return "";
+}
+
 // TODO: need to figure out how to organize things so that we don't need to call this before being able to print things properly.
 // we can probably just pass Formatters manually in the places where it matters, but for now this is a little hotfix of sorts
 push_print_style :: () #expand {
