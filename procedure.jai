@@ -23,25 +23,13 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
         if !can_register_procedure(proc_info)  return false, tprint("Unable to register procedure of type: %", P);
         return true;
     } {
-        register_procedure_type(P);
+        register_procedure_type_for_dynamic_call(P);
         array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
     }
 }
 
 
-
-Procedure_Overload :: struct {
-    proc_index:         int;
-    coercion_distance:  int;                                    // a score assigned based on how 'far' we have to coerce arguments in order to make the candidate procedure match
-    swap_args:          bool;
-    reject_reason:      enum { NONE; ARG_COUNT; ARG_TYPE; };    // if .NONE, then candidate is still in the running
-    reject_details: union {
-        arg_count:  struct { expected: int; provided: int; };
-        arg_type:   struct { index: int; expected_type: *Type_Info; argument: *Node; };
-    };
-}
-
-format_procedure_overload :: (builder: *String_Builder, script: *Script, overload: Procedure_Overload) #expand {
+format_procedure_overload :: (builder: *String_Builder, script: *Script, overload: Procedure_Overload_Report.Entry) #expand {
     proc := script.procedures[overload.proc_index];
     
     print(builder, "%(", proc.name);
@@ -71,11 +59,22 @@ format_procedure_overload :: (builder: *String_Builder, script: *Script, overloa
 
 Procedure_Overload_Report :: struct {
     procedure_call:         *Node_Procedure_Call;
-    overloads:              [] Procedure_Overload;
+    overloads:              [] Entry;
     
     best_overload_index     := -1; // indexes overloads, not script.procedures
     best_overload_distance  := S64_MAX; 
     tied_for_best           := 0;
+    
+    Entry :: struct {
+        proc_index:         int;
+        coercion_distance:  int;                                    // a score assigned based on how 'far' we have to coerce arguments in order to make the candidate procedure match
+        swap_args:          bool;
+        reject_reason:      enum { NONE; ARG_COUNT; ARG_TYPE; };    // if .NONE, then candidate is still in the running
+        reject_details: union {
+            arg_count:  struct { expected: int; provided: int; };
+            arg_type:   struct { index: int; expected_type: *Type_Info; argument: *Node; };
+        };
+    }
 }
 
 format_procedure_overload_report :: (builder: *String_Builder, script: *Script, using report: Procedure_Overload_Report) {
@@ -114,8 +113,8 @@ format_procedure_overload_report :: (builder: *String_Builder, script: *Script, 
     print(builder, "\n");
 }
 
-get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overload {
-    overloads: [..] Procedure_Overload;
+get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overload_Report.Entry {
+    overloads: [..] Procedure_Overload_Report.Entry;
     for *script.procedures  
         if it.name == name  
             array_add(*overloads, .{ proc_index = it_index });
@@ -156,7 +155,7 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
         }
         
         // returns the coercion distance, else -1 if arguments cannot be made to match through implicit coercions alone
-        typecheck_arguments :: (script: *Script, overload: *Procedure_Overload, expected_types: [] *Type_Info, arguments: [] *Node) -> bool {
+        typecheck_arguments :: (script: *Script, overload: *Procedure_Overload_Report.Entry, expected_types: [] *Type_Info, arguments: [] *Node) -> bool {
             // the overall idea on the control flow here is just to `continue` if we are good, else we use the common reject case 
             for expected_type: expected_types {
                 argument      := arguments[it_index];
@@ -221,96 +220,6 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
 }
 
 #scope_module
-
-#if !USING_DYNCALL {
-    /*
-        call_procedure is used to provide a generic interface for calling any type of procedure, 
-            where arguments and return values are provided as `[] Any`.
-        Using `#procedure_of_call call_procedure(null.(P), .[], .[])` we can generate a thin wrapper proc 
-            that will handle the marshaling of arguments and return types from/to the provided Anys.
-        This generated procedure will match the interface of a `Wrapped_Procedure_Call`,
-            allowing us to store all the generated wrapper procs in a single array.
-        We need only generate one such wrapper for each type of procedure, so if two procedures have the same exact signature,
-            then we will not add bloat the code by baking the target procedure's specific pointer.
-        
-        All things considered, this is actually relatively simple. 
-        Getting the argument and return types could be simplified, but other than that it's not too bad to generate the calling code for any given procedure type.
-        If the compiler never gets built-in dyncall functionality, but does one day get a runtime "compile and link" sort of system, I could probably get by with using this code in addition to a few other little helper procs.
-        Although, I still think it would be dumb for the compiler to do all that and not have a simple dyncall-like facility which is exposed to the user.
-        If we can compile and link in arbitrary code, we should certainly be able to generate some simple procedure-calling code.
-        
-        NOTE: This doesn't perform any type checking on its own. 
-              That can be done generically, so it's not included in the generated procedure body.
-    */
-    call_procedure :: (procedure: $P, arguments: [] Any, return_values: [] Any, $check_types := true) #modify {
-        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type.";
-    } {
-        proc_info :: type_info(P);
-        
-        #insert -> string {
-            builder: String_Builder;
-            
-            // Because we don't want to rely on simply printing types into the generated code (which won't work for procedure types),
-            //   we need to first do some nonsense to unpack the types as constants we can easily reference.
-            // Perhaps this sort of thing would be a lot easier to do if the compiler just collapsed the distinction between `Type` and `*Type_Info`, 
-            //   or allowed casting between the two to be an implicitly comptime operation. 
-            
-            for 0..proc_info.argument_types.count-1 {
-                print(*builder, "Ta%1 :: #run (*proc_info.argument_types[%1]).(*Type).*;\n", it);
-            }
-            for 0..proc_info.return_types.count-1 {
-                print(*builder, "Tr%1 :: #run (*proc_info.return_types[%1]).(*Type).*;\n", it);
-            }
-            
-            for 0..proc_info.argument_types.count-1 {
-                print(*builder, "assert(xx Ta%1 == arguments[%1].type, \"Expected type \%, but got \%\", Ta%1, as_type(arguments[%1].type));\n", it);
-            }
-            
-            for 0..proc_info.return_types.count-1 {
-                if it != 0  append(*builder, ", ");
-                print(*builder, "return_values[%1].value_pointer.(*Tr%1).*", it);
-            }
-            if proc_info.return_types.count > 0 {
-                append(*builder, " = ");
-            }
-            
-            append(*builder, "procedure(");
-            for 0..proc_info.argument_types.count-1 {
-                if it != 0  append(*builder, ", ");
-                print(*builder, "arguments[%1].value_pointer.(*Ta%1).*", it);
-            }
-            append(*builder, ");");
-            
-            return builder_to_string(*builder);
-        }
-    }
-    
-    
-    register_procedure_type :: inline ($P: Type) #modify {
-        return P.(*Type_Info).type == .PROCEDURE, "P must be a procedure type."; 
-    } {
-        for procedure_wrappers if it.type == xx P  return;
-        array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure(null.(P), .[], .[]) });
-    }
-    
-    Wrapped_Procedure_Call :: #type (pointer: *void, arguments: [] Any, return_values: [] Any);
-    
-    procedure_wrappers: [..] struct { type: *Type_Info; wrapper: Wrapped_Procedure_Call; };
-    
-    try_calling_procedure_with_wrapper :: (proc_info: *Type_Info_Procedure, proc_ptr: *void, arguments: [] Any, return_values: [] Any) -> bool {
-        for procedure_wrappers {
-            if it.type == proc_info {
-                it.wrapper(proc_ptr, arguments, return_values);
-                return true;
-            }
-        }
-        return false;
-    }
-}
-
-
-
-
 
 
 /*

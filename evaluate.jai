@@ -303,7 +303,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         
         #if USING_DYNCALL {
             if !do_dyncall(script.dyncall_vm, procedure, arguments, result_array) {
-                set_general_error(script, "Failed while trying to make dyncall.");
+                set_general_error(script, "Failed while trying to do dyncall.");
                 return NULL_ANY;
             }
         } else {
