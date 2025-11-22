@@ -57,6 +57,7 @@ deinit_script :: (using script: *Script) {
     array_reset(*named_blocks);
     array_reset(*directives);
     array_reset(*type_table);
+    array_reset(*operator_table);
     array_reset(*global_declarations);
     fini(*pool);
     #if USING_DYNCALL {
