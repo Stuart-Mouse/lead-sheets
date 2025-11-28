@@ -231,7 +231,7 @@ register_procedure_type_for_dynamic_call :: ($P: Type) #modify {
     return P.(*Type_Info).type == .PROCEDURE, tprint("P must be a procedure type, but it was %", P); 
 } {
     for procedure_wrappers if it.type == xx P  return;
-    array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure_checked(null.(P), .[], .[]) });
+    array_add(*procedure_wrappers, .{ xx P, xx #bake_arguments call_procedure_checked(P = P) });
 }
 
 procedure_wrappers: [..] struct { type: *Type_Info; wrapper: Procedure_Call_Wrapper; };
