@@ -218,3 +218,30 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
     script.error.typecheck.procedure_overload_report = overload_report;
     return -1, false;
 }
+
+
+
+/*
+    Unfortunately, this is still necessary if we want to be able to call procedures that are not explicitly exposed as External_Procedure-s.
+    This would not be a problem if we were just using dyncall, but unfortunately, we can't use dyncall in our WASM build.
+    So for the time being, we will still need to use this system of registering procedure wrappers on a per-type basis.
+*/
+
+register_procedure_type_for_dynamic_call :: ($P: Type) #modify {
+    return P.(*Type_Info).type == .PROCEDURE, tprint("P must be a procedure type, but it was %", P); 
+} {
+    for procedure_wrappers if it.type == xx P  return;
+    array_add(*procedure_wrappers, .{ xx P, xx #procedure_of_call call_procedure_checked(null.(P), .[], .[]) });
+}
+
+procedure_wrappers: [..] struct { type: *Type_Info; wrapper: Procedure_Call_Wrapper; };
+
+try_calling_procedure_with_wrapper :: (proc_info: *Type_Info_Procedure, proc_ptr: *void, arguments: [] Any, return_values: [] Any) -> bool {
+    for procedure_wrappers {
+        if it.type == proc_info {
+            return it.wrapper(proc_ptr, arguments, return_values);
+        }
+    }
+    log("Error: % has not been registered for use in a dynamic call.", (*proc_info).(*Type).*);
+    return false;
+}

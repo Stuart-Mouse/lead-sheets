@@ -190,14 +190,9 @@ TreeNodeAny :: (
     if value.type.type == {
       case .STRUCT;
         if TreeNodeEx(label, flags) {
-            ti_struct := value.type.(*Type_Info_Struct);
-            last_member_offset := -1;
-            for ti_struct.members {
-                if it.flags & .CONSTANT  continue;
-                if it.offset_in_bytes <= last_member_offset  continue; // skips #place members
-                last_member_offset = it.offset_in_bytes;
+            iterate_struct_members(value, .SKIP_CONSTANT_AND_OVERLAY, #code {
                 TreeNodeAny(it.name.data, Any.{ it.type, value.value_pointer + it.offset_in_bytes }, flags);
-            }
+            });
             TreePop();
         }
         
@@ -207,10 +202,8 @@ TreeNodeAny :: (
         SameLine();
         TextDisabled("% elements", count);
         if is_open {
-            ti_array := value.type.(*Type_Info_Array);
-            member_any := Any.{ ti_array.element_type, data };
-            for 0..count-1 {
-                TreeNodeAny(tprint("[%]\0", it).data, member_any, flags);
+            for Any_Array.from(value) {
+                TreeNodeAny(tprintc("[%]", it_index), member_any, flags);
                 member_any.value_pointer += ti_array.element_type.runtime_size;
             }
             TreePop();
