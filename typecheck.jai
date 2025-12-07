@@ -453,7 +453,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         literal.flags |= .IS_CONSTANT;
         
       case .BOOLEAN;
-        literal.value_type = literal.number.type;
+        literal.value_type = literal.number._type_info;
         literal.flags |= .IS_CONSTANT;
         
       case .NUMBER;
@@ -474,7 +474,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
                 literal.number = new_number;
             }
         }
-        literal.value_type = literal.number.type;
+        literal.value_type = literal.number._type_info;
         literal.flags |= .IS_CONSTANT;
         
       case .STRUCT;
