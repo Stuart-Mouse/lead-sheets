@@ -1,7 +1,12 @@
 
 External_Procedure :: struct {
-    using #as procedure: Any_Proc;
-    name:   string;
+    using #as procedure_info: Procedure_Info;
+    pointer:    *void;
+    name:       string;
+}
+
+to_any :: (proc: *External_Procedure) -> Any {
+    return Any.{ proc._type_info, *proc.pointer };
 }
 
 can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
@@ -12,19 +17,29 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
 // in the future I will try to re-integrate them, though that may be slightly tricky because of how Any is preferred over polymorphic parameters when doing overload resolution
 // we might have to do some weird thing where we investiage #caller_code to check if 'procedure' is a constant and manually add the call for register_procedure_type
 #if USING_DYNCALL {
-    register_procedure :: (script: *Script, name: string, procedure: Any) {
-        assert(procedure.type.type == .PROCEDURE && can_register_procedure(xx procedure.type));
-        array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
+    // TODO: This is currently unmaintained. I have not tested Lead Sheets with Dyncall in a hot minute...
+    register_procedure :: (script: *Script, name: string, $procedure: Code, $scope := #caller_code) {
+        // TODO: We will want to have logic for both constant and nonconstant procedure expressions.
+        // NOTE: If the procedure is nonconstant, then 
+        PROCEDURE      :: #insert,scope(scope) procedure;
+        PROCEDURE_TYPE :: type_of(PROCEDURE);
+        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE);
+        
+        #assert can_register_procedure(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
+        
+        register_procedure_type_for_dynamic_call(PROCEDURE_TYPE);
+        array_add(*script.procedures, .{ info, xx PROCEDURE, name });
     }
 } else {
-    register_procedure :: inline (script: *Script, name: string, procedure: $P) #modify {
-        proc_info := P.(*Type_Info_Procedure);
-        if proc_info.type != .PROCEDURE  return false, "'procedure' must be a procedure! What are you stupid?";
-        if !can_register_procedure(proc_info)  return false, tprint("Unable to register procedure of type: %", P);
-        return true;
-    } {
-        register_procedure_type_for_dynamic_call(P);
-        array_add(*script.procedures, .{ Any_Proc.from(procedure), name });
+    register_procedure :: (script: *Script, name: string, $procedure: Code, $scope := #caller_code) {
+        PROCEDURE      :: #insert,scope(scope) procedure;
+        PROCEDURE_TYPE :: type_of(PROCEDURE);
+        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE, scope);
+        
+        #assert can_register_procedure(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
+        
+        register_procedure_type_for_dynamic_call(PROCEDURE_TYPE);
+        array_add(*script.procedures, .{ PROCEDURE_INFO, xx PROCEDURE, name });
     }
 }
 
