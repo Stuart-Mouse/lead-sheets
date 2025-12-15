@@ -686,7 +686,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     
     // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
     procedure_call := alloc_node(script, Node_Procedure_Call, scope = operation.scope, loc = operation.location);
-    procedure_call.procedure_expression = make_identifier(script, operation.name);
+    procedure_call.procedure_expression = make_identifier(script, operation.name, loc = operation.location);
     
     arguments_count := ifx is_unary(_operator) then 1 else 2;
     procedure_call.arguments = array_copy(array_view((*Node).[ operation.left, operation.right ], 0, arguments_count),, get_pool_allocator(*script.pool));

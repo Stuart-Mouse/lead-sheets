@@ -110,20 +110,21 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
         });
     }
 } else {
-    // TODO: could use #caller_code or soemthing to statically check that user_data arguments are of proper types
-    register_directive :: inline (script: *Script, name: string, procedure: $P, user_data: ..Any) #modify {
-        proc_info := P.(*Type_Info_Procedure);
-        if proc_info.type != .PROCEDURE  return false, "'procedure' must be a procedure! What are you stupid?";
-        if !can_register_directive(proc_info)  return false, tprint("Unable to register procedure of type: %", P);
-        return true;
-    } {
+    // TODO: could use #caller_code to statically check that user_data arguments are of proper types
+    register_directive :: inline (script: *Script, name: string, $procedure: Code, user_data: ..Any) {
         for script.directives {
             if it.name == name {
                 assert(false, "Error: directives do not support overloading.");
             }
         }
         
-        proc_info := P.(*Type_Info_Procedure);
+        PROCEDURE      :: #insert procedure;
+        PROCEDURE_TYPE :: type_of(PROCEDURE);
+        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE, procedure);
+        
+        #assert can_register_directive(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
+        
+        proc_info := type_info(PROCEDURE_TYPE);
         for user_data {
             // TODO: allow using #as, maybe also coerce integers/floats
             // if proc_info.argument_types[it_index + 1] != type_info(Any)
@@ -133,11 +134,11 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
             }
         }
         
-        register_procedure_type(P);
         array_add(*script.directives, .{
-            procedure = Any_Proc.from(procedure),
-            name      = name,
-            user_data = user_data
+            procedure_info  = PROCEDURE_INFO,
+            pointer         = xx PROCEDURE,
+            name            = name,
+            user_data       = user_data
         });
     }
 }
@@ -219,7 +220,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
             return false;
         }
     } else {
-        if !try_calling_procedure_with_wrapper(procedure._type_info, procedure.pointer, arguments, return_values) {
+        if !procedure.call_wrapper(procedure.pointer, arguments, return_values) {
             log("Error: Unable to find wrapper for procedure of type: %", as_type(procedure._type_info));
             return false;
         }
