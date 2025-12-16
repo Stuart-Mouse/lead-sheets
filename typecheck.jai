@@ -23,7 +23,7 @@ typecheck_node_or_return :: (
 ) #expand {
     result := script.my_typecheck_node(script, node, check_flags, hint_type);
     if has_error(script) then `return;
-    assert(node.flags & .TYPECHECKED == .TYPECHECKED, "Node was not flagged as typechecked, but no error was set!");
+    assert(node.flags & .TYPECHECKED == .TYPECHECKED, "% was not flagged as typechecked, but no error was set!", node.node_type);
     assert(node.value_type != null, "Node returned null value_type, but no error was set!");
     return result;
 }
@@ -904,7 +904,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         //       However, this may not be possible if the LHS is not a valid lvalue,
         //       and in that case, we still should be able to access its members.
         if dot.left.value_type.type != .POINTER { 
-            if is_valid_lvalue(script, dot.left) {
+            if script.my_is_valid_lvalue(script, dot.left) {
                 assert(set_as_lvalue(script, dot.left));
             }
         }
