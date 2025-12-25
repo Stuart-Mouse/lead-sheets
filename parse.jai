@@ -83,41 +83,48 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION");
+        
+        // NOTE: A preceding comma indicates that we are defining list of elements to iterate, but we may only have one element. 
+        //       This is sort of a hack, but it's useful for now since I don't have array literals in the language yet.
+        preceding_comma := expect_token_type(script, .COMMA);
         exprs := parse_comma_separated_expressions(script,, temp);
         if !exprs  return null;
         
-        if expect_token_type(script, .COLON) {
-            if exprs.count == {
-              case 2;
-                identifier := exprs[1].(*Node_Identifier);
-                if identifier.node_type != Node_Identifier {
-                    set_parse_error(script, "Expected an identifier for declaration of `it`.", node = identifier);
+        if !preceding_comma {
+            if expect_token_type(script, .COLON) {
+                if exprs.count == {
+                  case 2;
+                    identifier := exprs[1].(*Node_Identifier);
+                    if identifier.node_type != Node_Identifier {
+                        set_parse_error(script, "Expected an identifier for declaration of `it`.", node = identifier);
+                        return null;
+                    }
+                    for_loop.it_index_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                    for_loop.it_index_decl.left = identifier;
+                    #through;
+                    
+                  case 1;
+                    identifier := exprs[0].(*Node_Identifier);
+                    if identifier.node_type != Node_Identifier {
+                        set_parse_error(script, "Expected an identifier for declaration of `it_index`.", node = identifier);
+                        return null;
+                    }
+                    for_loop.it_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                    for_loop.it_decl.left = identifier;
+                    
+                  case;
+                    set_parse_error(script, "Unexpected expressions in iterator declaration slot.", node = exprs[0]);
                     return null;
                 }
-                for_loop.it_index_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
-                for_loop.it_index_decl.left = identifier;
-                #through;
                 
-              case 1;
-                identifier := exprs[0].(*Node_Identifier);
-                if identifier.node_type != Node_Identifier {
-                    set_parse_error(script, "Expected an identifier for declaration of `it_index`.", node = identifier);
-                    return null;
-                }
-                for_loop.it_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
-                for_loop.it_decl.left = identifier;
-                
-              case;
-                set_parse_error(script, "Unexpected expressions in iterator declaration slot.", node = exprs[0]);
-                return null;
+                // parse expressions again for right side of colon
+                preceding_comma = expect_token_type(script, .COMMA);
+                exprs = parse_comma_separated_expressions(script,, temp);
+                if !exprs  return null;
             }
-            
-            // parse expressions again for right side of colon
-            exprs = parse_comma_separated_expressions(script,, temp);
-            if !exprs  return null;
         }
         
-        if exprs.count == 1 {
+        if !preceding_comma && exprs.count == 1 {
             if expect_token_type(script, .SPREAD) {
                 dprint("CONTROL TYPE IS RANGE");
                 for_loop.control_type = .RANGE;
