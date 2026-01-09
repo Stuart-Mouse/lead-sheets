@@ -541,7 +541,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         }
         for block.statements {
             stack_top_before := script.stack.top;
-            defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %.", get_location(it));
+            defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %. stack top: %, stack top before: %", get_location(it), script.stack.top, stack_top_before);
             
             evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
         }
