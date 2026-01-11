@@ -306,7 +306,6 @@ register_common_types :: (script: *Script) {
 #import "String";
 using,except(next_power_of_two) Hash_Table :: #import "Hash_Table";
 #import "Flat_Pool";
-#import "Reflection";
 #import "Compiler";     // for 'is_subclass_of'
 
 #import "Utils";
