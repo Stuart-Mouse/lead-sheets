@@ -6,7 +6,7 @@ External_Procedure :: struct {
 }
 
 to_any :: (proc: *External_Procedure) -> Any {
-    return Any.{ proc._type_info, *proc.pointer };
+    return Any.{ proc.__type_info, *proc.pointer };
 }
 
 can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {

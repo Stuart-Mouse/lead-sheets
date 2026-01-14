@@ -221,7 +221,7 @@ evaluate_directive :: (script: *Script, directive: *Node_Directive, phase: Scrip
         }
     } else {
         if !procedure.call_wrapper(procedure.pointer, arguments, return_values) {
-            log("Error: Unable to find wrapper for procedure of type: %", as_type(procedure._type_info));
+            log("Error: Unable to find wrapper for procedure of type: %", as_type(procedure.__type_info));
             return false;
         }
     }

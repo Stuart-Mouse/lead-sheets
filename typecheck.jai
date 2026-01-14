@@ -453,7 +453,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         literal.flags |= .IS_CONSTANT;
         
       case .BOOLEAN;
-        literal.value_type = literal.number._type_info;
+        literal.value_type = literal.number.type;
         literal.flags |= .IS_CONSTANT;
         
       case .NUMBER;
@@ -474,7 +474,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
                 literal.number = new_number;
             }
         }
-        literal.value_type = literal.number._type_info;
+        literal.value_type = literal.number.type;
         literal.flags |= .IS_CONSTANT;
         
       case .STRUCT;
@@ -723,7 +723,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         identifier.identifier_type = .EXTERNAL_PROCEDURE;
         identifier.index           = procedure_index;
         identifier.flags          |= .TYPECHECKED;
-        proc_info, identifier.value_type = procedures[procedure_index]._type_info;
+        proc_info, identifier.value_type = procedures[procedure_index].__type_info;
         
         // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
         // We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.

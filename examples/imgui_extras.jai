@@ -190,9 +190,10 @@ TreeNodeAny :: (
     if value.type.type == {
       case .STRUCT;
         if TreeNodeEx(label, flags) {
-            iterate_struct_members(value, .SKIP_CONSTANT_AND_OVERLAY, #code {
+            structure := Any_Structure.from(value);
+            for structure {
                 TreeNodeAny(it.name.data, Any.{ it.type, value.value_pointer + it.offset_in_bytes }, flags);
-            });
+            }
             TreePop();
         }
         
