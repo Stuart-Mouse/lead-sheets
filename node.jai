@@ -461,7 +461,7 @@ make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_
         literal.literal_type = .STRING;
         literal.text = value.value_pointer.(*string).*;
     }
-    else if value.type.type == .ENUM || is_numeric_type(value.type) {
+    else if value.type.type == .ENUM || is_numeric(value.type) {
         literal.literal_type = .NUMBER;
         literal.number = Any_Number.from(value);
     } else {
@@ -475,7 +475,7 @@ make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_
 
 make_number_literal :: (script: *Script, number: $T, loc := #caller_location) -> *Node 
 #modify {
-    return is_numeric_type(T), "Type must be numeric (integer or float).";
+    return is_numeric(T), "Type must be numeric (integer or float).";
 } {
     literal := alloc_node(script, Node_Literal);
     literal.literal_type = .NUMBER;

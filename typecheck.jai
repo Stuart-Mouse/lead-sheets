@@ -211,7 +211,7 @@ get_implicit_cast_distance :: (node: *Node, to: *Type_Info) -> int {
     from := node.value_type;
     if to == from return 0; 
     
-    if is_numeric_type(from) && is_numeric_type(to) {
+    if is_numeric(from) && is_numeric(to) {
         if node.node_type == Node_Literal
         && node.(*Node_Literal).literal_type == .NUMBER {
             return 0;
@@ -263,7 +263,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
     if literal.value_type == type  return true;
     if literal.literal_type == {
       case .NUMBER;
-        if !is_numeric_type(type)  return false;
+        if !is_numeric(type)  return false;
         new_number := Any_Number.zero_of_type(type);
         Convert.any_to_any(to_any(*new_number), to_any(*literal.number));
         literal.number = new_number;
@@ -457,7 +457,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         literal.flags |= .IS_CONSTANT;
         
       case .NUMBER;
-        if is_numeric_type(hint_type) {
+        if is_numeric(hint_type) {
             // NOTE: we now remap to value_type just once here, so that we don't have to do it each time in execute
             // TODO: think about rules around automatic casting here...
             //       maybe we don't want to automatically go float -> int, 
