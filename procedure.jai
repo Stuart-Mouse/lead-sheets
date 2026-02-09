@@ -101,22 +101,28 @@ format_procedure_overload_report :: (builder: *String_Builder, script: *Script, 
     
     print(builder, "Unable to resolve overloaded procedure.\n");
     
-    if tied_for_best {
-        print(builder, "Could not decide between % matching overloads:\n\n", tied_for_best);
-        for overloads {
-            if it.reject_reason != .NONE 
-            || it.coercion_distance != best_overload_distance 
-                then continue;
-            
-            format_procedure_overload(builder, script, it);
+    if overloads.count == 0 {
+        identifier := procedure_call.procedure_expression.(*Node_Identifier);
+        assert(identifier.node_type == Node_Identifier);
+        assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
+        print(builder, "No procedures have been registered with identifier '%'\n\n", identifier.name);
+    } else {
+        if tied_for_best {
+            print(builder, "Could not decide between % matching overloads:\n\n", tied_for_best);
+            for overloads {
+                if it.reject_reason != .NONE 
+                || it.coercion_distance != best_overload_distance 
+                    then continue;
+                
+                format_procedure_overload(builder, script, it);
+            }
         }
-    }
-    
-    if overloads.count > tied_for_best {
-        print(builder, "% failing overload(s):\n\n", overloads.count);
-        for overloads {
-            if it.reject_reason == .NONE  continue;
-            format_procedure_overload(builder, script, it);
+        if overloads.count > tied_for_best {
+            print(builder, "% failing overload(s):\n\n", overloads.count);
+            for overloads {
+                if it.reject_reason == .NONE  continue;
+                format_procedure_overload(builder, script, it);
+            }
         }
     }
     
@@ -152,7 +158,9 @@ resolve_procedure_index :: (script: *Script, name: string, procedure_call: *Node
         identifier := procedure_call.procedure_expression.(*Node_Identifier);
         assert(identifier.node_type == Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
-        set_typecheck_error(script, node = identifier, type = .UNRESOLVED_IDENTIFIER);
+        // set_typecheck_error(script, node = identifier, type = .UNRESOLVED_IDENTIFIER);
+        set_typecheck_error(script, node = procedure_call, type = .FAILED_OVERLOAD_RESOLUTION);
+        script.error.typecheck.procedure_overload_report = overload_report;
         return -1, false;
     }
     

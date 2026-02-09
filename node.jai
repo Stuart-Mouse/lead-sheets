@@ -338,7 +338,7 @@ format_location :: (location: Source_Code_Location) -> string {
 // ===== Make Nodes From Tokens =====
 
 make_number_literal :: (script: *Script, source_token: Token) -> *Node_Literal {
-    value, ok := parse_number(source_token.text);
+    value, ok := Utils.parse_number(source_token.text);
     if !ok  return null;
     
     literal := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
