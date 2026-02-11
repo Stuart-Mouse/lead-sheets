@@ -965,7 +965,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             assert(right.node_type == Node_Identifier && right.identifier_type == .UNRESOLVED);
             member_name := right.name;
             
-            value, found := enum_name_to_value(ti_enum, member_name);
+            found, value := enum_name_to_value(ti_enum, member_name);
             if !found {
                 set_typecheck_error(script, "Invalid enum value name '%' for enum type '%'.", member_name, as_type(ti_enum), node = dot);
                 return;
