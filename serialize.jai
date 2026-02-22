@@ -141,15 +141,15 @@ print_node :: (
                     if last_member_offset != -1  append(builder, ",");
                     last_member_offset = it.offset_in_bytes;
                     
-                    if it_index < literal.aggr.expressions.count {
-                        append_trivia(builder, literal.aggr.expressions[it_index]);
+                    if it_index < literal.aggregate.expressions.count {
+                        append_trivia(builder, literal.aggregate.expressions[it_index]);
                     }
-                    print_to_builder(builder, "%", Any.{ it.type, literal.aggr.value_pointer + it.offset_in_bytes });
+                    print_to_builder(builder, "%", Any.{ it.type, literal.aggregate.value_pointer + it.offset_in_bytes });
                 }
             } else {
-                for literal.aggr.expressions {
+                for literal.aggregate.expressions {
                     print_node_or_return(script, it, builder, indent);
-                    if it_index != literal.aggr.expressions.count-1  append(builder, ",");
+                    if it_index != literal.aggregate.expressions.count-1  append(builder, ",");
                 }
             }
             

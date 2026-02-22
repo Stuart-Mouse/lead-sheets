@@ -195,12 +195,17 @@ Node_Literal :: struct {
     union {
         number:  Any_Number;
         text:    string;
-        aggr: struct {
+        aggregate: struct {
             value_pointer:      *void;      // once type is resolved, we store pointer to allocated value here
             expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting statements
         }
         any: Any;
     }
+}
+
+is_number_literal :: (node: *Node) -> bool {
+    return node.node_type == Node_Literal 
+        && node.(*Node_Literal).literal_type == .NUMBER;
 }
 
 get_literal_value_as_any :: (literal: *Node_Literal) -> Any {
@@ -209,7 +214,7 @@ get_literal_value_as_any :: (literal: *Node_Literal) -> Any {
       case .BOOLEAN; return to_any(*literal.number);
       case .STRING;  return literal.text;
       case .NUMBER;  return to_any(*literal.number);
-      case .STRUCT;  return Any.{ literal.value_type, literal.aggr.value_pointer };
+      case .STRUCT;  return Any.{ literal.value_type, literal.aggregate.value_pointer };
       case .ANY;     return literal.any;
     }
     unreachable();
@@ -358,7 +363,7 @@ make_string_literal :: (script: *Script, source_token: Token) -> *Node_Literal {
 make_struct_literal :: (script: *Script, source_token: Token, contents: [] *Node) -> *Node_Literal {
     literal := alloc_node(script, Node_Literal, loc = source_token.location, trivia = source_token.trivia);
     literal.literal_type     = .STRUCT;
-    literal.aggr.expressions = contents;
+    literal.aggregate.expressions = contents;
     return literal;
 }
 

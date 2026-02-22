@@ -1868,9 +1868,3 @@ And this is fine I guess, but at that point its like, why not just go all out an
 TODO: fix apparent bug with assignment to union member
 
 
-
-TODO: fix bug with type hinting in situations like this:
-`orbital_count := (1.0 / platform_width).(int);`
-The 1.0 is getting hinted as an integer, which is causing the `/` to fail typechecking.
-
-

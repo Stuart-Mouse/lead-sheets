@@ -1,26 +1,26 @@
 
 // struct literals
-r1 = Vector2.{ 3, 4 } * 5;
+r1 = Vector2.{ 3, 4 } * 5.0;
 r1 -= .{ 3, 2 };
 
 // operators and procedure calls
-r2 = (1 + 2) * pow(2, sin(3.14159/2) + 2);
+r2 = (1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
 r3 = a + b;
 
 // while loops
-while echo(r2) > 20 {
+while echo(r2) > 20.0 {
    r2 = r2 - 1;
    r3 = r3 + r3;
 }
 
 // for loops and casting
-for arr1  if it > 1  it = it_index.(float) * 7;
+for arr1  if it > 1.0  it = it_index.(float) * 7.0;
 for arr1  echo(it);
 
 // local declarations
 local: float;
 local = 5 + 5 * 2;
-echo(local/2);
+echo(local/2.0);
 
 // test recursion depth... currently crashes the program because jai is generating massive stack frames
 // local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
@@ -108,7 +108,7 @@ echo(v2);
    a := 5;
    b := 96;
    c := -8;
-   foreach (a, b, c)  echo(it);
+   for a, b, c  echo(it);
 }
 
 some_value := #add(1, 2);
@@ -118,5 +118,14 @@ echo(some_value);
 test_block: {
    print("Running test block.");
 }
+
+
+// testing binary operation type hinting
+//    the idea here is that the type hint passed to the operation is for 'int',
+//    but we don't want the number literal to receive that type hint,
+//    rather, we want it to receive the type hint from the other side of the operation, '_float'
+_float := 5.0;
+_int := (_float + 3).(int);
+echo(_int);
 
 

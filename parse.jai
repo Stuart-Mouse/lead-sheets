@@ -254,7 +254,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return left;
     }
     
-    log("returning null");
+    log("%: returning null in parse_statement", format_location(script.lexer.location));
     return null;
 }
 

@@ -79,9 +79,14 @@ get_postfix_operator :: (script: *Script, token: Token) -> bool, int {
 }
 
 get_binary_operator :: (script: *Script, token: Token) -> bool, int {
+    ok, index := get_binary_operator(script, token.text);
+    return ok, index;
+}
+
+get_binary_operator :: (script: *Script, token: string) -> bool, int {
     for script.operator_table {
         if is_unary(it) continue;
-        if it.token_text == token.text {
+        if it.token_text == token {
             return true, it_index;
         }
     }
@@ -261,8 +266,8 @@ Builtin_Operation_ID :: int;
         // ASSIGNMENT
         // TODO: should we just assert that left and result are the same type?
         
-        .{ .ASSIGNMENT, "+=", float, float, float, false },
-        .{ .ASSIGNMENT, "-=", float, float, float, false },
+        .{ .ASSIGNMENT, "+=", float, float, void, false },
+        .{ .ASSIGNMENT, "-=", float, float, void, false },
         
         .{ .ASSIGNMENT, "+=", Vector2, Vector2, void, false },
         .{ .ASSIGNMENT, "-=", Vector2, Vector2, void, false },

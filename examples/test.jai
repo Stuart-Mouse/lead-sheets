@@ -24,10 +24,9 @@ main :: () {
     
     echo :: (value: $T) -> T { print("%\n", value); return value; };
     
-    register_procedure(*script, "Vec2", (x: float, y: float) -> Vector2 { return .{ x, y }; });
-    register_procedure(*script, "pow", pow);
-    register_procedure(*script, "sin", sin);
-    register_procedure(*script, "cos", cos);
+    register_procedure(*script, "pow", #procedure_of_call pow(1.0, 1.0));
+    register_procedure(*script, "sin", #procedure_of_call sin(1.0));
+    register_procedure(*script, "cos", #procedure_of_call cos(1.0));
     register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
     register_procedure(*script, "echo", (value: int) -> int { print("%\n", value); return value; });
     register_procedure(*script, "echo", #procedure_of_call echo(Vector2.{}));
@@ -47,7 +46,7 @@ main :: () {
         if phase == .PARSE {
             new := array_add(array);
             new.name = name;
-            set_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
+            declare_variable(script, name, new.value); // we can add new external declarations while the script is being parsed
         }
         return true;
     }
@@ -55,14 +54,18 @@ main :: () {
     
     make_binary :: (using call: *Directive_Call, left: *Node, right: *Node) -> bool, *Node {
         if phase == .TYPECHECK {
+            operator_name := "+";
+            is_operator, operator_index := get_binary_operator(script, operator_name);
+            if !is_operator  return false, null;
+            
             node := alloc_node(script, Node_Operation);
-            node.name          = "+";
-            node.operator_type = .BINARY;
-            node.left          = left;
-            node.right         = right;
-            print("left : %\n", left);
-            print("right: %\n", right);
-            print("Creating operation node: % + %\n", sprint_node(script, left), sprint_node(script, right));
+            node.name           = operator_name;
+            node.operator_index = operator_index;
+            node.left           = left;
+            node.right          = right;
+            // print("left : %\n", left);
+            // print("right: %\n", right);
+            // print("Creating operation node: % + %\n", sprint_node(script, left), sprint_node(script, right));
             return true, node;
         }
         return true, null;
@@ -100,20 +103,20 @@ main :: () {
     //       better option would be to just add functions for naviagting AST and inserting declarations into a block
     //       we could already add top-level declarations pretty trivially
     
-    set_variable(*script, "x", x);
-    set_variable(*script, "y", y);
-    set_variable(*script, "z", z);
+    declare_variable(*script, "x", x);
+    declare_variable(*script, "y", y);
+    declare_variable(*script, "z", z);
     
-    set_variable(*script, "a", a);
-    set_variable(*script, "b", b);
+    declare_variable(*script, "a", a);
+    declare_variable(*script, "b", b);
     
-    set_variable(*script, "r1", r1);
-    set_variable(*script, "r2", r2);
-    set_variable(*script, "r3", r3);
+    declare_variable(*script, "r1", r1);
+    declare_variable(*script, "r2", r2);
+    declare_variable(*script, "r3", r3);
     
-    set_variable(*script, "arr1", arr1);
-    set_variable(*script, "struct1", struct1);
-    set_variable(*script, "str", str);
+    declare_variable(*script, "arr1", arr1);
+    declare_variable(*script, "struct1", struct1);
+    declare_variable(*script, "str", str);
     
     
     print("\nPARSING SCRIPT\n");
@@ -121,12 +124,13 @@ main :: () {
     source := read_entire_file(source_path);
     if !parse_source_file(*script, source, source_path) {
         print("failed to construct script from source!\n");
+        log(format_error(*script));
         return;
     }
     
     
     print("\nEXECUTING SCRIPT\n");
-    ok := execute_script(*script);
+    ok := evaluate_script(*script);
     if ok {
         print("\nRESULTS:\n");
         print("r1: %\n", r1);

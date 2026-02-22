@@ -1,5 +1,5 @@
 
-LS :: #import "Lead_Sheets"()(DEBUG = true, USING_DYNCALL = true);
+LS :: #import "Lead_Sheets"()(DEBUG = false, USING_DYNCALL = false);
 
 #load "imgui_sdl_gl_docking.jai";
 #load "imgui_extras.jai";
@@ -68,9 +68,9 @@ main :: () {
     LS.register_common_types(*script);
     LS.register_type(*script, "Vector2", type_info(Vector2));
     
-    LS.register_procedure(*script, "pow", pow);
-    LS.register_procedure(*script, "sin", sin);
-    LS.register_procedure(*script, "cos", cos);
+    LS.register_procedure(*script, "pow", #procedure_of_call pow(1.0, 1.0));
+    LS.register_procedure(*script, "sin", #procedure_of_call sin(1.0));
+    LS.register_procedure(*script, "cos", #procedure_of_call cos(1.0));
     
     echo :: (value: $T) -> T { print("%\n", value); return value; };
     LS.register_procedure(*script, "echo", (value: float) -> float { print("%\n", value); return value; });
@@ -214,8 +214,8 @@ main :: () {
                     value, ok := LS.evaluate_statement(*script, str, store_global_declarations = true);
                     if !ok {
                         log("Error: Failed to evaluate statement.");
-                        log(LS.format_error(script.error));
-                        clear_error(script);
+                        log(LS.format_error(*script));
+                        LS.clear_error(*script);
                     } else {
                         result: string;
                         if value.value_pointer then result = sprint("%", value);

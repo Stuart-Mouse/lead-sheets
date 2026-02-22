@@ -1,38 +1,37 @@
 
 // struct literals
-r1 = Vector2.{ 3, 4 } * 5;
-r1 -= .{ 3, 2 };
+r1 = Vector2.{ 3.0, 4.0 } * 5.0;
+r1 -= .{ 3.0, 2.0 };
 
 // operators and procedure calls
-r2 =(1 + 2) * pow(2, sin(3.14159/2) + 2);
+r2 =(1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
 r3 = a + b;
 
 // while loops
-while echo(r2) > 20 {
-   r2 = r2 - 1;
+while echo(r2) > 20.0 {
+   r2 = r2 - 1.0;
    r3 = r3 + r3;
 }
 
-
 // for loops and casting
-for arr1  if it > 1  it = it_index.(float) * 7;
-for arr1  echo(it);
+for arr1  if it > 1.0  it = it_index.(float) * 7.0;
+for arr1   echo(it);
 
 // local declarations
 local: float;
-local = 5 + 5 * 2;
-echo(local/2);
+local = 5.0 + 5.0 * 2.0;
+echo(local/2.0);
 
 // test recursion depth... currently crashes the program because jai is generating massive stack frames
 // local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
 
 // assignment operators redux
-local = 2;
-local += 5;
+local = 2.0;
+local += 5.0;
 echo(local);
 
 // range-based for loops and unary operators
-for-5..9  echo(it);
+for-5..9   echo(it);
 
 // strings
 print(str);
@@ -47,12 +46,12 @@ str = local_str;
 // #declare will call add_named_value in test.jai, which will add a new Named_Value to the array and add that value as a variable in the script.
 // This allows the script to use 'named_1' as a simple variable although its storage is managed externally.
 #declare("named_1");
-named_1 = 7;
+named_1 = 7.0;
 echo(named_1);
 
 
 // struct literal and operator overload test
-vec3 := Vector3.{ 1, 2, 3 } * 7;
+vec3 := Vector3.{ 1.0, 2.0, 3.0 } * 7.0;
 echo(vec3);
 
 
@@ -86,7 +85,7 @@ e = .PEAR;
 echo(e);
 
 // test of better procedure overload resolution
-echo(length(.{1, 2 } + .{2, 2 }));
+echo(length(.{1.0, 2.0 } + .{2.0, 2.0 }));
 echo(f32(5)); // stupid and confusing example
 {
    a: int = 5;
@@ -97,11 +96,10 @@ echo(f32(5)); // stupid and confusing example
    echo(a);
 }
 
-
 // test of implicit reference semantics for procedure arguments
 // v2 is taken by reference in call to 'scale'
-v2 := Vector2.{ 1, 2 };
-scale(v2, 3);
+v2 := Vector2.{ 1.0, 2.0 };
+scale(v2, 3.0);
 echo(v2);
 
 // comma separated lists for iteration 
@@ -110,9 +108,8 @@ echo(v2);
    a := 5;
    b := 96;
    c :=-8;
-   foreach(a, b, c)  echo(it);
+   for a, b, c   echo(it);
 }
-
 
 some_value := #add(1, 2);
 echo(some_value);
@@ -121,3 +118,8 @@ echo(some_value);
 test_block: {
    print("Running test block.");
 }
+
+
+_float := 5.0;
+_int :=(_float + 3.0).(int);
+echo(_int);

@@ -37,9 +37,10 @@ typecheck_node :: (
     value_type:     *Type_Info
 ) {
     dprint("typechecking % (%) @ %", node.node_type, node, get_location(node));
-    dprint("expecting type: %", as_type(hint_type));
     // dprint("%", sprint_node(script, node));
     dprint_push_indent();
+    dprint("expecting type: %", as_type(hint_type));
+    defer dprint("resulting value type: %", as_type(node.value_type));
     
     // if already typechecked, just return resolved type
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
@@ -493,7 +494,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         }
         
         all_members_are_constant := true;
-        for literal.aggr.expressions {
+        for literal.aggregate.expressions {
             if it_index >= ti_struct.members.count {
                 set_typecheck_error(script, "Too many values provided in struct literal.", node = literal);
                 return;
@@ -517,7 +518,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         
         // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
         if is_malleable(literal) {
-            literal.aggr.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
+            literal.aggregate.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
             dprint("allocated space for literal of type %, node %", literal.value_type, literal);
         }
     }
@@ -601,9 +602,17 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         left_type = typecheck_node_or_return(script, operation.left, check_flags, hint_type);
         
       case .BINARY;
+        // If the one side is a number literal and the other is not, then we will skip typechecking that side until we have a type hint from the other side.
+        left\_is_number_literal := is_number_literal(operation.left);
+        right_is_number_literal := is_number_literal(operation.right);
+        
         // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
-        left_type  = my_typecheck_node(script, operation.left,  check_flags, hint_type);
-        right_type = my_typecheck_node(script, operation.right, check_flags, hint_type);
+        if !(left\_is_number_literal && !right_is_number_literal) {
+            left_type  = my_typecheck_node(script, operation.left,  check_flags, hint_type);
+        }
+        if !(right_is_number_literal && !left\_is_number_literal) {
+            right_type = my_typecheck_node(script, operation.right, check_flags, hint_type);
+        }
         
         // If both come back null on first try, we return the upstream error.
         if left_type == null && right_type == null {
@@ -674,11 +683,14 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
         operation.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
+        dprint("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_index]);
+        
         if left_type.type == .ENUM && left_type == right_type {
             if operation.value_type != left_underlying_type {
                 set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type), node = operation);
                 return;
             }
+            dprint("using left type as value type");
             operation.value_type = left_type;
         }
         return;
