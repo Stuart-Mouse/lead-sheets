@@ -371,7 +371,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         }
         return script.my_is_valid_lvalue(script, dot.right, need_lvalue);
         
-      case Node_Subscript;          
+      case Node_Subscript;
         subscript := node.(*Node_Subscript);
         return script.my_is_valid_lvalue(script, subscript.base_expression, need_lvalue);
         
@@ -1005,6 +1005,11 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
 typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, subscript.base_expression);
     if !set_as_lvalue(script, subscript.base_expression)  return; // TODO
+    
+    // TODO: Just testing this logic for now. We should be able to index without needing an lvalue.
+    // if script.my_is_valid_lvalue(script, subscript.base_expression) {
+    //     assert(set_as_lvalue(script, subscript.base_expression));
+    // }
     
     base_type := subscript.base_expression.value_type.(*Type_Info_Array);
     if base_type.type != .ARRAY {
