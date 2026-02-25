@@ -53,7 +53,7 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
     if has_error(script)  `return NULL_ANY;
     
     // #if DEBUG
-    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type != xx Any {
+    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type.type != .ANY {
         assert(value.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(value.type));
         
         if flags & .DISCARD_VALUE {
@@ -339,7 +339,7 @@ evaluate_node_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *vo
     dst_type := _cast.value_type;
     
     // special case to handle conversion from Any
-    if src_type == xx Any {
+    if src_type.type == .ANY {
         src := evaluate_node_or_return(script, _cast.value, provided_storage);
         // pop_any(*script.stack, src.type, false);
         if src.type != dst_type {
@@ -653,7 +653,7 @@ evaluate_node_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_s
 
 prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *void) -> Any {
     if provided_storage {
-        assert(node.value_type != xx Any);
+        // assert(node.value_type.type != .ANY);
         
         #if DEBUG {
             dprint("Returning result using provided storage @ %: ", provided_storage, newline = false);
@@ -662,7 +662,7 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
         }
         
         memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
-        return Any.{ node.value_type, provided_storage };
+        return Any.{ any.type, provided_storage };
     }
     
     ok, result := push_any(*script.stack, any, should_push_by_pointer(node));
