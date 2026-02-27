@@ -161,6 +161,9 @@ Node_Declaration :: struct {
 }
 
 get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void {
+    if declaration.left.node_type == Node_Dot {
+        return null;
+    }
     if declaration.flags & .MACRO {
         return declaration.value_pointer;
     }
@@ -171,7 +174,8 @@ get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> str
     if is_unresolved_identifier(declaration.left) {
         return declaration.left.(*Node_Identifier).name;
     }
-    return ""; // declaration is either malformed or has not yet been typechecked
+    // TODO: figure out what to do about virtual member declarations
+    return ""; // declaration is either malformed or has not yet been typechecked, or it is a declaration for a virtual member
 }
 
 Node_Procedure_Call :: struct {
