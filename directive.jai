@@ -136,6 +136,7 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
         
         array_add(*script.directives, .{
             procedure_info  = PROCEDURE_INFO,
+            call_wrapper    = xx #bake_arguments call_procedure_checked(P = PROCEDURE_TYPE),
             pointer         = xx PROCEDURE,
             name            = name,
             user_data       = user_data

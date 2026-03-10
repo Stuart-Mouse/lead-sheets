@@ -1,9 +1,42 @@
 
 
 /*
-    It will still be a bit before I implement a bytecode to execute instead of just walking the AST,
-        but I wanted to start this file so that I can begin drafting some of the data structures.
+    TODO: I actually want to start on this sooner rather than later now. 
     
+    Evaluating scripts by walking the AST has worked fine for a while, but of course it is not ideal, and I have already started running into some problems.
+    
+    I really should do one more cleanup/refactoring pass before starting the bytecode stuff
+    the main focus of this will be in separating the parse and typecheck info on code nodes
+        we should be able to very easily revert any typechecking that was done on a node and re-typecheck it so that we can robustly handle code modification
+        biggest issue is how to handle identifiers and still allow renaming. Right now we destructively typecheck these by replacing the source name with other info
+            maybe we just take the name member out of the union, but then we need to make sure that this is never used if the identifier has already been resolved!
+        
+    it may also be a good time to consider making each node more aware of how it is referenced, so that we can trivially replace nodes in-place
+        sea of nodes?
+            store each node type in its own array, prevent duplication of nodes
+            track nodes that refer to each node
+            need some Typechecked node that points to underlying lexical node and provides the type information 
+                the same lexical node may be interpretted differently based on the context
+    
+    another big thing to think about is how to improve the robustness of identifier resolution, and how to re-check that identifiers are valid even after being renamed
+        
+    
+    GOALS:
+    - [ ] much better performance than AST walking
+    - [ ] good debuggability, step through scripts as they execute
+    - [ ] easy patching and dynamic bytecode modification
+        - when AST is modified, detect this and automatically generate new bytecode
+        - use special bytecode instruction that indicates a jump to replacement instructions
+        - may require some model like 'statement/expression as smallest compilation unit'
+            - maybe consider learning more about sea of nodes
+    
+    AST nodes will need some handle to the bytecode they generated
+        they will also have source code range, so we can link from bytecode, through ast, back to source text
+        we should also try rendering the ast as text (a la Dion)
+    
+    in debug builds, we will also want to be able to get the AST node that generated some bytecode
+        we can probably do this by storing some index + count representing range of bytecode, along with pointer to ast node that generated it
+        or maybe in the bytecode itself we just have an instruction that sets some 'cursor' in the script context that indicates the ast node 
 */
 
 

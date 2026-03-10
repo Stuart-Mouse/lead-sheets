@@ -1,8 +1,9 @@
 
 External_Procedure :: struct {
-    using #as procedure_info: Procedure_Info;
-    pointer:    *void;
-    name:       string;
+    using #as procedure_info:   *Procedure_Info;
+    call_wrapper:               Procedure_Call_Wrapper;
+    pointer:                    *void;
+    name:                       string;
 }
 
 to_any :: (proc: *External_Procedure) -> Any {
@@ -20,26 +21,34 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
     // TODO: This is currently unmaintained. I have not tested Lead Sheets with Dyncall in a hot minute...
     register_procedure :: (script: *Script, name: string, $procedure: Code, $scope := #caller_code) {
         // TODO: We will want to have logic for both constant and nonconstant procedure expressions.
-        // NOTE: If the procedure is nonconstant, then 
+        // NOTE: If the procedure is nonconstant, then we can't get procedure info, but maybe we will have some way for the caller to provide this information manually
         PROCEDURE      :: #insert,scope(scope) procedure;
         PROCEDURE_TYPE :: type_of(PROCEDURE);
-        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE);
         
         #assert can_register_procedure(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
         
         register_procedure_type_for_dynamic_call(PROCEDURE_TYPE);
-        array_add(*script.procedures, .{ info, xx PROCEDURE, name });
+        array_add(*script.procedures, .{ 
+            procedure_info  = get_procedure_info(PROCEDURE, scope), 
+            call_wrapper    = xx #bake_arguments call_procedure_checked(P = PROCEDURE_TYPE), 
+            pointer         = xx PROCEDURE, 
+            name            = name 
+        });
     }
 } else {
     register_procedure :: (script: *Script, name: string, $procedure: Code, $scope := #caller_code) {
         PROCEDURE      :: #insert,scope(scope) procedure;
         PROCEDURE_TYPE :: type_of(PROCEDURE);
-        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE, scope);
         
         #assert can_register_procedure(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
         
         register_procedure_type_for_dynamic_call(PROCEDURE_TYPE);
-        array_add(*script.procedures, .{ PROCEDURE_INFO, xx PROCEDURE, name });
+        array_add(*script.procedures, .{ 
+            procedure_info  = get_procedure_info(PROCEDURE, scope), 
+            call_wrapper    = xx #bake_arguments call_procedure_checked(P = PROCEDURE_TYPE), 
+            pointer         = xx PROCEDURE, 
+            name            = name 
+        });
     }
 }
 

@@ -1868,3 +1868,23 @@ And this is fine I guess, but at that point its like, why not just go all out an
 TODO: fix apparent bug with assignment to union member
 
 
+
+## Spring Cleaning
+
+Doing a lot of spring cleaning in order to prepare for implementing bytecode stuff.
+
+- [ ] try to remove TYPECHECKED flag, just check if value_type is null
+- [ ] make if/while/for always use a block instead of general expression
+    - [ ] Node.scope should be a `*Code_Block`
+- [ ] separate lexical info from type info on code nodes
+    - [ ] make it easy to revert typechecking on any node type
+    - [ ] figure out what to do about casts and other nodes that get generated during the typechecking phase
+- [ ] add automatic type assertions for virtual members within the scope in which they are declared
+- [ ] enum literals should not be created as identifier nodes they should be literals first and foremost
+- [ ] maybe remove node_dot and node_subscript, use binary_operator node instead and separate binary/unary operator nodes
+- [ ] maybe create interface for identifier referents
+- [ ] make better proc for generating literals from aggregates, try to remove the .ANY literal_type
+- [ ] document logic around pushing aggregates to the stack
+
+
+
