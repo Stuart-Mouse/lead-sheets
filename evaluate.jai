@@ -573,7 +573,7 @@ evaluate_node_if_statement :: (script: *Script, if_statement: *Node_If_Statement
     condition_as_bool: bool;
     Convert.any_to_bool(condition_as_bool, condition);
     if condition_as_bool {
-        evaluate_node_or_return(script, if_statement.statement, null, .DISCARD_VALUE);
+        evaluate_node_or_return(script, if_statement.block, null, .DISCARD_VALUE);
     }
     return VOID_ANY;
 }
@@ -589,7 +589,7 @@ evaluate_node_while_loop :: (script: *Script, while_loop: *Node_While_Loop, prov
         Convert.any_to_bool(condition_as_bool, condition);
         if !condition_as_bool  break loop;
         
-        evaluate_node_or_return(script, while_loop.statement, null, .DISCARD_VALUE);
+        evaluate_node_or_return(script, while_loop.block, null, .DISCARD_VALUE);
     }
     return VOID_ANY;
 }
@@ -609,7 +609,7 @@ evaluate_node_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_s
         for_loop.it_index_decl.value_pointer = *it_index;
         
         while it_index < array_count {
-            evaluate_node_or_return(script, for_loop.statement, null, .DISCARD_VALUE);
+            evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             for_loop.it_decl.value_pointer += array_info.element_type.runtime_size;
             it_index += 1;
         }
@@ -630,7 +630,7 @@ evaluate_node_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_s
         
         for lower_as_s64..upper_as_s64 {
             for_loop.it_decl.value_pointer = *it;
-            evaluate_node_or_return(script, for_loop.statement, null, .DISCARD_VALUE);
+            evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
         }
         
       case .LIST;
@@ -640,7 +640,7 @@ evaluate_node_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_s
             _it_index = it_index;
             evaluate_node_or_return(script, it);
             for_loop.it_decl.value_pointer = pop_any(*script.stack, for_loop.it_decl.value_type, true).value_pointer;
-            evaluate_node_or_return(script, for_loop.statement, null, .DISCARD_VALUE);
+            evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
         }
         
       case;

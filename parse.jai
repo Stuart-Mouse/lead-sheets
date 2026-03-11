@@ -39,6 +39,17 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
 }
 
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
+    // used when parsing if/while/for so that a block is implicitly created for single statements
+    maybe_wrap_in_block :: (node: *Node) -> *Node_Block #expand {
+        if node == null  return null;
+        if node.node_type == Node_Block  return xx node;
+        
+        block := alloc_node(script, Node_Block);
+        block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
+        block.statements[0] = node;
+        return block;
+    }
+    
     token := peek_token(script);
     if token.type == {
       case .IF; 
@@ -53,8 +64,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         {
             dprint("STATEMENT"); dprint_push_indent();
-            if_statement.statement = parse_statement(script, expect_semicolon);
-            if if_statement.statement == null  return null;
+            if_statement.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+            if if_statement.block == null  return null; 
         }
         current_scope = if_statement.scope; 
         return if_statement;
@@ -70,8 +81,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if while_loop.condition == null  return null;
         
         dprint("STATEMENT");
-        while_loop.statement = parse_statement(script, expect_semicolon);
-        if while_loop.statement == null  return null;
+        while_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+        if while_loop.block == null  return null; 
         
         current_scope = while_loop.scope; 
         return while_loop;
@@ -143,8 +154,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         dprint("STATEMENT");
-        for_loop.statement = parse_statement(script, expect_semicolon);
-        if for_loop.statement == null  return null;
+        for_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+        if for_loop.block == null  return null; 
         
         current_scope = for_loop.scope;
         return for_loop;

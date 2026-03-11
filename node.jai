@@ -15,7 +15,7 @@ Node :: struct {
     
     Flags :: enum_flags { 
         // lexical flags
-        PARENTHESIZED;          // explicitly 
+        PARENTHESIZED;          // explicitly
         IS_ARROW;               // denotes that a Node_Dot is actually an arrow
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
@@ -23,7 +23,7 @@ Node :: struct {
         
         // typechecking flags
         OVERLOAD;               // gets set when operator resolves to some overloaded procedure
-        IMPLICIT;               // used for casts
+        IMPLICIT;               // used for casts and blocks
         
         MUST_BE_STATEMENT_ROOT; // TODO: try to remove this as well. can probably just make this a procedure 
         
@@ -331,16 +331,25 @@ Node_Subscript :: struct {
     indexing_expression:    *Node;
 }
 
+
+
+
+// Node_Flow_Control :: struct {
+//     using #as node_base: Node;
+//     block:          *Node_Block;
+//     declarations:   [] *Node_Declaration;
+// }
+
 Node_If_Statement :: struct {
     using #as node_base:    Node;
     condition:              *Node;
-    statement:              *Node;
+    block:                  *Node_Block;
 }
 
 Node_While_Loop :: struct {
     using #as node_base:    Node;
     condition:              *Node;
-    statement:              *Node;
+    block:                  *Node_Block;
 }
 
 Node_For_Loop :: struct {
@@ -351,7 +360,7 @@ Node_For_Loop :: struct {
         range:              struct { lower, upper: *Node; };
         list:               [] *Node;
     }
-    statement:  *Node;
+    block:  *Node_Block;
     
     it_decl, it_index_decl:     *Node_Declaration;
 }
@@ -361,6 +370,8 @@ Node_For_Loop :: struct {
 //       could be interesting to try out at some point, in the spirit of having as few basic node types as possible and just making those versatile
 //       this would probably not work for for loops though, since they just have a lot more stuff
 //       or maybe we just put a *Node_Flow_Control on each block, and this flow control node just needs to meet a basic interface
+
+
 
 
 alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *Node_Type

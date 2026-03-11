@@ -1119,7 +1119,7 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
 
 typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, if_statement.condition); // TODO: must be bool or coercible to bool
-    typecheck_node_or_return(script, if_statement.statement, .IS_STATEMENT_ROOT);
+    typecheck_node_or_return(script, if_statement.block, .IS_STATEMENT_ROOT);
     
     if_statement.value_type = type_info(void);
     return;
@@ -1127,7 +1127,7 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, while_loop.condition); // TODO: must be bool or coercible to bool
-    typecheck_node_or_return(script, while_loop.statement, .IS_STATEMENT_ROOT);
+    typecheck_node_or_return(script, while_loop.block, .IS_STATEMENT_ROOT);
     
     while_loop.value_type = type_info(void);
     return;
@@ -1232,7 +1232,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
     }
     
-    typecheck_node_or_return(script, for_loop.statement, .IS_STATEMENT_ROOT);
+    typecheck_node_or_return(script, for_loop.block, .IS_STATEMENT_ROOT);
     
     for_loop.value_type = xx void;
     return;

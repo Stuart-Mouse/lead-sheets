@@ -1873,9 +1873,12 @@ TODO: fix apparent bug with assignment to union member
 
 Doing a lot of spring cleaning in order to prepare for implementing bytecode stuff.
 
-- [ ] try to remove TYPECHECKED flag, just check if value_type is null
-- [ ] make if/while/for always use a block instead of general expression
+- [X] try to remove TYPECHECKED flag, just check if value_type is null
+- [X] make if/while/for always use a block instead of general expression
+    - [X] add logic to print_node to handle implicit blocks
     - [ ] Node.scope should be a `*Code_Block`
+        - This will require either adding an owning_statement pointer to code_block or entirely refactoring how block flow control works
+        - the second option will probably be a better long-term solution and allow implementing more neat features later on
 - [ ] separate lexical info from type info on code nodes
     - [ ] make it easy to revert typechecking on any node type
     - [ ] figure out what to do about casts and other nodes that get generated during the typechecking phase

@@ -93,7 +93,6 @@ print_node :: (
         append_trivia(builder, node);
     }
     
-    
     // wrap expression in parentheses if explicitly flagged as such
     if       node.flags & .PARENTHESIZED  append(builder, "(");
     defer if node.flags & .PARENTHESIZED  append(builder, ")");
@@ -101,12 +100,12 @@ print_node :: (
     if node.node_type == {
       case Node_Directive;
         directive := node.(*Node_Directive);
-        print_to_builder(builder, "#%(", directive.name);
+        print(builder, "#%(", directive.name);
         for directive.arguments {
             print_node_or_return(script, it, builder, indent);
             if it_index != directive.arguments.count-1 then append(builder, ",");
         }
-        print_to_builder(builder, ")", );
+        append(builder, ")");
         return true;
         
         
@@ -280,23 +279,34 @@ print_node :: (
         
       case Node_Block;
         block := node.(*Node_Block);
+        
+        is_implicit := (block.flags & .IMPLICIT).(bool);
+        
         if block.name {
+            assert(!is_implicit);
             print_to_builder(builder, "%: ", block.name);
         }
-        append(builder, "{");
+        
+        if !is_implicit {
+            append(builder, "{");
+        }
         indent += INDENT_SIZE;
+        
         for block.statements {
-            // append_spaces(builder, indent);
+            // TODO: we would like to append_spaces here when the statement was inserted, but right now it's not entirely clear how to robustly check this.
             print_node_or_return(script, it, builder, indent);
             if !should_skip_placing_semicolon(it) {
                 append(builder, ";");
             } 
             // if it_index != block.statements.count-1 then append(builder, "\n");
         }
+        
         indent -= INDENT_SIZE;
-        append(builder, "\n");
-        append_spaces(builder, indent);
-        append(builder, "}");
+        if !is_implicit {
+            append(builder, "\n");
+            append_spaces(builder, indent);
+            append(builder, "}");
+        }
         return true;
         
         
@@ -305,7 +315,7 @@ print_node :: (
         append(builder, "if");
         print_node_or_return(script, if_statement.condition, builder, indent);
         // append(builder, "  ");
-        print_node_or_return(script, if_statement.statement, builder, indent);
+        print_node_or_return(script, if_statement.block, builder, indent);
         return true;
         
         
@@ -314,7 +324,7 @@ print_node :: (
         append(builder, "while");
         print_node_or_return(script, while_loop.condition, builder, indent);
         // append(builder, "  ");
-        print_node_or_return(script, while_loop.statement, builder, indent);
+        print_node_or_return(script, while_loop.block, builder, indent);
         return true;
         
         
@@ -354,8 +364,8 @@ print_node :: (
             }
         }
         
-        if !for_loop.statement.trivia append(builder, " ");
-        print_node_or_return(script, for_loop.statement, builder, indent);
+        if !for_loop.block.trivia append(builder, " ");
+        print_node_or_return(script, for_loop.block, builder, indent);
         return true;
     }
     
@@ -368,12 +378,6 @@ should_skip_placing_semicolon :: (node: *Node) -> bool {
     if node.node_type == {
       case Node_Block; 
         return true;
-      case Node_If_Statement;
-        return should_skip_placing_semicolon(node.(*Node_If_Statement).statement);
-      case Node_While_Loop;
-        return should_skip_placing_semicolon(node.(*Node_While_Loop).statement);
-      case Node_For_Loop;
-        return should_skip_placing_semicolon(node.(*Node_For_Loop).statement);
     }
     return false;
 }
