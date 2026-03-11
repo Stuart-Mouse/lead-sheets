@@ -38,21 +38,36 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
     return statements, true;
 }
 
-parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
-    // used when parsing if/while/for so that a block is implicitly created for single statements
-    maybe_wrap_in_block :: (node: *Node) -> *Node_Block #expand {
-        if node == null  return null;
-        if node.node_type == Node_Block  return xx node;
-        
-        block := alloc_node(script, Node_Block);
+// used in if/for/while, where we need to wrap single statements in a block implicitly.
+parse_block_or_statement :: (using script: *Script, parent: *Node, expect_semicolon := true) -> *Node_Block {
+    block := alloc_node(script, Node_Block);
+    current_scope = block; 
+    
+    open_brace := peek_token(script);
+    if open_brace.type == .OPEN_BRACE {
+        get_token(script);
+        statements, ok := parse_statements(script, .CLOSE_BRACE);
+        if !ok  return null;
+        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
+        block.location = open_brace.location;
+        block.trivia   = open_brace.trivia;
+    } else {
+        statement := parse_statement(script, expect_semicolon);
+        if statement == null {
+            set_parse_error(script, "Expected a statement.", node = parent);
+            return null;
+        }
         block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
-        block.statements[0] = node;
-        
-        node.scope = block;
-        
-        return block;
+        block.statements[0] = statement;
+        block.location = statement.location;
+        block.flags |= .IMPLICIT;
     }
     
+    current_scope = block.scope; 
+    return block;
+}
+
+parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
       case .IF; 
@@ -66,7 +81,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         {
             dprint("STATEMENT"); dprint_push_indent();
-            if_statement.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+            if_statement.block = parse_block_or_statement(script, if_statement, expect_semicolon);
             if if_statement.block == null  return null; 
             if_statement.block.owner = if_statement;
         }
@@ -83,7 +98,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         {
             dprint("STATEMENT");
-            while_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+            while_loop.block = parse_block_or_statement(script, while_loop, expect_semicolon);
             if while_loop.block == null  return null; 
             while_loop.block.owner = while_loop;
         }
@@ -155,7 +170,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         dprint("STATEMENT");
-        for_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+        for_loop.block = parse_block_or_statement(script, for_loop, expect_semicolon);
         if for_loop.block == null  return null; 
         for_loop.block.owner = for_loop;
         
@@ -201,7 +216,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if peek_token(script).type == .OPEN_BRACE {
             dprint("NAMED BLOCK (%)", left.(*Node_Identifier).name); dprint_push_indent();
             if script.current_scope != script.ast_root {
-                set_parse_error(script, "%: named blocks can only be declared at the top-level scope.", get_location(left));
+                set_parse_error(script, "%: named blocks can only be declared at the top-level scope, but the current scope is %", get_location(left), script.current_scope.location);
                 return null;
             }
             

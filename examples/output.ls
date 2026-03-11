@@ -11,11 +11,11 @@ r3 = a + b;
 while echo(r2) > 20.0 {
    r2 = r2 - 1.0;
    r3 = r3 + r3;
-}
+};
 
 // for loops and casting
-for arr1  if it > 1.0  it = it_index.(float) * 7.0;
-for arr1   echo(it);
+for arr1   if it > 1.0  it = it_index.(float) * 7.0;;;
+for arr1   echo(it);;
 
 // local declarations
 local: float;
@@ -31,7 +31,7 @@ local += 5.0;
 echo(local);
 
 // range-based for loops and unary operators
-for-5..9   echo(it);
+for-5..9   echo(it);;
 
 // strings
 print(str);
@@ -108,7 +108,7 @@ echo(v2);
    a := 5;
    b := 96;
    c :=-8;
-   for a, b, c   echo(it);
+   for a, b, c   echo(it);;
 }
 
 some_value := #add(1, 2);
@@ -120,6 +120,10 @@ test_block: {
 }
 
 
+// testing binary operation type hinting
+//    the idea here is that the type hint passed to the operation is for 'int',
+//    but we don't want the number literal to receive that type hint,
+//    rather, we want it to receive the type hint from the other side of the operation, '_float'
 _float := 5.0;
 _int :=(_float + 3.0).(int);
 echo(_int);

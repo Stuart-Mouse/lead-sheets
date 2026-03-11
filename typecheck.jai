@@ -1106,16 +1106,22 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             if has_error(script)  return;
             pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
         } else {
-            declaration.stack_offset = get_stack_space(script, declaration.value_type.runtime_size, declaration.scope);
+            declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
         }
     }
     return;
 }
 
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    // block.stack_frame_size = 0;
+    // largest_child_block_stack_frame_size := 0;
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
+        // if it.node_type == Node_Block {
+        //     largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, it.(*Node_Block).stack_frame_size);
+        // }
     }
+    // block.stack_frame_size += largest_child_block_stack_frame_size;
     block.value_type = xx void;
     return;
 }

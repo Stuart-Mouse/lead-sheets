@@ -120,7 +120,7 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
         
         PROCEDURE      :: #insert procedure;
         PROCEDURE_TYPE :: type_of(PROCEDURE);
-        PROCEDURE_INFO :: #run get_procedure_info(PROCEDURE, procedure);
+        PROCEDURE_INFO := get_procedure_info(PROCEDURE, procedure);
         
         #assert can_register_directive(type_info(PROCEDURE_TYPE)) "Unable to register procedure.";
         

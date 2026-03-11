@@ -77,35 +77,43 @@ Node_Block :: struct {
     
     // TODO: figure out how to not have to store this on every block...?
     stack_frame_size:       int;
+    // subframe_offset:        int; 
 }
 
 // TODO: push/pop stack subframes per every block, even though the actual stack frame is only per named block
-get_stack_space :: (script: *Script, requested_size: int, scope: *Node) -> stack_offset: int {
-    block := get_stack_frame_block(script, scope);
+// get_stack_space_in_block :: (script: *Script, requested_size: int, scope: *Node_Block) -> stack_offset: int {
+//     block := get_stack_frame_block(script, scope);
     
-    current_offset := block.stack_frame_size;
+//     current_offset := block.stack_frame_size;
     
-    // pad to 8 byte alignment
-    size := (requested_size + 7) & ~7;
-    block.stack_frame_size += size;
+//     // pad to 8 byte alignment
+//     size := (requested_size + 7) & ~7;
+//     block.stack_frame_size += size;
     
-    return current_offset;
+//     return current_offset;
+// }
+
+get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block, align := true) -> stack_offset: int {
+    block = get_stack_frame_block(script, block);
+    
+    offset := block.stack_frame_size;
+    if align then offset = (offset + 7) & ~7;
+    block.stack_frame_size = offset + requested_size;
+    return offset;
 }
 
 // TODO: resolve to closest named block or ast root
-get_stack_frame_block :: (script: *Script, node: *Node) -> *Node_Block {
-    scope := node;
+get_stack_frame_block :: (script: *Script, scope: *Node_Block) -> *Node_Block {
     while scope {
-        if is_stack_frame_block(script, scope) {
-            return xx scope;
-        }
+        if is_stack_frame_block(script, scope)  return scope;
         scope = scope.scope;
     }
     return null;
 }
 
-is_stack_frame_block :: (script: *Script, node: *Node) -> bool {
-    return node.node_type == Node_Block && (node.(*Node_Block).name || node == script.ast_root);
+is_stack_frame_block :: (script: *Script, block: *Node_Block) -> bool {
+    return block.name || block == script.ast_root;
+    // return true;
 }
 
 // NOTE: caller is not responsible for freeing the returned array view
