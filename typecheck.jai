@@ -23,7 +23,6 @@ typecheck_node_or_return :: (
 ) #expand {
     result := script.my_typecheck_node(script, node, check_flags, hint_type);
     if has_error(script) then `return;
-    assert(node.flags & .TYPECHECKED == .TYPECHECKED, "% was not flagged as typechecked, but no error was set!", node.node_type);
     assert(node.value_type != null, "Node returned null value_type, but no error was set!");
     return result;
 }
@@ -44,10 +43,7 @@ typecheck_node :: (
     
     // if already typechecked, just return resolved type
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
-    if node.flags & .TYPECHECKED {
-        assert(node.value_type != null);
-        return node.value_type;
-    }
+    if node.value_type  return node.value_type;
     
     // weird special case for assignment operators. needs to be done up top so we can remove the flag right away.
     if node.flags & .MUST_BE_STATEMENT_ROOT {
@@ -77,7 +73,6 @@ typecheck_node :: (
     }
     if has_error(script)  return null;
     
-    node.flags |= .TYPECHECKED;
     return node.value_type;
 }
 
@@ -185,13 +180,10 @@ get_terminal_literal :: (node: *Node) -> *Node_Literal {
 
 make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node {
     _cast := alloc_node(script, Node_Cast, scope = node.scope, loc = node.location);
-    _cast.flags |= .IMPLICIT | .TYPECHECKED;
+    _cast.flags |= .IMPLICIT;
     _cast.implicit_type = type;
     _cast.value         = node;
     _cast.value_type    = type;
-    if node.flags & .TYPECHECKED {
-        _cast.flags |= .TYPECHECKED;
-    }
     dprint("%: Info: created implicit cast from % to %", get_location(node), as_type(_cast.value.value_type), as_type(_cast.implicit_type));
     return _cast;
 }
@@ -734,7 +726,6 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         
         identifier.identifier_type = .EXTERNAL_PROCEDURE;
         identifier.index           = procedure_index;
-        identifier.flags          |= .TYPECHECKED;
         proc_info, identifier.value_type = procedures[procedure_index].__type_info;
         
         // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
@@ -908,7 +899,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         }
         
         member_identifier.value_type = member_info.type;
-        member_identifier.flags |= .TYPECHECKED;
         dot.value_type = member_info.type;
         
         // NOTE: If we are not implicitly dereferencing the left side here,
@@ -971,25 +961,23 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             return;
             
           case .ENUM;
-            ti_enum := namespace.(*Type_Info_Enum);
+            enum_info := namespace.(*Type_Info_Enum);
             
             right := dot.right.(*Node_Identifier);
             assert(right.node_type == Node_Identifier && right.identifier_type == .UNRESOLVED);
             member_name := right.name;
             
-            found, value := enum_name_to_value(ti_enum, member_name);
+            found, value := enum_name_to_value(enum_info, member_name);
             if !found {
-                set_typecheck_error(script, "Invalid enum value name '%' for enum type '%'.", member_name, as_type(ti_enum), node = dot);
+                set_typecheck_error(script, "Invalid enum value name '%' for enum type '%'.", member_name, as_type(enum_info), node = dot);
                 return;
             }
             
             right.identifier_type = .LITERAL;
-            right.literal         = make_literal(script, Any.{ ti_enum, *value });
-            right.literal.flags  |= .TYPECHECKED;
-            right.value_type      = ti_enum;
-            right.flags          |= .TYPECHECKED;
+            right.literal         = make_literal(script, Any.{ enum_info, *value });
+            right.value_type      = enum_info;
             
-            dot.value_type = ti_enum;
+            dot.value_type = enum_info;
             return; // no error
             
           case;

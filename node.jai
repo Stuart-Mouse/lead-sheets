@@ -27,7 +27,6 @@ Node :: struct {
         
         MUST_BE_STATEMENT_ROOT; // TODO: try to remove this as well. can probably just make this a procedure 
         
-        TYPECHECKED; // TODO: maybe remove and just check if value_type is non-null
         VALUE_TYPE_IS_NOMINAL;
         
         // evaluation flags

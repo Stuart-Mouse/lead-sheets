@@ -95,7 +95,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     
     assert(node.value_type != null);
     
-    if !node.flags & .TYPECHECKED {
+    if node.value_type == null {
         set_execution_error(script, "Cannot execute a node that has not been typechecked.", node = node);
         return NULL_ANY;
     }
