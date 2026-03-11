@@ -1876,20 +1876,28 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
 - [X] try to remove TYPECHECKED flag, just check if value_type is null
 - [X] make if/while/for always use a block instead of general expression
     - [X] add logic to print_node to handle implicit blocks
-    - [ ] Node.scope should be a `*Code_Block`
-        - This will require either adding an owning_statement pointer to code_block or entirely refactoring how block flow control works
-        - the second option will probably be a better long-term solution and allow implementing more neat features later on
+    - [X] Node.scope should be a `*Code_Block`
+        - added `owner: *Node` to `Node_Block`
+        - added `get_additional_declarations_from_owner(*Node_Block)`
 - [ ] separate lexical info from type info on code nodes
     - [ ] make it easy to revert typechecking on any node type
     - [ ] figure out what to do about casts and other nodes that get generated during the typechecking phase
-- [ ] add automatic type assertions for virtual members within the scope in which they are declared
+- [ ] improve implicit casting on virtual members
+    - add automatic type assertions for virtual members within the scope in which they are declared
+    - allow virtual member declarations with only type to serve the same purpose without 'redeclaring' the value
 - [ ] enum literals should not be created as identifier nodes they should be literals first and foremost
 - [ ] maybe remove node_dot and node_subscript, use binary_operator node instead and separate binary/unary operator nodes
 - [ ] maybe create interface for identifier referents
 - [ ] make better proc for generating literals from aggregates, try to remove the .ANY literal_type
 - [ ] document logic around pushing aggregates to the stack
 - [ ] maybe implement defer (for fun)
-
+- [ ] implement temporal shadowing as an explicit feature
+    - this means that you can redeclare variables with the same identifier within the same (imperative) scope
+        - the previous declaration then becomes completely inaccessible
+    - this allows people to more dynamic-languagey things while maintaining static typing
+    - will be very convenient when lead sheets is used for things like an in-game console
+- [ ] create rules around interpretted execution
+    - main difference will be that nonconstant values can be used as constants in many situations (e.g. a nonconstant type can be used in a declaration's type slot)
 
 Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
 
@@ -1921,3 +1929,21 @@ making the language more expressive
 
 
 
+
+creating interfaces for more language features/concepts
+    literals
+    scopes
+        types
+            declarative
+            imperative
+        interface
+            get_declaration(s)
+                collect all, find by name, find before particular statement in block
+    casts
+    control flow
+    operators
+    
+it may be worthwhile in the long run to use custom type info structures rather than using the ones that Jai has built-in.
+    or maybe not, but it's a least something to consider.
+    I will have to evaluate this after getting to the point of allowing users to declare their own data structures in the language.
+    And really, the first starting place will just be making array literals actually a thing, and creating those new type infos and storing them somewhere.

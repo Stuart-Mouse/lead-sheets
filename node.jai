@@ -1,9 +1,9 @@
 
 Node :: struct {
     node_type:              Type;
-    scope:                  *Node;              // used for identifier resolution. maybe we can remove in the future. TODO: should be a *Node_Block
+    value_type:             *Type_Info;
+    scope:                  *Node_Block;
     flags:                  Flags;
-    value_type:             *Type_Info;         // null if not yet typechecked
     
     // TODO: consider keeping all source tokens, store pointer to token on node
     //       or store tokens based on node type, as maybe some will use multiple tokens.
@@ -19,7 +19,11 @@ Node :: struct {
         IS_ARROW;               // denotes that a Node_Dot is actually an arrow
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
+        
+        // TODO: change this to STATIC, reconsider semantics around malleable literals and declarations
         MACRO;                  // marks declarations with :: which act as simple AST node references to the init_expression
+        
+        GENERATED;              // Indicates that a node was generated in Jai code, not parsed from some source file. Generally, this means that during serialization, some default formatting will be used.
         
         // typechecking flags
         OVERLOAD;               // gets set when operator resolves to some overloaded procedure
@@ -66,6 +70,8 @@ should_push_by_pointer :: (node: *Node) -> bool {
 // TODO: introduce various block types so that we can use block for struct literals and the like. 
 Node_Block :: struct {
     using #as node_base:    Node;
+    owner:                  *Node;
+    
     name:                   string;
     statements:             [] *Node;
     
@@ -101,6 +107,21 @@ get_stack_frame_block :: (script: *Script, node: *Node) -> *Node_Block {
 is_stack_frame_block :: (script: *Script, node: *Node) -> bool {
     return node.node_type == Node_Block && (node.(*Node_Block).name || node == script.ast_root);
 }
+
+// NOTE: caller is not responsible for freeing the returned array view
+// TODO: will eventually need to be overloadable from script or somehow interfaced
+get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Declaration {
+    if block.owner {
+        if block.owner.node_type == {
+          case Node_For_Loop;
+            for_loop := block.owner.(*Node_For_Loop);
+            return for_loop.declarations;
+        }
+    }
+    return .[];
+}
+
+
 
 Node_Cast :: struct {
     using #as base:     Node;
@@ -210,11 +231,15 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
 }
 
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
-    if is_unresolved_identifier(declaration.left) {
-        return declaration.left.(*Node_Identifier).name;
+    if declaration == null  return "";
+    
+    if declaration.left.node_type == {
+      case Node_Identifier;
+        return get_identifier_name(script, declaration.left.(*Node_Identifier));
     }
+    
     // TODO: figure out what to do about virtual member declarations
-    return ""; // declaration is either malformed or has not yet been typechecked, or it is a declaration for a virtual member
+    return "";
 }
 
 Node_Procedure_Call :: struct {
@@ -352,12 +377,14 @@ Node_For_Loop :: struct {
     }
     block:  *Node_Block;
     
-    it_decl, it_index_decl:     *Node_Declaration;
+    declarations: [2] *Node_Declaration;
+    #overlay(declarations[0]) it_decl:        *Node_Declaration;
+    #overlay(declarations[1]) it_index_decl:  *Node_Declaration;
 }
 
 
 
-alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *Node_Type
+alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node_Block = null, loc := #caller_location, trivia := "") -> *Node_Type
 #modify {
     return is_subclass_of(Node_Type.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {

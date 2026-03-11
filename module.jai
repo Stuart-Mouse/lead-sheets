@@ -22,7 +22,7 @@ Script :: struct {
     }
     
     lexer:                  Lexer;
-    current_scope:          *Node;
+    current_scope:          *Node_Block;
     
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.

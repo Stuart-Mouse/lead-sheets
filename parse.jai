@@ -47,6 +47,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         block := alloc_node(script, Node_Block);
         block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
         block.statements[0] = node;
+        
+        node.scope = block;
+        
         return block;
     }
     
@@ -56,7 +59,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         dprint("IF STATEMENT"); dprint_push_indent();
         if_token := get_token(script);
         if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
-        current_scope = if_statement; 
         {
             dprint("CONDITION"); dprint_push_indent();
             if_statement.condition = my_parse_expression(script, 0);
@@ -66,32 +68,31 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             dprint("STATEMENT"); dprint_push_indent();
             if_statement.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
             if if_statement.block == null  return null; 
+            if_statement.block.owner = if_statement;
         }
-        current_scope = if_statement.scope; 
         return if_statement;
         
       case .WHILE;
         dprint("WHILE LOOP"); dprint_push_indent();
         while_token := get_token(script);
         while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
-        current_scope = while_loop; 
-        
-        dprint("CONDITION");
-        while_loop.condition = my_parse_expression(script, 0);
-        if while_loop.condition == null  return null;
-        
-        dprint("STATEMENT");
-        while_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
-        if while_loop.block == null  return null; 
-        
-        current_scope = while_loop.scope; 
+        {
+            dprint("CONDITION");
+            while_loop.condition = my_parse_expression(script, 0);
+            if while_loop.condition == null  return null;
+        }
+        {
+            dprint("STATEMENT");
+            while_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
+            if while_loop.block == null  return null; 
+            while_loop.block.owner = while_loop;
+        }
         return while_loop;
         
       case .FOR;
         dprint("FOR LOOP"); dprint_push_indent();
         for_token := get_token(script);
         for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
-        current_scope = for_loop; 
         
         dprint("CONTROL EXPRESSION");
         
@@ -156,8 +157,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         dprint("STATEMENT");
         for_loop.block = maybe_wrap_in_block(parse_statement(script, expect_semicolon));
         if for_loop.block == null  return null; 
+        for_loop.block.owner = for_loop;
         
-        current_scope = for_loop.scope;
         return for_loop;
         
         

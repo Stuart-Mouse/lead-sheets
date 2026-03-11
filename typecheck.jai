@@ -87,27 +87,30 @@ typecheck_script :: (script: *Script) -> bool {
     return true;
 }
 
-// TODO: try to remove the need for 'need_lvalue' and make it so that we can just check the returned node with is_valid_lvalue if need be
-//       it appears the only reason we have this in place atm is to prevent using it_index as an lvalue
-resolve_declaration_by_identifier :: (script: *Script, identifier: string, scope_block: *Node) -> *Node_Declaration {
-    scope := scope_block;
+// TODO: will need changes if/when we allow temporal shadowing
+resolve_declaration_by_identifier :: (script: *Script, identifier: string, from: *Node) -> *Node_Declaration {
+    scope := ifx from.node_type == Node_Block then from.(*Node_Block) else from.scope;
+    
     while scope {
         if scope.node_type == {
           case Node_Block;
             declaration := find_declaration_in_block(script, xx scope, identifier);
             if declaration  return declaration;
             
-          case Node_For_Loop;
-            declaration := find_iterator_declaration(script, xx scope, identifier);
-            if declaration  return declaration;
+            owner_declarations := get_additional_declarations_from_owner(scope);
+            for owner_declarations {
+                if get_declaration_name(script, it) == identifier  return it;
+            }
         }
         scope = scope.scope;
     }
+    
     for script.global_declarations {
         if get_declaration_name(script, it) == identifier {
             return it;
         }
     }
+    
     return null;
 }
 
