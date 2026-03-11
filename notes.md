@@ -1888,6 +1888,36 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
 - [ ] maybe create interface for identifier referents
 - [ ] make better proc for generating literals from aggregates, try to remove the .ANY literal_type
 - [ ] document logic around pushing aggregates to the stack
+- [ ] maybe implement defer (for fun)
+
+
+Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
+
+refactoring blocks
+    blocks of various types, using blocks for data scopes such as struct literals 
+    blocks as only builtin scope type, removing weird use of for loop as alternate scope node
+        may create a Node_Scope to use as a base for Node_Block, if it seems worthwhile
+    for loop could use interface for control type, or a general interface could be used for any flow control construct
+
+refactoring declarations and identifiers
+    declarations really need to be simplified since we added virtual members
+    identifiers may use some new interface for referent
+
+refactoring operators
+    maybe a base Node_Operator type with binary and unary 
+    maybe treat Cast as a binary operator of a sort
+        although, casts really are special...
+    consider overlap with directives and external procedures
+    dot and subscript can probably become operators. 
+        may simplify parsing a bit to just wrap these in with everything else that's a binary operator
+        but then we need a way to express that operands to an operator can be any type. maybe use `*Node` as akin to a Jai `Code` like we do for directives
+    
+fixing casting
+    implicit casts should maybe be accessible from node being cast, for sake of undoing/altering typechecking results
+
+making the language more expressive
+    allow more things at non-statement level
+    declarations within certain block-owning nodes (e.g. if statement)
 
 
 

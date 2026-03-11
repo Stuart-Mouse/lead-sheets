@@ -272,24 +272,7 @@ is_malleable :: (literal: *Node_Literal) -> bool {
     return (literal.flags & .IS_MALLEABLE).(bool);
 }
 
-/*
-    Not sure where to put this for now, but here's some documentation about a cool feature with literals:
-    
-    Malleable Literals
-    
-    In Lead Sheets, you can mark literals with a `?` in order denote that the literal should be modifiable when the script is being executed as an AST.
-    The literal can then be used as an lvalue (but again, only while in AST form), and the script can be serialized back to text from AST with the now modified value of the literal replacing the original value.
-    Like any other literal though, when it comes time to lower the AST to bytecode, any statements that use the literal as an lvalue must be stripped, and the value will be baked as a constant at all sites of use.
-    This may seem like an odd feature, but I think it will actually be extremely useful for certain applications.
-    For example, I am working on a game where the movements of all platforms and many entities in a level are determined by functions written into the level's script (which is separate from the main level file).
-    This means that a substantial and critical part of the level's design cannot be editted within the level editor itself, since we would have no means to save those changes back to the original text of the script file.
-    But, if we have these sorts of malleable literals that can be modified in the editor and then written back, we can now visually modify what was previously only modifiable as text.
-    I feel like I'm still struggling to explain how cool this is to me, but needless to say I'm very excited to implement it and try it out.
-    For example, if you could display all of a script's mallebale constants in a menu for the user to edit, or draw them directly into the level as handles that are attached to tilemaps or entities.
-    Then when the user saves the level, it will save both the basic layout and the script that governs that layout.
-    With the use of an immediate-mode UI, the user can generate new UI elements directly from the level script, allowing them to create a visual means of editting bespoke level behaviours.
-    And best of all, when it actually comes time to run the level and its accompanying script, the malleable literals get magically baked away, so there's no runtime cost.
-*/
+
 
 Node_Operation :: struct {
     using #as node_base:    Node;
@@ -315,7 +298,7 @@ get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator
     return get_operator(script, node).kind;
 }
 
-// TODO: maybe remove Node_Dot and Node_Subscript in favor of just using a genereal Binary Operator Node
+// TODO: maybe remove Node_Dot and Node_Subscript in favor of just using a general Binary Operator Node
 //       then separate binary and unary operators since they are lexically and semantially different
 // TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
 //       if I'm thinking of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
@@ -332,7 +315,14 @@ Node_Subscript :: struct {
 }
 
 
+// ===== Flow Control Statements =====
 
+/*
+    We now have two possible paths ahead here:
+    1. Do this Node_Flow_Control thing, and try to generalize all flow control constructs so that user can implement their own more easily.
+    2. Just attach an owner node pointer to Code_Block and put some overloadable procedure in the script context so that code block can query its owning node for additional declarations that will go into that block's scope.
+        This may be a more attractive option because we will probably want to refactor blocks to work as data scopes as well (so the owner could be a struct literal)
+*/
 
 // Node_Flow_Control :: struct {
 //     using #as node_base: Node;
@@ -364,13 +354,6 @@ Node_For_Loop :: struct {
     
     it_decl, it_index_decl:     *Node_Declaration;
 }
-
-// TODO: what if if/while were just flags on a block?
-//       then any block could have continue/break support pretty trivially
-//       could be interesting to try out at some point, in the spirit of having as few basic node types as possible and just making those versatile
-//       this would probably not work for for loops though, since they just have a lot more stuff
-//       or maybe we just put a *Node_Flow_Control on each block, and this flow control node just needs to meet a basic interface
-
 
 
 
