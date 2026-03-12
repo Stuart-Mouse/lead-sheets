@@ -1200,6 +1200,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = array_info.element_type;
+        // for_loop.it_decl.stack_offset = get_stack_space_in_block(script, for_loop.it_decl.value_type.runtime_size, for_loop.scope);
         for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
         // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
@@ -1208,6 +1209,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             for_loop.it_index_decl.left = make_identifier(script, "it_index");
         }
         for_loop.it_index_decl.value_type = xx int;
+        // for_loop.it_index_decl.stack_offset = get_stack_space_in_block(script, for_loop.it_index_decl.value_type.runtime_size, for_loop.scope);
         for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
         
         

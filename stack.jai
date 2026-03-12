@@ -75,7 +75,9 @@ push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := fa
     }
     
     defer top += push_size;
-    return ifx indirect then pointer else top;
+    return ifx indirect 
+    then pointer 
+    else top;
 }
 
 pop :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
