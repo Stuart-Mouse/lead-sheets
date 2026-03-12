@@ -30,23 +30,38 @@ is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
     return pointer >= stack.memory && pointer < stack.memory + stack.allocated;
 }
 
+// TODO: if in debug mode, maybe we should also push some magic number in the header to check when we call pop_frame
+Stack_Frame_Header :: struct {
+    previous_frame: *void;
+    frame_size:     int;
+}
 
-// TODO: if in debug mode, we should also push some magic number (e.g. the current stack top) in push_frame to check when we call pop_frame
-
-push_frame :: (using stack: *Stack, size: int) -> bool {
-    new_frame_pointer := top;
+push_frame :: (stack: *Stack, size: int, loc := #caller_location) -> bool {
+    previous_frame := stack.frame;
     
-    if !push(stack, null, size)    return false;
-    if !push_value(stack, *size)   return false;
-    if !push_value(stack, *frame)  return false;
+    header := Stack_Frame_Header.{ previous_frame, size };
+    if !push_value(stack, *header)  return false;
     
-    frame = new_frame_pointer;
+    stack.frame = stack.top;
+    if !push(stack, null, size)  return false;
+    
     return true;
 }
 
-pop_frame :: inline (using stack: *Stack) {
-    frame = pop_as(stack, *void);
-    pop(stack, pop_as(stack, int));
+pop_frame :: (stack: *Stack, loc := #caller_location) {
+    top_before_pop   := stack.top;
+    frame_before_pop := stack.frame;
+    
+    stack.top = stack.frame;
+    header := pop_as(stack, Stack_Frame_Header);
+    
+    stack.frame = header.previous_frame;
+    
+    // Since pushes are always aligned to 8 bytes, we round up the frame size here as well to determine the expected stack top.
+    expected_stack_top_before_pop := frame_before_pop + ((header.frame_size + 7) & ~7);
+    if top_before_pop != expected_stack_top_before_pop {
+        log("Warning: Improper stack frame pop. Expected stack.top to be %, but it was %.", expected_stack_top_before_pop, top_before_pop);
+    }
 }
 
 
@@ -62,9 +77,11 @@ pop_frame :: inline (using stack: *Stack) {
 */
 
 // NOTE: if pointer is null, we just memset the pushed bytes to zero
-push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := false) -> *void {
+push :: (using stack: *Stack, pointer: *void, size: int, $$indirect := false, loc := #caller_location) -> *void {
     push_size := ifx indirect then size_of(*void) else (size + 7) & ~7;
     if top + push_size >= memory + allocated  return null;
+    
+    // log("%: pushing % bytes %to stack @ %", format_location(loc), push_size, ifx indirect then "(for pointer) ", top);
     
     if indirect {
         top.(**void).* = pointer;   // store the pointer itself instead of the value
@@ -74,16 +91,16 @@ push :: inline (using stack: *Stack, pointer: *void, size: int, $$indirect := fa
         memcpy(top, pointer, size);
     }
     
-    defer top += push_size;
-    return ifx indirect 
-    then pointer 
-    else top;
+    result := ifx indirect then pointer else top;
+    top += push_size;
+    return result;
 }
 
-pop :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
+pop :: (using stack: *Stack, size: int, $$indirect := false, loc := #caller_location) -> *void {
     pop_size := ifx indirect then size_of(*void) else (size + 7) & ~7;
+    // log("%: popped % bytes from stack", format_location(loc), pop_size);
     top -= pop_size;
-    assert(top >= memory, "Invalid stack pop!");
+    assert(top >= memory, "Invalid stack pop! top: %, memory: %, difference: %, pop_size: %", top, memory, top - memory, pop_size);
     return ifx indirect then top.(**void).* else top;
 }
 
@@ -94,12 +111,12 @@ peek :: inline (using stack: *Stack, size: int, $$indirect := false) -> *void {
     return ifx indirect then pointer.(**void).* else pointer;
 }
 
-push_value :: inline (using stack: *Stack, value: *$T) -> *T {
-    return push(stack, value, size_of(T));
+push_value :: inline (using stack: *Stack, value: *$T, loc := #caller_location) -> *T {
+    return push(stack, value, size_of(T), loc = loc);
 }
 
-pop_as :: inline (using stack: *Stack, $T: Type) -> T {
-    return pop(stack, size_of(T)).(*T).*;
+pop_as :: inline (using stack: *Stack, $T: Type, loc := #caller_location) -> T {
+    return pop(stack, size_of(T), loc = loc).(*T).*;
 }
 
 peek_as :: inline (using stack: *Stack, $T: Type) -> T {
@@ -122,26 +139,26 @@ push_array :: inline (using stack: *Stack, array: [] $T, count: int) -> bool, []
     return ok, (*returned_array).(*[]T).*;
 }
 
-push_empty_array :: inline (using stack: *Stack, $T: Type, count: int) -> bool, [] T {
-    ok, array := push_array(stack, null, size_of(T), count);
+push_empty_array :: inline (using stack: *Stack, $T: Type, count: int, loc := #caller_location) -> bool, [] T {
+    ok, array := push_array(stack, null, size_of(T), count, loc = loc);
     return ok, (*array).(*[]T).*;
 }
 
-push_array :: (using stack: *Stack, pointer: *void, element_size: int, count: int) -> bool, Array_View_64 {
-    array := Array_View_64.{ count, push(stack, pointer, element_size * count) };
-    count_pointer := push(stack, *count, size_of(int));
+push_array :: (using stack: *Stack, pointer: *void, element_size: int, count: int, loc := #caller_location) -> bool, Array_View_64 {
+    array := Array_View_64.{ count, push(stack, pointer, element_size * count, loc = loc) };
+    count_pointer := push(stack, *count, size_of(int), loc = loc);
     
     ok := array.data != null && count_pointer != null;
     return ok, array;
 }
 
-pop_array :: inline (using stack: *Stack, $T: Type) -> [] T {
-    return (*pop_array(stack, size_of(T))).(*[]T).*;
+pop_array :: inline (using stack: *Stack, $T: Type, loc := #caller_location) -> [] T {
+    return (*pop_array(stack, size_of(T), loc = loc)).(*[]T).*;
 }
 
-pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
+pop_array :: inline (using stack: *Stack, element_size: int, loc := #caller_location) -> Array_View_64 {
     count := pop_as(stack, int);
-    array := Array_View_64.{ count, pop(stack, element_size * count) };
+    array := Array_View_64.{ count, pop(stack, element_size * count, loc = loc) };
     return array;
 }
 
@@ -154,13 +171,13 @@ pop_array :: inline (using stack: *Stack, element_size: int) -> Array_View_64 {
     I still would ultimately like to not be passing the script here though, or at least we should also have version that just take the Stack.
 */
 
-push_any :: (using stack: *Stack, any: Any, indirect := false) -> bool, Any {
-    result := push(stack, any.value_pointer, any.type.runtime_size, indirect);
+push_any :: (using stack: *Stack, any: Any, indirect := false, loc := #caller_location) -> bool, Any {
+    result := push(stack, any.value_pointer, any.type.runtime_size, indirect, loc = loc);
     return result != null, Any.{ any.type, result };
 }
 
-pop_any :: (using stack: *Stack, type: *Type_Info, indirect := false) -> Any {
-    value_pointer := pop(stack, type.runtime_size, indirect);
+pop_any :: (using stack: *Stack, type: *Type_Info, indirect := false, loc := #caller_location) -> Any {
+    value_pointer := pop(stack, type.runtime_size, indirect, loc = loc);
     return Any.{ type, value_pointer };
 }
 

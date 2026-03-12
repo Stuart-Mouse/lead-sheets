@@ -80,7 +80,6 @@ Node_Block :: struct {
     // subframe_offset:        int; 
 }
 
-// TODO: push/pop stack subframes per every block, even though the actual stack frame is only per named block
 // get_stack_space_in_block :: (script: *Script, requested_size: int, scope: *Node_Block) -> stack_offset: int {
 //     block := get_stack_frame_block(script, scope);
     

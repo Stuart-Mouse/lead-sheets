@@ -532,6 +532,7 @@ evaluate_node_declaration :: (script: *Script, declaration: *Node_Declaration, p
     
     dprint("declaration name: %", get_declaration_name(script, declaration));
     value_pointer := get_value_pointer(script, declaration);
+    // dprint("declaration value_pointer: %", value_pointer);
     
     if declaration.init_expression {
         evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
@@ -669,7 +670,7 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
     if !ok  set_execution_error(script, "Ran out of space on stack!", node = node);
     
     #if DEBUG {
-        dprint("Returning result using stack @ %: ", result.value_pointer, newline = false);
+        dprint("Returning result @ % using stack: ", result.value_pointer, newline = false);
         if !is_aggregate(any.type)  dprint("%", any, newline = false);
         dprint(" (%)", as_type(any.type));
     }
