@@ -75,18 +75,25 @@ Node_Block :: struct {
     
     name:                   string;
     stack_frame_size:       int;
-    stack_offset:           int;
+    stack_offset:           int;    // offset from stack frame
 }
 
+/*
+    This does 2 things:
+        1. returns the current stack watermark and then increments it
+            this gives the caller an absolute offset from the stack frame that they can use directly (no need to sum parent offsets)
+        2. increments the local block's stack size
+            honestly not sure what purpose this stack size serves for non-frame blocks atm
+*/
 get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block) -> stack_offset: int {
-    // block := get_stack_frame_block(script, scope);
-    current_offset := block.stack_frame_size;
+    current_stack_watermark := script.stack_watermark;
     
     // pad to 8 byte alignment
     size := (requested_size + 7) & ~7;
     block.stack_frame_size += size;
+    bump_stack_watermark(script, size);
     
-    return current_offset;
+    return current_stack_watermark;
 }
 
 // get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block, align := true) -> stack_offset: int {
@@ -98,7 +105,6 @@ get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_
 //     return offset;
 // }
 
-// TODO: resolve to closest named block or ast root
 get_stack_frame_block :: (script: *Script, scope: *Node_Block) -> *Node_Block {
     while scope {
         if is_stack_frame_block(script, scope)  return scope;
@@ -122,6 +128,31 @@ get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Decla
         }
     }
     return .[];
+}
+
+bump_stack_watermark :: (script: *Script, size_in_bytes: int) {
+    script.stack_watermark += size_in_bytes;
+    script.stack_high_watermark = max(script.stack_high_watermark, script.stack_watermark);
+}
+
+set_stack_watermark :: (script: *Script, watermark: int) {
+    script.stack_watermark = watermark;
+    script.stack_high_watermark = max(script.stack_high_watermark, watermark);
+}
+
+reset_stack_watermark :: (script: *Script) {
+    script.stack_watermark = 0;
+    script.stack_high_watermark = 0;
+}
+
+#if false
+shelf_watermark_info :: (script: *Script) #expand {
+    previous_watermark      := script.stack_watermark;
+    previous_high_watermark := script.stack_high_watermark;
+    `defer {
+        script.stack_watermark      = previous_watermark;
+        script.stack_high_watermark = previous_high_watermark;
+    }
 }
 
 
@@ -216,10 +247,10 @@ identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i
 Node_Declaration :: struct {
     using #as node_base:    Node;
     left:                   *Node;
-    // union {
+    union {
         value_pointer:      *void;
         stack_offset:       int;
-    // }
+    }
     type_expression:        *Node;
     init_expression:        *Node;
 }
@@ -231,23 +262,7 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     if declaration.flags & .MACRO {
         return declaration.value_pointer;
     }
-    
-    // If the value pointer has already been set then the below logic has already run.
-    // If the node is retypechecked, then the value pointer will have been reset.
-    // TODO: this does not feel robust or reliable...
-    if declaration.value_pointer  return declaration.value_pointer;
-    
-    stack_offset := declaration.stack_offset;
-    
-    scope := declaration.scope;
-    while scope {
-        if is_stack_frame_block(script, scope)  break;
-        stack_offset += scope.stack_offset;
-        scope = scope.scope;
-    }
-    
-    declaration.value_pointer = script.stack.frame + stack_offset;
-    return declaration.value_pointer;
+    return script.stack.frame + declaration.stack_offset;
 }
 
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {

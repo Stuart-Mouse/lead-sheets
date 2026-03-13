@@ -1112,47 +1112,47 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
-            declaration.value_pointer = null; // This is done so that get_value_pointer will have to figure out the new value pointer next time it is run.
+            dprint("declaration name: %", get_declaration_name(script, declaration));
+            dprint("declaration stack_offset: %", declaration.stack_offset);
         }
     }
     return;
 }
 
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    if !is_stack_frame_block(script, block) {
-        block.stack_offset = block.scope.stack_frame_size;
+    shelved_watermark, shelved_high_watermark: int;
+    is_stack_frame := is_stack_frame_block(script, block);
+    
+    if is_stack_frame {
+        shelved_watermark, shelved_high_watermark = script.stack_watermark, script.stack_high_watermark;
+        reset_stack_watermark(script);
+    } else {
+        // TODO: if we are doing incremental typechecking, we need to ensure this watermark is set correctly before calling typecheck_block, otherwise, the stack offset will be set incorrectly.
+        // what are we using blocks' stack offset for though? would be nice if it was a reliable way to set the watermark rather than the other way around...
+        // if we want to insert a declaration into some block, we don't want to have to start all the way back down at the frame to calculate new stack offsets
+        // because we already need to walk any nodes after the inserted declaration to adjust their offsets
+        // so we want to be able to grab the block's stack offset and use that to set the watermark...
+        // maybe we can init the stack offset to -1 or something so that we know when it has not yet been set
+        // wqe probably also want some typechecking flag that indicates an incremental / secondary typecheck pass
+        // anyhow, none of this matters yet since we dont' retypecheck things quite yet...
+        block.stack_offset = script.stack_watermark;
     }
     
-    heaviest_child_block_weight := 0;
-    heaviest_child_block_frame_size := 0;
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
-        
-        // TODO: I don't like this, but not sure what to do atm. I am thinking about how to refactor blocks and other things atm...
-        if it.node_type == {
-          case Node_Block;
-            child_block := it.(*Node_Block);
-            child_weight := child_block.stack_frame_size + child_block.stack_offset;
-            if child_weight > heaviest_child_block_weight {
-                heaviest_child_block_weight = child_weight;
-                heaviest_child_block_frame_size = child_block.stack_frame_size;
-            }
-            
-          case Node_If_Statement;
-          case Node_While_Loop;
-          case Node_For_Loop;
-            child_block := it.(*Node_Flow_Control).block;
-            child_weight := child_block.stack_frame_size + child_block.stack_offset;
-            if child_weight > heaviest_child_block_weight {
-                heaviest_child_block_weight = child_weight;
-                heaviest_child_block_frame_size = child_block.stack_frame_size;
-            }
-        }
     }
-    dprint("stack_frame_size: %", block.stack_frame_size);
-    dprint("heaviest_child_block_frame_size: %", heaviest_child_block_frame_size);
     
-    block.stack_frame_size += heaviest_child_block_frame_size;
+    if is_stack_frame {
+        block.stack_frame_size = script.stack_high_watermark;
+        dprint("block.stack_frame_size: %", block.stack_frame_size);
+        script.stack_watermark, script.stack_high_watermark = shelved_watermark, shelved_high_watermark;
+    } else {
+        // notify the stack frame block of new high watermark
+        // this logic should hold for incremental typechecking
+        stack_frame_block := get_stack_frame_block(script, block);
+        stack_frame_block.stack_frame_size = max(stack_frame_block.stack_frame_size, script.stack_high_watermark);
+    }
+    
     block.value_type = xx void;
     return;
 }
@@ -1174,8 +1174,6 @@ typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, ch
 }
 
 typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // NOTE: stack_offset for it and it_index decls get set later when actually iterating for loop
-    
     if #complete for_loop.control_type == {
       case .RANGE;
         dprint("typechecking range lower");

@@ -1975,9 +1975,7 @@ in order to calculate stack requirements, we will just track a watermark and hig
 then when we are done typechecking a given stack frame we just apply the final value
 
 now, once the language is more complex we won't be able to just use a single set of watermark values in the script context
-    we will need some kind of stack structure 
-    but for now it is fine because the only stack frames we need to consider are named blocks and the main root block
-        and named blocks can only be declared at root scope, so we need at most two sets of watermark values...
+    actually we can, we will just need to store the previous values on the stack when we typecheck_block or whatever
 
 using a watermark system also means we won't need the stupid logic in declarations to add up stack offsets, we'll just know what they are when we hit them.
 
