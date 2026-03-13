@@ -525,6 +525,8 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     // NOTE: prevent re-typechecking identifier which has already been resolved
     if identifier.identifier_type != .UNRESOLVED  return;
     
+    dprint("identifier name: %", identifier.name);
+    
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
         if declaration.value_type == null {
@@ -547,6 +549,9 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
             //     identifier.flags |= .CONSTANT;
             // }
         }
+        
+        dprint("found declaration: %", get_declaration_name(script, declaration));
+        
         
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
@@ -623,7 +628,7 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         }
         if right_type == null {
             dprint("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
-            right_type = typecheck_node(script, operation.right, check_flags, left_type);
+            right_type = typecheck_node_or_return(script, operation.right, check_flags, left_type);
         }
         
       case .ASSIGNMENT;
@@ -1113,15 +1118,33 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
 }
 
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // block.stack_frame_size = 0;
-    // largest_child_block_stack_frame_size := 0;
+    if !is_stack_frame_block(script, block) {
+        block.stack_offset = block.scope.stack_frame_size;
+    }
+    
+    largest_child_block_stack_frame_size := 0;
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
-        // if it.node_type == Node_Block {
-        //     largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, it.(*Node_Block).stack_frame_size);
-        // }
+        
+        // Ok, this check is the problem, for sure (or at least A problem)
+        // this is not going to catch blocks that are inside for loops and other control flow statements
+        // so we really need to do the whole control flow node thing pretty soon I think
+        if it.node_type == {
+          case Node_Block;
+            child_block := it.(*Node_Block);
+            largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, child_block.stack_frame_size);
+            
+          case Node_If_Statement;
+          case Node_While_Loop;
+          case Node_For_Loop;
+            child_block := it.(*Node_Flow_Control).block;
+            largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, child_block.stack_frame_size);
+        }
     }
-    // block.stack_frame_size += largest_child_block_stack_frame_size;
+    dprint("stack_frame_size: %", block.stack_frame_size);
+    dprint("largest_child_block_stack_frame_size: %", largest_child_block_stack_frame_size);
+    
+    block.stack_frame_size += largest_child_block_stack_frame_size;
     block.value_type = xx void;
     return;
 }

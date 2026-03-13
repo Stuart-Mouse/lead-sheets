@@ -110,40 +110,40 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         return VOID_ANY;
         
       case Node_Literal;
-        result = evaluate_node_literal(script, xx node, provided_storage, flags);
+        result = evaluate_literal(script, xx node, provided_storage, flags);
         
       case Node_Identifier;
-        result = evaluate_node_identifier(script, xx node, provided_storage, flags);
+        result = evaluate_identifier(script, xx node, provided_storage, flags);
         
       case Node_Operation;
-        result = evaluate_node_operation(script, xx node, provided_storage, flags);
+        result = evaluate_operation(script, xx node, provided_storage, flags);
         
       case Node_Procedure_Call;
-        result = evaluate_node_procedure_call(script, xx node, provided_storage, flags);
+        result = evaluate_procedure_call(script, xx node, provided_storage, flags);
         
       case Node_Cast;
-        result = evaluate_node_cast(script, xx node, provided_storage, flags);
+        result = evaluate_cast(script, xx node, provided_storage, flags);
         
       case Node_Dot;
-        result = evaluate_node_dot(script, xx node, provided_storage, flags);
+        result = evaluate_dot(script, xx node, provided_storage, flags);
         
       case Node_Subscript;
-        result = evaluate_node_subscript(script, xx node, provided_storage, flags);
+        result = evaluate_subscript(script, xx node, provided_storage, flags);
         
       case Node_Declaration;
-        result = evaluate_node_declaration(script, xx node, provided_storage, flags);
+        result = evaluate_declaration(script, xx node, provided_storage, flags);
         
       case Node_Block;
-        result = evaluate_node_block(script, xx node, provided_storage, flags);
+        result = evaluate_block(script, xx node, provided_storage, flags);
         
       case Node_If_Statement;
-        result = evaluate_node_if_statement(script, xx node, provided_storage, flags);
+        result = evaluate_if_statement(script, xx node, provided_storage, flags);
         
       case Node_While_Loop;
-        result = evaluate_node_while_loop(script, xx node, provided_storage, flags);
+        result = evaluate_while_loop(script, xx node, provided_storage, flags);
         
       case Node_For_Loop;
-        result = evaluate_node_for_loop(script, xx node, provided_storage, flags);
+        result = evaluate_for_loop(script, xx node, provided_storage, flags);
         
       case;
         assert(false, "Unhandled node type in script.my_evaluate_node: %", node.node_type);
@@ -151,7 +151,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
     return result;
 }
 
-evaluate_node_literal :: (script: *Script, literal: *Node_Literal, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_literal :: (script: *Script, literal: *Node_Literal, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     if should_push_by_pointer(literal) {
         assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
     }
@@ -191,12 +191,12 @@ evaluate_node_literal :: (script: *Script, literal: *Node_Literal, provided_stor
         }
         
       case;
-        assert(false, "Invalid literal type in evaluate_node_literal.");
+        assert(false, "Invalid literal type in evaluate_literal.");
     }
     return result;
 }
 
-evaluate_node_identifier :: (script: *Script, identifier: *Node_Identifier, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     result: Any;
     if #complete identifier.identifier_type == {
       case .DECLARATION;
@@ -238,7 +238,7 @@ evaluate_node_identifier :: (script: *Script, identifier: *Node_Identifier, prov
     return result;
 }
 
-evaluate_node_operation :: (script: *Script, operation: *Node_Operation, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_operation :: (script: *Script, operation: *Node_Operation, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     if operation.flags & .OVERLOAD {
         dprint("Evaluating overloaded operator...");
         return script.my_evaluate_node(script, operation.overload_procedure, provided_storage = provided_storage);
@@ -282,7 +282,7 @@ evaluate_node_operation :: (script: *Script, operation: *Node_Operation, provide
     return Any.{ operation.value_type, result_value_pointer };
 }
 
-evaluate_node_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Call, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Call, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     return_value_pointer := get_result_storage(script, procedure_call, provided_storage);
     if !return_value_pointer  return NULL_ANY;
     defer_restore(*script.stack.top);
@@ -334,7 +334,7 @@ evaluate_node_procedure_call :: (script: *Script, procedure_call: *Node_Procedur
     return result_any;
 }
 
-evaluate_node_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     src_type := _cast.value.value_type;
     dst_type := _cast.value_type;
     
@@ -378,10 +378,12 @@ evaluate_node_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *vo
         set_execution_error(script, "Failed to execute cast from % to %. Source value was %", as_type(src.type), as_type(dst.type), src, node = _cast);
         return NULL_ANY;
     }
+    
+    dprint("Returning result of cast: %", dst);
     return dst;
 }
 
-evaluate_node_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     if dot.flags & .IS_ARROW {
         if script.get_virtual_member == null {
             set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = dot);
@@ -468,7 +470,7 @@ evaluate_node_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void =
     return NULL_ANY; // unreachable
 }
 
-evaluate_node_subscript :: (script: *Script, subscript: *Node_Subscript, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_subscript :: (script: *Script, subscript: *Node_Subscript, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     evaluate_node_or_return(script, subscript.base_expression);
     evaluate_node_or_return(script, subscript.indexing_expression);
     
@@ -493,7 +495,7 @@ evaluate_node_subscript :: (script: *Script, subscript: *Node_Subscript, provide
     return prepare_result(script, subscript, element, provided_storage);
 }
 
-evaluate_node_declaration :: (script: *Script, declaration: *Node_Declaration, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     // virtual member delaration
     if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
         if script.declare_virtual_member == null {
@@ -533,6 +535,7 @@ evaluate_node_declaration :: (script: *Script, declaration: *Node_Declaration, p
     dprint("declaration name: %", get_declaration_name(script, declaration));
     value_pointer := get_value_pointer(script, declaration);
     // dprint("declaration value_pointer: %", value_pointer);
+    dprint("declaration value_pointer: %", value_pointer);
     
     if declaration.init_expression {
         evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
@@ -542,7 +545,7 @@ evaluate_node_declaration :: (script: *Script, declaration: *Node_Declaration, p
     return VOID_ANY;
 }
 
-evaluate_node_block :: (script: *Script, block: *Node_Block, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     // NOTE: we don't execute named blocks unless explicitly called
     if block.name && !(flags & .EXPLICIT_CALL)  return VOID_ANY;
     
@@ -565,7 +568,7 @@ evaluate_node_block :: (script: *Script, block: *Node_Block, provided_storage: *
     return VOID_ANY;
 }
 
-evaluate_node_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     evaluate_node_or_return(script, if_statement.condition);
     
     condition := pop_any(*script.stack, if_statement.condition.value_type);
@@ -579,7 +582,7 @@ evaluate_node_if_statement :: (script: *Script, if_statement: *Node_If_Statement
     return VOID_ANY;
 }
 
-evaluate_node_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     while loop := true {
         evaluate_node_or_return(script, while_loop.condition);
         
@@ -595,7 +598,7 @@ evaluate_node_while_loop :: (script: *Script, while_loop: *Node_While_Loop, prov
     return VOID_ANY;
 }
 
-evaluate_node_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     if for_loop.control_type == {
       case .ARRAY;
         array_info := for_loop.array_expression.value_type.(*Type_Info_Array);

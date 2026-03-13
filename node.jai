@@ -76,30 +76,31 @@ Node_Block :: struct {
     statements:             [] *Node;
     
     // TODO: figure out how to not have to store this on every block...?
-    stack_frame_size:       int;
-    // subframe_offset:        int; 
+    // for standard blocks, stack_frame_size should represent only the totla size required for all declarations directly in this block, not couting sub-blocks
+    // for stack frame blocks, the stack frame size should also include the size of the largest sub-blocks, recursively
+    stack_frame_size:    int;
+    stack_offset:        int;
 }
 
-// get_stack_space_in_block :: (script: *Script, requested_size: int, scope: *Node_Block) -> stack_offset: int {
-//     block := get_stack_frame_block(script, scope);
+get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block) -> stack_offset: int {
+    // block := get_stack_frame_block(script, scope);
+    current_offset := block.stack_frame_size;
     
-//     current_offset := block.stack_frame_size;
+    // pad to 8 byte alignment
+    size := (requested_size + 7) & ~7;
+    block.stack_frame_size += size;
     
-//     // pad to 8 byte alignment
-//     size := (requested_size + 7) & ~7;
-//     block.stack_frame_size += size;
+    return current_offset;
+}
+
+// get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block, align := true) -> stack_offset: int {
+//     // block = get_stack_frame_block(script, block);
     
-//     return current_offset;
+//     offset := block.stack_frame_size;
+//     if align then offset = (offset + 7) & ~7;
+//     block.stack_frame_size = offset + requested_size;
+//     return offset;
 // }
-
-get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block, align := true) -> stack_offset: int {
-    block = get_stack_frame_block(script, block);
-    
-    offset := block.stack_frame_size;
-    if align then offset = (offset + 7) & ~7;
-    block.stack_frame_size = offset + requested_size;
-    return offset;
-}
 
 // TODO: resolve to closest named block or ast root
 get_stack_frame_block :: (script: *Script, scope: *Node_Block) -> *Node_Block {
@@ -112,7 +113,6 @@ get_stack_frame_block :: (script: *Script, scope: *Node_Block) -> *Node_Block {
 
 is_stack_frame_block :: (script: *Script, block: *Node_Block) -> bool {
     return block.name || block == script.ast_root;
-    // return true;
 }
 
 // NOTE: caller is not responsible for freeing the returned array view
@@ -216,13 +216,14 @@ identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i
     }
 }
 
+// TODO: value pointer should get set once during evaluation, then other things can just get the value_pointer directly 
 Node_Declaration :: struct {
     using #as node_base:    Node;
     left:                   *Node;
-    union { // use value_pointer if declaration is static, else 
+    // union {
         value_pointer:      *void;
         stack_offset:       int;
-    }
+    // }
     type_expression:        *Node;
     init_expression:        *Node;
 }
@@ -234,7 +235,20 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     if declaration.flags & .MACRO {
         return declaration.value_pointer;
     }
-    return script.stack.frame + declaration.stack_offset;
+    
+    // if declaration.value_pointer  return declaration.value_pointer;
+    
+    stack_offset := declaration.stack_offset;
+    
+    scope := declaration.scope;
+    while scope {
+        if is_stack_frame_block(script, scope)  break;
+        stack_offset += scope.stack_offset;
+        scope = scope.scope;
+    }
+    
+    declaration.value_pointer = script.stack.frame + stack_offset;
+    return declaration.value_pointer;
 }
 
 get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
@@ -350,44 +364,61 @@ Node_Subscript :: struct {
 // ===== Flow Control Statements =====
 
 /*
-    We now have two possible paths ahead here:
-    1. Do this Node_Flow_Control thing, and try to generalize all flow control constructs so that user can implement their own more easily.
-    2. Just attach an owner node pointer to Code_Block and put some overloadable procedure in the script context so that code block can query its owning node for additional declarations that will go into that block's scope.
-        This may be a more attractive option because we will probably want to refactor blocks to work as data scopes as well (so the owner could be a struct literal)
+    TODO: I think we will very soon want to refactor how control flow statements are fit into the AST
+    so that they are attached to the block rather than the other way around.
+    
+    The main reasons for this are so that the block is evaluated 'first'
+        this means it will push a new scope before evaluating the flow control node
+        it also means we don't need to push and pop the scope every time the block executes
+        otherwise, we need to add some eval flag to notify the block that it's eval scope has been managed by the owning node, and that's much more complicated
+    
+    the only downsides I can think of at the moment are:
+        1. the condition of an if statement is evaluated after the scope is pushed
+            - but we can probably fix that
+        2. we now have both and 'owner' node and 'flow control' node on the node_block
+            owner will still be needed for structs and such, but maybe we can just use owner for the flow control node anyhow
+    
+    just now thinking about this, but also, if blocks can return values or be used as expressions, 
+        this means we can have flow control statements return values in a very trivial way
+        because the flow control is not actually returning a value at all, rather the block is
+        but we would really need to workshop some syntax around this and find out what works and what does not
+    
+    ok wait we have one major problem
+        else blocks...
+    
 */
 
-// Node_Flow_Control :: struct {
-//     using #as node_base: Node;
-//     block:          *Node_Block;
-//     declarations:   [] *Node_Declaration;
-// }
+Node_Flow_Control :: struct {
+    using #as node_base: Node;
+    block:          *Node_Block;
+    // declarations:   [] *Node_Declaration;
+}
 
 Node_If_Statement :: struct {
-    using #as node_base:    Node;
-    condition:              *Node;
-    block:                  *Node_Block;
+    using #as flow_control_base: Node_Flow_Control;
+    condition: *Node;
 }
 
 Node_While_Loop :: struct {
-    using #as node_base:    Node;
-    condition:              *Node;
-    block:                  *Node_Block;
+    using #as flow_control_base: Node_Flow_Control;
+    condition: *Node;
 }
 
 Node_For_Loop :: struct {
-    using #as node_base: Node;
+    using #as flow_control_base: Node_Flow_Control;
     control_type: enum { RANGE; ARRAY; LIST; };
     union {
         array_expression:   *Node;
         range:              struct { lower, upper: *Node; };
         list:               [] *Node;
     }
-    block:  *Node_Block;
     
     declarations: [2] *Node_Declaration;
     #overlay(declarations[0]) it_decl:        *Node_Declaration;
     #overlay(declarations[1]) it_index_decl:  *Node_Declaration;
 }
+
+// TODO: is_flow_control_node()
 
 
 

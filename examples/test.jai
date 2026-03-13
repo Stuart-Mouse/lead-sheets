@@ -83,8 +83,8 @@ main :: () {
     y := 16.0;
     z := Vector2.{ 3, 5 };
     
-    a := 3;
-    b := 5;
+    // a := 3;
+    // b := 5;
     
     str := "this is a string";
     
@@ -107,8 +107,8 @@ main :: () {
     declare_variable(*script, "y", y);
     declare_variable(*script, "z", z);
     
-    declare_variable(*script, "a", a);
-    declare_variable(*script, "b", b);
+    // declare_variable(*script, "a", a);
+    // declare_variable(*script, "b", b);
     
     declare_variable(*script, "r1", r1);
     declare_variable(*script, "r2", r2);

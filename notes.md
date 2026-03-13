@@ -1898,6 +1898,7 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
     - will be very convenient when lead sheets is used for things like an in-game console
 - [ ] create rules around interpretted execution
     - main difference will be that nonconstant values can be used as constants in many situations (e.g. a nonconstant type can be used in a declaration's type slot)
+- [ ] optimize stack frame sizes
 
 Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
 
@@ -1947,3 +1948,23 @@ it may be worthwhile in the long run to use custom type info structures rather t
     or maybe not, but it's a least something to consider.
     I will have to evaluate this after getting to the point of allowing users to declare their own data structures in the language.
     And really, the first starting place will just be making array literals actually a thing, and creating those new type infos and storing them somewhere.
+
+
+optimizing stack frame sizes
+
+there are two competing issues at play
+
+as we recurse down, we want to be able to just call get_space_on_stack for any declaration that needs stack space
+ideally, this just immediately gives us our final offset from the stack frame pointer
+
+but we also want to know 
+    how much space is required by each block individually
+    how much space is required by the largest sub-block(s) recursively
+
+we could have some proceudre like    
+determine_stack_space_required_by_block
+which iterates over all the statements in the block, and totals up the required space
+we will probably want to have something like this in the long run because we would need to recalculate this when new statements are added to a block.
+
+we don't know how much space each block will require until
+
