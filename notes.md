@@ -1898,7 +1898,10 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
     - will be very convenient when lead sheets is used for things like an in-game console
 - [ ] create rules around interpretted execution
     - main difference will be that nonconstant values can be used as constants in many situations (e.g. a nonconstant type can be used in a declaration's type slot)
-- [ ] optimize stack frame sizes
+- [X] optimize stack frame sizes
+    - [X] consider location of block within parent in stack requirement calculation
+- [ ] implement else blocks
+- [ ] implement expression-style if
 
 Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
 
@@ -1952,19 +1955,47 @@ it may be worthwhile in the long run to use custom type info structures rather t
 
 optimizing stack frame sizes
 
-there are two competing issues at play
+the current solution works, but it has the annoying aspect that we need to check for blocks and control flow nodes manually in typecheck_block to make sure we get the stack requirements of all child blocks
+I don't like this because it's jsut another thing in the way of being able to let users make their own control flow nodes
+but it also seems that doing the little inversion of putting the control flow nodes on the block will not work because of else blocks
+and if we allow blocks as expressions later or put them on other nodes, that will create a tricky situation for propogating info about stack use requirements
 
-as we recurse down, we want to be able to just call get_space_on_stack for any declaration that needs stack space
-ideally, this just immediately gives us our final offset from the stack frame pointer
+so probably the best solution will just be to add a second return value to typecheck_node which is the stack space requirement for a given node
+the only issue here as well, is that we can't just trivially add the stack space requirements of all nodes in a block because we want to also consider control flow and use the minimum possible space
 
-but we also want to know 
-    how much space is required by each block individually
-    how much space is required by the largest sub-block(s) recursively
+so what do we know
+any time we open a block
+    we don't need to worry about using space that overlaps with declarations that come after the block in the same parent block
+    the space used by the block will be reclaimed immediately after the block ends, which will always be within the same parent statement
 
-we could have some proceudre like    
-determine_stack_space_required_by_block
-which iterates over all the statements in the block, and totals up the required space
-we will probably want to have something like this in the long run because we would need to recalculate this when new statements are added to a block.
 
-we don't know how much space each block will require until
+New approach
+
+in order to calculate stack requirements, we will just track a watermark and high watermark in the script context
+then when we are done typechecking a given stack frame we just apply the final value
+
+now, once the language is more complex we won't be able to just use a single set of watermark values in the script context
+    we will need some kind of stack structure 
+    but for now it is fine because the only stack frames we need to consider are named blocks and the main root block
+        and named blocks can only be declared at root scope, so we need at most two sets of watermark values...
+
+using a watermark system also means we won't need the stupid logic in declarations to add up stack offsets, we'll just know what they are when we hit them.
+
+
+there are two things that contribute to the stack size requirements of a block
+    declarations (just sum of sizes their of values)
+    sub-blocks   (only the largest + latest will contribute to overall stack size)
+    
+    if a declaration is added to a block, it just adds its value type's size (same works for removal)
+    but as soon as a declaration is added or removed, that changes the relative weight of any other sub-blocks, since they may or may not overlap that declaration
+    so if we add a declaration we actually need to recalculate the overall weight of the block, reconsidering sub blocks' weights
+    
+
+actual block stack weight = block.stack_weight + block.local_stack_offset
+
+stack weight recalculations only propogate up the ast to the root, so forunately we dont' need to recurse down into subblocks to do recalculations
+
+
+
+
 

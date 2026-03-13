@@ -1112,6 +1112,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
+            declaration.value_pointer = null; // This is done so that get_value_pointer will have to figure out the new value pointer next time it is run.
         }
     }
     return;
@@ -1122,29 +1123,36 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
         block.stack_offset = block.scope.stack_frame_size;
     }
     
-    largest_child_block_stack_frame_size := 0;
+    heaviest_child_block_weight := 0;
+    heaviest_child_block_frame_size := 0;
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
         
-        // Ok, this check is the problem, for sure (or at least A problem)
-        // this is not going to catch blocks that are inside for loops and other control flow statements
-        // so we really need to do the whole control flow node thing pretty soon I think
+        // TODO: I don't like this, but not sure what to do atm. I am thinking about how to refactor blocks and other things atm...
         if it.node_type == {
           case Node_Block;
             child_block := it.(*Node_Block);
-            largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, child_block.stack_frame_size);
+            child_weight := child_block.stack_frame_size + child_block.stack_offset;
+            if child_weight > heaviest_child_block_weight {
+                heaviest_child_block_weight = child_weight;
+                heaviest_child_block_frame_size = child_block.stack_frame_size;
+            }
             
           case Node_If_Statement;
           case Node_While_Loop;
           case Node_For_Loop;
             child_block := it.(*Node_Flow_Control).block;
-            largest_child_block_stack_frame_size = max(largest_child_block_stack_frame_size, child_block.stack_frame_size);
+            child_weight := child_block.stack_frame_size + child_block.stack_offset;
+            if child_weight > heaviest_child_block_weight {
+                heaviest_child_block_weight = child_weight;
+                heaviest_child_block_frame_size = child_block.stack_frame_size;
+            }
         }
     }
     dprint("stack_frame_size: %", block.stack_frame_size);
-    dprint("largest_child_block_stack_frame_size: %", largest_child_block_stack_frame_size);
+    dprint("heaviest_child_block_frame_size: %", heaviest_child_block_frame_size);
     
-    block.stack_frame_size += largest_child_block_stack_frame_size;
+    block.stack_frame_size += heaviest_child_block_frame_size;
     block.value_type = xx void;
     return;
 }

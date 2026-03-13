@@ -71,15 +71,11 @@ should_push_by_pointer :: (node: *Node) -> bool {
 Node_Block :: struct {
     using #as node_base:    Node;
     owner:                  *Node;
-    
-    name:                   string;
     statements:             [] *Node;
     
-    // TODO: figure out how to not have to store this on every block...?
-    // for standard blocks, stack_frame_size should represent only the totla size required for all declarations directly in this block, not couting sub-blocks
-    // for stack frame blocks, the stack frame size should also include the size of the largest sub-blocks, recursively
-    stack_frame_size:    int;
-    stack_offset:        int;
+    name:                   string;
+    stack_frame_size:       int;
+    stack_offset:           int;
 }
 
 get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block) -> stack_offset: int {
@@ -236,7 +232,10 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
         return declaration.value_pointer;
     }
     
-    // if declaration.value_pointer  return declaration.value_pointer;
+    // If the value pointer has already been set then the below logic has already run.
+    // If the node is retypechecked, then the value pointer will have been reset.
+    // TODO: this does not feel robust or reliable...
+    if declaration.value_pointer  return declaration.value_pointer;
     
     stack_offset := declaration.stack_offset;
     
@@ -366,11 +365,6 @@ Node_Subscript :: struct {
 /*
     TODO: I think we will very soon want to refactor how control flow statements are fit into the AST
     so that they are attached to the block rather than the other way around.
-    
-    The main reasons for this are so that the block is evaluated 'first'
-        this means it will push a new scope before evaluating the flow control node
-        it also means we don't need to push and pop the scope every time the block executes
-        otherwise, we need to add some eval flag to notify the block that it's eval scope has been managed by the owning node, and that's much more complicated
     
     the only downsides I can think of at the moment are:
         1. the condition of an if statement is evaluated after the scope is pushed
