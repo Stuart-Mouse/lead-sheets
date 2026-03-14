@@ -8,7 +8,7 @@ Script :: struct {
     directives:             [..] Directive;
     named_blocks:           [..] *Node_Block;
     type_table:             [..] Name_And_Type;
-    operator_table:         [..] Operator;
+    operator_table:         [..] Operator_Info;
     
     // added for the sake of convenience and use in repl
     global_declarations:    [..] *Node_Declaration;
@@ -139,10 +139,14 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
     
     // recurse for certain node types
     if node.node_type == {
-      case Node_Operation;
-        operation := node.(*Node_Operation);
+      case Node_Binary_Operator;
+        operation := node.(*Node_Binary_Operator);
         return walk_nodes(script, xx *operation.left, callback, data) 
             && walk_nodes(script, xx *operation.right, callback, data);
+            
+      case Node_Unary_Operator;
+        operation := node.(*Node_Unary_Operator);
+        return walk_nodes(script, xx *operation.expression, callback, data);
         
       case Node_Procedure_Call;
         procedure_call := node.(*Node_Procedure_Call);

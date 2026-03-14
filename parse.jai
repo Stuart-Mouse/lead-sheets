@@ -293,10 +293,10 @@ parse_leaf :: (using script: *Script) -> *Node {
     is_operator, operator_index := get_prefix_operator(script, token);
     if is_operator {
         dprint("PREFIX OPERATOR (%)", token.text);
-        precedence := get_operator(script, operator_index).precedence;
+        precedence := get_operator_info(script, operator_index).precedence;
         left := my_parse_expression(script, precedence);
         if left == null  return null;
-        return make_operation(script, token, operator_index, left, null);
+        return make_operator(script, token, operator_index, left, null);
     }
     
     if token.type == {
@@ -552,14 +552,14 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     // If we hit a binary operator but its precedence is too low, we return left back to caller.
     is_operator, operator_index := get_binary_operator(script, token);
     if is_operator {
-        _operator := get_operator(script, operator_index);
+        _operator := get_operator_info(script, operator_index);
         if _operator.precedence <= min_prec  return left;
         
         operator_token := get_token(script);
         right := my_parse_expression(script, _operator.precedence);
         if right == null  return null;
         
-        return make_operation(script, operator_token, operator_index, left, right);
+        return make_operator(script, operator_token, operator_index, left, right);
     }
     
     return left;

@@ -218,15 +218,15 @@ lex_next_token :: (script: *Script) -> Token {
     {
         best_match, best_match_len := -1;
         for script.operator_table {
-            if it.token_text.count > best_match_len 
-            && begins_with(file, it.token_text) {
+            if it.token.count > best_match_len 
+            && begins_with(file, it.token) {
                 best_match = it_index;
-                best_match_len = it.token_text.count;
+                best_match_len = it.token.count;
             }
         }
         if best_match >= 0 {
             _operator := *script.operator_table[best_match];
-            return make_token(.OPERATOR, _operator.token_text.count);
+            return make_token(.OPERATOR, _operator.token.count);
         }
     }
     

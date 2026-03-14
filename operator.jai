@@ -1,4 +1,3 @@
-
 /*
     Operators
     
@@ -8,32 +7,7 @@
     In order to do this, I think I will need to first cleanly separate the idea of operators as a lexical construct from operators as a particular action performed on some operand.
     I think for now I will just differntiate with the term 'operator' vs 'operation' where the operator is the lexical construct and the operation is the overloadable, typed construct.
     
-    
-    TODO: 
-        allow user to extend the operator table
-            ** init scripts with default operator table values
-            user can register new operators in similar way to procedures or directives
-        
-        ** update lexer so that operators are parsed based on the script's operator table
-        
-        ** maybe even make a generalized "OPERATOR" token type since how would we identify such tokens otherwise?
-            if doing this, then token may as well store the operator id (we will have it from doing the operator table lookup in the lexer)
-            alternatively, we still use unique tokens for each operator type, but then we must go about implementing the user token thing
-                otherwise user is still restricted to those tokens which already exist, obviously
-            
-            and even if the user can add new tokens in some generalized way, we have the problem that the lexer still needs to be able to handle those new tokens
-                so then we get roped into adding either lexer callbacks or making lex_next_token totally overridable (NOTE: this is already the case, actually)
-                but still, we don't really want to force the user to override lex_next_token just to add a new operator
-                overriding the lexer proc or adding new tokens entirely is a very heavy-weight thing and probably also means the user now has added all new parsing and typechecking logic too
-                I want the user to only have to go as deep as they really need to in order to add new functionality, yknow?
-            
-        
-        update operation node to support replacement node in a similar way to directives
-        
-        refactor operand swapping so that it only occurs during execution / evaluation, not on AST
-    
-    
-    Stages of Operator Resolution
+    Stages of Operator_Info Resolution
     
     lexing operators
         concerns only a sequence of characters, no disambiguation over operator's lexical type (prefix, postfix, binary)
@@ -54,14 +28,14 @@ is_operator :: inline (token: Token, text := "") -> bool {
     return token.type == .OPERATOR && (!text || token.text == text);
 }
 
-get_operator :: inline (script: *Script, operator_index: int) -> *Operator { 
-    return *script.operator_table[operator_index]; 
+get_operator_info :: inline (script: *Script, operator_id: Operator_ID) -> *Operator_Info { 
+    return *script.operator_table[operator_id]; 
 }
 
 get_prefix_operator :: (script: *Script, token: Token) -> bool, int {
     for script.operator_table {
-        if it.kind != .PREFIX  continue;
-        if it.token_text == token.text {
+        if it.lexical_type != .PREFIX  continue;
+        if it.token == token.text {
             return true, it_index;
         }
     }
@@ -70,8 +44,8 @@ get_prefix_operator :: (script: *Script, token: Token) -> bool, int {
 
 get_postfix_operator :: (script: *Script, token: Token) -> bool, int {
     for script.operator_table {
-        if it.kind != .POSTFIX  continue;
-        if it.token_text == token.text {
+        if it.lexical_type != .POSTFIX  continue;
+        if it.token == token.text {
             return true, it_index;
         }
     }
@@ -86,14 +60,14 @@ get_binary_operator :: (script: *Script, token: Token) -> bool, int {
 get_binary_operator :: (script: *Script, token: string) -> bool, int {
     for script.operator_table {
         if is_unary(it) continue;
-        if it.token_text == token {
+        if it.token == token {
             return true, it_index;
         }
     }
     return false, -1;
 }
 
-default_operator_table :: Operator.[
+default_operator_table :: Operator_Info.[
     .{ .ASSIGNMENT, "=",  1, "" },
     .{ .ASSIGNMENT, "+=", 1, "" },
     .{ .ASSIGNMENT, "-=", 1, "" },
@@ -126,28 +100,32 @@ default_operator_table :: Operator.[
     .{ .PREFIX, "!",  7, "" },
 ];
 
-Operator :: struct {
-    kind:               Kind;
-    token_text:         string;
+Operator_ID :: int;
+
+Operator_Info :: struct {
+    lexical_type:               Lexical_Type;
+    token:              string;
     precedence:         int;
     directive_name:     string;
     
-    Kind :: enum { UNINITIALIZED; BINARY; PREFIX; POSTFIX; ASSIGNMENT; };
+    Lexical_Type :: enum { UNINITIALIZED; BINARY; PREFIX; POSTFIX; ASSIGNMENT; };
 }
 
-is_unary :: inline (kind: Operator.Kind) -> bool { return kind == .PREFIX || kind == .POSTFIX; }
+is_unary :: inline (lexical_type: Operator_Info.Lexical_Type) -> bool { return lexical_type == .PREFIX || lexical_type == .POSTFIX; }
+is_unary :: inline (op: Operator_Info) -> bool { return is_unary(op.lexical_type); }
 
-is_unary :: inline (op: Operator) -> bool { return is_unary(op.kind); }
+is_binary :: inline (lexical_type: Operator_Info.Lexical_Type) -> bool { return lexical_type == .BINARY || lexical_type == .ASSIGNMENT; }
+is_binary :: inline (op: Operator_Info) -> bool { return is_binary(op.lexical_type); }
 
 
-register_operator :: (script: *Script, kind: Operator.Kind, token: string, precedence: int, directive := "") -> bool {
+register_operator :: (script: *Script, lexical_type: Operator_Info.Lexical_Type, token: string, precedence: int, directive := "") -> bool {
     for script.operator_table {
-        if it.kind == kind && it.token_text = token {
-            log("Error: Cannot register % operator '%'. This operator already exists in the script's operator table.", kind, token);
+        if it.lexical_type == lexical_type && it.token = token {
+            log("Error: Cannot register % operator '%'. This operator already exists in the script's operator table.", lexical_type, token);
             return false;
         }
     }
-    array_add(*script.operator_table, .{ kind, token, precedence, directive });
+    array_add(*script.operator_table, .{ lexical_type, token, precedence, directive });
     return true;
 }
 
@@ -184,7 +162,7 @@ Builtin_Operation_ID :: int;
 
     append(*builder, #string JAI
     BUILTIN_OPERATIONS :: (
-        struct { type: Operator.Kind; identifier: string; left: Type; right: Type; result: Type; is_symmetric: bool; }
+        struct { type: Operator_Info.Lexical_Type; identifier: string; left: Type; right: Type; result: Type; is_symmetric: bool; }
     ).[
     JAI);
     
@@ -285,7 +263,7 @@ Builtin_Operation_ID :: int;
 //       for example, if we know the type of one side of the operation, but not the other, then perhaps we can use the side we do know to intelligently hint a type for the other side?
 resolve_builtin_operation :: (
     identifier:     string, 
-    type:           Operator.Kind, 
+    type:           Operator_Info.Lexical_Type, 
     left_type:      *Type_Info, 
     right_type:     *Type_Info
 ) -> (

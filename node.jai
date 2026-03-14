@@ -209,6 +209,7 @@ Node_Identifier :: struct {
     }
 }
 
+#if false
 is_unresolved_identifier :: (node: *Node) -> bool {
     return node 
         && node.node_type == Node_Identifier 
@@ -332,30 +333,40 @@ is_malleable :: (literal: *Node_Literal) -> bool {
     return (literal.flags & .IS_MALLEABLE).(bool);
 }
 
-
-
-Node_Operation :: struct {
-    using #as node_base:    Node;
-    name:                   string;
-    operator_index:         int;
+Node_Operator :: struct {
+    using #as node_base: Node;
+    token:          string;
+    operator_id:    Operator_ID;
+    
     union { // check node.flag & .OVERLOAD
         builtin_operation_index:    Builtin_Operation_ID;
         overload_procedure:         *Node_Procedure_Call;
     }
-    left, right:    *Node;      // only left is used if .UNARY flag is present
-    directive:      *Node_Directive;
+    directive: *Node_Directive;
 }
 
-get_operator :: inline (script: *Script, node: *Node_Operation) -> *Operator { 
-    return get_operator(script, node.operator_index); 
+Node_Binary_Operator :: struct {
+    using #as operator_base: Node_Operator;
+    left, right: *Node;
 }
 
-get_precedence :: inline (script: *Script, node: *Node_Operation) -> int {
-    return get_operator(script, node).precedence;
+Node_Unary_Operator :: struct {
+    using #as operator_base: Node_Operator;
+    expression: *Node;
 }
 
-get_operator_kind :: inline (script: *Script, node: *Node_Operation) -> Operator.Kind {
-    return get_operator(script, node).kind;
+
+
+get_operator_info :: inline (script: *Script, node: *Node_Operator) -> *Operator_Info { 
+    return get_operator_info(script, node.operator_id); 
+}
+
+get_precedence :: inline (script: *Script, node: *Node_Operator) -> int {
+    return get_operator_info(script, node).precedence;
+}
+
+get_operator_lexical_type :: inline (script: *Script, node: *Node_Operator) -> Type {
+    return get_operator_node_type(script, node).kind;
 }
 
 // TODO: maybe remove Node_Dot and Node_Subscript in favor of just using a general Binary Operator Node
@@ -394,7 +405,6 @@ Node_Subscript :: struct {
     
     ok wait we have one major problem
         else blocks...
-    
 */
 
 Node_Flow_Control :: struct {
@@ -492,18 +502,40 @@ make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {
 
 // NOTE: It is actually important that one call make_operation instead of making the node manually!
 //       This is because we do the extra shenanigans for handling operator directives here.
-make_operation :: (script: *Script, source_token: Token, operator_index: int, left: *Node, right: *Node) -> *Node_Operation {
-    operation := alloc_node(script, Node_Operation, loc = source_token.location, trivia = source_token.trivia);
-    operation.name           = source_token.text;
-    operation.operator_index = operator_index;
-    operation.left           = left;
-    operation.right          = right;
+make_operator :: (script: *Script, source_token: Token, operator_id: int, left: *Node, right: *Node, loc := #caller_location) -> *Node_Operator {
+    operator_info := get_operator_info(script, operator_id);
     
-    _operator := get_operator(script, operator_index);
+    base_operator: *Node_Operator;
+    if #complete operator_info.lexical_type == {
+      case .PREFIX; #through;
+      case .POSTFIX;
+        unary_operator := alloc_node(script, Node_Unary_Operator, loc = source_token.location, trivia = source_token.trivia);
+        unary_operator.token       = source_token.text;
+        unary_operator.operator_id = operator_id;
+        unary_operator.expression  = left;
+        
+        base_operator = unary_operator;
+        
+      case .BINARY; #through;
+      case .ASSIGNMENT;
+        binary_operator := alloc_node(script, Node_Binary_Operator, loc = source_token.location, trivia = source_token.trivia);
+        binary_operator.token       = source_token.text;
+        binary_operator.operator_id = operator_id;
+        binary_operator.left        = left;
+        binary_operator.right       = right;
+        
+        if operator_info.lexical_type == .ASSIGNMENT then binary_operator.flags |= .MUST_BE_STATEMENT_ROOT;
+        
+        base_operator = binary_operator;
+        
+      case .UNINITIALIZED;
+      case;
+        assert(false, );
+        set_parse_error(script, "Invalid operator lexical type in make_operator: %", operator_info.lexical_type, loc = source_token.location);
+        return null;
+    }
     
-    if _operator.kind == .ASSIGNMENT then operation.flags |= .MUST_BE_STATEMENT_ROOT;
-    
-    if _operator.directive_name {
+    if operator_info.directive_name {
         directive := alloc_node(script, Node_Directive, loc = source_token.location, trivia = source_token.trivia);
         directive.name = source_token.text;
         
@@ -514,21 +546,30 @@ make_operation :: (script: *Script, source_token: Token, operator_index: int, le
             }
         }
         if directive.directive_index == -1 {
-            set_parse_error(script, "%: Unable to resolve directive '%'\n", directive.location, directive.name);
+            set_parse_error(script, "Unable to resolve directive '%'\n", directive.name, loc = directive.location);
             return null;
         }
         
-        directive.arguments = array_copy((*Node).[operation.left, operation.right],, get_pool_allocator(*script.pool));
+        // TODO: could add some get_operands(*Node_Operator) -> [] *Node
+        if base_operator.node_type == {
+          case Node_Unary_Operator;
+            unary_operator := base_operator.(*Node_Unary_Operator);
+            directive.arguments = array_copy((*Node).[unary_operator.expression],, get_pool_allocator(*script.pool));
+            
+          case Node_Binary_Operator;
+            binary_operator := base_operator.(*Node_Binary_Operator);
+            directive.arguments = array_copy((*Node).[binary_operator.left, binary_operator.right],, get_pool_allocator(*script.pool));
+        }
         
         if !evaluate_directive(script, directive, .PARSE) {
-            set_parse_error(script, "%: failed while trying to execute a directive during parsing.", source_token.location);
+            set_parse_error(script, "Failed while trying to execute a directive during parsing.", loc = source_token.location);
             return null;
         }
         
-        operation.directive = directive;
+        base_operator.directive = directive;
     }
     
-    return operation;
+    return base_operator;
 }
 
 make_procedure_call :: (script: *Script, source_token: Token, proc_expr: *Node, arg_exprs: [] *Node) -> *Node_Procedure_Call {

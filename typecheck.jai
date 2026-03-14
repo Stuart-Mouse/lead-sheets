@@ -55,19 +55,20 @@ typecheck_node :: (
     check_flags &= ~.IS_STATEMENT_ROOT;
     
     if node.node_type == {
-      case Node_Directive;       typecheck_directive       (script, xx node, check_flags, hint_type);
-      case Node_Literal;         typecheck_literal         (script, xx node, check_flags, hint_type);
-      case Node_Identifier;      typecheck_identifier      (script, xx node, check_flags, hint_type);
-      case Node_Operation;       typecheck_operation       (script, xx node, check_flags, hint_type);
-      case Node_Procedure_Call;  typecheck_procedure_call  (script, xx node, check_flags, hint_type);
-      case Node_Cast;            typecheck_cast            (script, xx node, check_flags, hint_type);
-      case Node_Dot;             typecheck_dot             (script, xx node, check_flags, hint_type);
-      case Node_Subscript;       typecheck_subscript       (script, xx node, check_flags, hint_type);
-      case Node_Declaration;     typecheck_declaration     (script, xx node, check_flags, hint_type);
-      case Node_Block;           typecheck_block           (script, xx node, check_flags, hint_type);
-      case Node_If_Statement;    typecheck_if_statement    (script, xx node, check_flags, hint_type);
-      case Node_While_Loop;      typecheck_while_loop      (script, xx node, check_flags, hint_type);
-      case Node_For_Loop;        typecheck_for_loop        (script, xx node, check_flags, hint_type);
+      case Node_Directive;         typecheck_directive       (script, xx node, check_flags, hint_type);
+      case Node_Literal;           typecheck_literal         (script, xx node, check_flags, hint_type);
+      case Node_Identifier;        typecheck_identifier      (script, xx node, check_flags, hint_type);
+      case Node_Unary_Operator;    typecheck_unary_operator  (script, xx node, check_flags, hint_type);
+      case Node_Binary_Operator;   typecheck_binary_operator (script, xx node, check_flags, hint_type);
+      case Node_Procedure_Call;    typecheck_procedure_call  (script, xx node, check_flags, hint_type);
+      case Node_Cast;              typecheck_cast            (script, xx node, check_flags, hint_type);
+      case Node_Dot;               typecheck_dot             (script, xx node, check_flags, hint_type);
+      case Node_Subscript;         typecheck_subscript       (script, xx node, check_flags, hint_type);
+      case Node_Declaration;       typecheck_declaration     (script, xx node, check_flags, hint_type);
+      case Node_Block;             typecheck_block           (script, xx node, check_flags, hint_type);
+      case Node_If_Statement;      typecheck_if_statement    (script, xx node, check_flags, hint_type);
+      case Node_While_Loop;        typecheck_while_loop      (script, xx node, check_flags, hint_type);
+      case Node_For_Loop;          typecheck_for_loop        (script, xx node, check_flags, hint_type);
       case;
         set_typecheck_error(script, "Unhandled node type % in typecheck_node.", node.node_type, node = node);
     }
@@ -379,7 +380,11 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         return false;
         
       // NOTE: it is possible these nodes may be able to produce valid lvalues in the future
-      case Node_Operation;
+      case Node_Binary_Operator;
+        if need_lvalue then set_typecheck_error(script, "Using the result of an operation as an lvalue is not currently supported", node = node);
+        return false;
+        
+      case Node_Unary_Operator;
         if need_lvalue then set_typecheck_error(script, "Using the result of an operation as an lvalue is not currently supported", node = node);
         return false;
         
@@ -533,25 +538,8 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
             set_typecheck_error(script, "Identifier '%' used before its declaration.", identifier.name, node = identifier);
             return;
         }
-        // TODO: we cannot mark the identifier as constant based on the declaration yet, 
-        //       since the declaration may later be referenced by another identifier as an lvalue, making the declaration non-constant
-        //       This is fine since we don't really do any constant evaluation on the AST, but when we lower to bytecode, 
-        //       we will need to consider that a DECLARATION identifier may yet need to be checked for constancy.
-        // TODO: if the declaration is a macro though, and the init_expression of the macro is constant, then we can still go ahead and safely mark the identifier as constant
-        //       this may be a good idea to go ahead and implement since it would allow us to use such an identifier in a type expression.
-        if declaration.flags & .IS_CONSTANT {
-            // TODO: probably fix this case, it will matter eventually
-            // if check_flags & .EXPECT_LVALUE {
-            //     dprint("removing IS_CONSTANT flag from declaration '%' because its identifier is being used as an lvalue", get_declaration_name(script, declaration));
-            //     declaration.flags &= ~.IS_CONSTANT;
-            // }
-            // if declaration.flags & .MACRO {
-            //     identifier.flags |= .CONSTANT;
-            // }
-        }
         
         dprint("found declaration: %", get_declaration_name(script, declaration));
-        
         
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
@@ -581,37 +569,33 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         }
     }
     
-    // NOTE: we don't attach an error message here
+    // NOTE: we don't attach an error message here, because most likely this error will be caught and handled
     set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
     return;
 }
 
 
-typecheck_operation :: (using script: *Script, operation: *Node_Operation, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    if operation.directive {
-        typecheck_node_or_return(script, operation.directive, check_flags, hint_type);
-        if operation.directive.runtime_node  return;
+typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Binary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    if binary_operator.directive {
+        typecheck_node_or_return(script, binary_operator.directive, check_flags, hint_type);
+        if binary_operator.directive.runtime_node  return;
     }
     
     left_type, right_type: *Type_Info;
     
-    _operator := get_operator(script, operation);
-    if _operator.kind == {
-      case .PREFIX; #through;
-      case .POSTFIX;
-        left_type = typecheck_node_or_return(script, operation.left, check_flags, hint_type);
-        
+    operator_info := get_operator_info(script, binary_operator);
+    if operator_info.lexical_type == {
       case .BINARY;
         // If the one side is a number literal and the other is not, then we will skip typechecking that side until we have a type hint from the other side.
-        left\_is_number_literal := is_number_literal(operation.left);
-        right_is_number_literal := is_number_literal(operation.right);
+        left\_is_number_literal := is_number_literal(binary_operator.left);
+        right_is_number_literal := is_number_literal(binary_operator.right);
         
         // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
         if !(left\_is_number_literal && !right_is_number_literal) {
-            left_type  = my_typecheck_node(script, operation.left,  check_flags, hint_type);
+            left_type  = my_typecheck_node(script, binary_operator.left,  check_flags, hint_type);
         }
         if !(right_is_number_literal && !left\_is_number_literal) {
-            right_type = my_typecheck_node(script, operation.right, check_flags, hint_type);
+            right_type = my_typecheck_node(script, binary_operator.right, check_flags, hint_type);
         }
         
         // If both come back null on first try, we return the upstream error.
@@ -624,49 +608,52 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
         // Otherwise, try to typecheck whichever one previously failed with the type hint of the other side.
         if left_type == null {
             dprint("Info: Failed to typecheck left operand on first attempt, trying again with type hint: %", as_type(right_type));
-            left_type  = typecheck_node_or_return(script, operation.left,  check_flags, right_type);
+            left_type  = typecheck_node_or_return(script, binary_operator.left,  check_flags, right_type);
         }
         if right_type == null {
             dprint("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
-            right_type = typecheck_node_or_return(script, operation.right, check_flags, left_type);
+            right_type = typecheck_node_or_return(script, binary_operator.right, check_flags, left_type);
         }
         
       case .ASSIGNMENT;
         // NOTE: we ignore hint_type because assignment expressions must be used at statement-level anyhow.
-        left_type = typecheck_node_or_return(script, operation.left, check_flags, null);
-        if !set_as_lvalue(script, operation.left)  return;
+        left_type = typecheck_node_or_return(script, binary_operator.left, check_flags, null);
+        if !set_as_lvalue(script, binary_operator.left)  return;
         
-        right_type = typecheck_node_or_return(script, operation.right, check_flags, left_type);
+        right_type = typecheck_node_or_return(script, binary_operator.right, check_flags, left_type);
         
         // special case: operator = is always a simple memcpy
-        if operation.name == "=" {
+        if binary_operator.token == "=" {
             if left_type != right_type {
                 if left_type.type == .ANY {
                     // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
-                    if operation.left.node_type == Node_Dot {
-                        dot := operation.left.(*Node_Dot);
+                    if binary_operator.left.node_type == Node_Dot {
+                        dot := binary_operator.left.(*Node_Dot);
                         if dot.flags & .IS_ARROW {
                             // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
                             //       however, there's no dynamic type assertion being done in that case, which is not really safe.
                             //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
-                            ok, replacement := try_implicit_cast(script, operation.left, right_type); 
+                            ok, replacement := try_implicit_cast(script, binary_operator.left, right_type); 
                             if !ok  return;
-                            if replacement  replace_node(*operation.left, replacement);
-                            if !set_as_lvalue(script, operation.left)  return;
+                            if replacement  replace_node(*binary_operator.left, replacement);
+                            if !set_as_lvalue(script, binary_operator.left)  return;
                         }
                     }
                 } else {
-                    ok, replacement := try_implicit_cast(script, operation.right, left_type); 
+                    ok, replacement := try_implicit_cast(script, binary_operator.right, left_type); 
                     if !ok  return;
-                    if replacement  replace_node(*operation.right, replacement);
+                    if replacement  replace_node(*binary_operator.right, replacement);
                 }
                 
                 // NOTE: this assertion enforces that the LHS Any case is wrapped in a cast
-                assert(operation.left.value_type == operation.right.value_type);
+                assert(binary_operator.left.value_type == binary_operator.right.value_type);
             }
-            operation.value_type = xx void;
+            binary_operator.value_type = xx void;
             return;
         }
+        
+      case;
+        assert(false, "Invalid operator lexical type in typecheck_binary_operator: %", operator_info.lexical_type);
     }
     
     // TODO: We could still use some smarter type coercion here, probably. 
@@ -674,40 +661,77 @@ typecheck_operation :: (using script: *Script, operation: *Node_Operation, check
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    builtin_operation_index, swap_args := resolve_builtin_operation(operation.name, _operator.kind, left_underlying_type, right_underlying_type);
+    builtin_operation_index, swap_args := resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
     if builtin_operation_index >= 0 {
-        operation.builtin_operation_index = builtin_operation_index;
+        binary_operator.builtin_operation_index = builtin_operation_index;
         
-        if swap_args then operation.flags |= .SWAP_OPERANDS;
+        if swap_args then binary_operator.flags |= .SWAP_OPERANDS;
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
-        operation.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
+        binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
         dprint("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_index]);
         
         if left_type.type == .ENUM && left_type == right_type {
-            if operation.value_type != left_underlying_type {
-                set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(operation.value_type), node = operation);
+            if binary_operator.value_type != left_underlying_type {
+                set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(binary_operator.value_type), node = binary_operator);
                 return;
             }
             dprint("using left type as value type");
-            operation.value_type = left_type;
+            binary_operator.value_type = left_type;
         }
         return;
     }
     
     // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
-    procedure_call := alloc_node(script, Node_Procedure_Call, scope = operation.scope, loc = operation.location);
-    procedure_call.procedure_expression = make_identifier(script, operation.name, loc = operation.location);
+    procedure_call := alloc_node(script, Node_Procedure_Call, scope = binary_operator.scope, loc = binary_operator.location);
+    procedure_call.procedure_expression = make_identifier(script, binary_operator.token, loc = binary_operator.location);
     
-    arguments_count := ifx is_unary(_operator) then 1 else 2;
-    procedure_call.arguments = array_copy(array_view((*Node).[ operation.left, operation.right ], 0, arguments_count),, get_pool_allocator(*script.pool));
+    procedure_call.arguments = array_copy((*Node).[ binary_operator.left, binary_operator.right ],, get_pool_allocator(*script.pool));
     
-    operation.overload_procedure    = procedure_call;
-    operation.flags                |= .OVERLOAD;
+    binary_operator.overload_procedure    = procedure_call;
+    binary_operator.flags                |= .OVERLOAD;
     
-    operation.value_type = typecheck_node_or_return(script, procedure_call);
+    binary_operator.value_type = typecheck_node_or_return(script, procedure_call);
 }
+
+
+typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    if unary_operator.directive {
+        typecheck_node_or_return(script, unary_operator.directive, check_flags, hint_type);
+        if unary_operator.directive.runtime_node  return;
+    }
+    
+    operator_info := get_operator_info(script, unary_operator);
+    if !is_unary(operator_info.lexical_type) {
+        assert(false, "Invalid operator lexical type in typecheck_binary_operator: %", operator_info.lexical_type);
+    }
+    
+    expression_value_type := typecheck_node_or_return(script, unary_operator.expression, check_flags, hint_type);
+    
+    expression_underlying_type := ifx expression_value_type.type == .ENUM 
+        then expression_value_type.(*Type_Info_Enum).internal_type.(*Type_Info) 
+        else expression_value_type;
+    
+    builtin_operation_index, swap_args := resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
+    if builtin_operation_index >= 0 {
+        unary_operator.builtin_operation_index = builtin_operation_index;
+        unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
+        return;
+    }
+    
+    // if operation was not a builtin, then we will try to resolve the operation as an overloaded procedure
+    procedure_call := alloc_node(script, Node_Procedure_Call, scope = unary_operator.scope, loc = unary_operator.location);
+    procedure_call.procedure_expression = make_identifier(script, unary_operator.token, loc = unary_operator.location);
+    
+    procedure_call.arguments = array_copy((*Node).[unary_operator.expression],, get_pool_allocator(*script.pool));
+    
+    unary_operator.overload_procedure    = procedure_call;
+    unary_operator.flags                |= .OVERLOAD;
+    
+    unary_operator.value_type = typecheck_node_or_return(script, procedure_call);
+}
+
 
 typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     proc_info := my_typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);

@@ -1953,47 +1953,16 @@ it may be worthwhile in the long run to use custom type info structures rather t
     And really, the first starting place will just be making array literals actually a thing, and creating those new type infos and storing them somewhere.
 
 
-optimizing stack frame sizes
-
-the current solution works, but it has the annoying aspect that we need to check for blocks and control flow nodes manually in typecheck_block to make sure we get the stack requirements of all child blocks
-I don't like this because it's jsut another thing in the way of being able to let users make their own control flow nodes
-but it also seems that doing the little inversion of putting the control flow nodes on the block will not work because of else blocks
-and if we allow blocks as expressions later or put them on other nodes, that will create a tricky situation for propogating info about stack use requirements
-
-so probably the best solution will just be to add a second return value to typecheck_node which is the stack space requirement for a given node
-the only issue here as well, is that we can't just trivially add the stack space requirements of all nodes in a block because we want to also consider control flow and use the minimum possible space
-
-so what do we know
-any time we open a block
-    we don't need to worry about using space that overlaps with declarations that come after the block in the same parent block
-    the space used by the block will be reclaimed immediately after the block ends, which will always be within the same parent statement
+consider making then and else work as operators
+```
+foo := get_foo() else INVALID_FOO;
+bar := is_valid(foo) then get_bar(foo) else DEFAULT_BAR;
+```
+combined with blocks as expressions, this could lead to very interesting semantics and flow control
+    one issue is that this makes it more difficult to access an else block from an if/for/while on the AST, since the else is the parent of the if
+    maybe we can just use some owner node pointer on these constructs in this case, though that adds more bidirectionality to the AST, which I am not sure about how much of that we want at the moment
 
 
-New approach
-
-in order to calculate stack requirements, we will just track a watermark and high watermark in the script context
-then when we are done typechecking a given stack frame we just apply the final value
-
-now, once the language is more complex we won't be able to just use a single set of watermark values in the script context
-    actually we can, we will just need to store the previous values on the stack when we typecheck_block or whatever
-
-using a watermark system also means we won't need the stupid logic in declarations to add up stack offsets, we'll just know what they are when we hit them.
-
-
-there are two things that contribute to the stack size requirements of a block
-    declarations (just sum of sizes their of values)
-    sub-blocks   (only the largest + latest will contribute to overall stack size)
-    
-    if a declaration is added to a block, it just adds its value type's size (same works for removal)
-    but as soon as a declaration is added or removed, that changes the relative weight of any other sub-blocks, since they may or may not overlap that declaration
-    so if we add a declaration we actually need to recalculate the overall weight of the block, reconsidering sub blocks' weights
-    
-
-actual block stack weight = block.stack_weight + block.local_stack_offset
-
-stack weight recalculations only propogate up the ast to the root, so forunately we dont' need to recurse down into subblocks to do recalculations
-
-
-
+implement #ifdef() directive that checks if an identifier is defined and then returns the result of that identifier if it is, else null
 
 

@@ -89,7 +89,7 @@ print_node :: (
     }
     
     // TODO: why do we have this exception?
-    if node.node_type != Node_Operation {
+    if node.node_type != Node_Operator {
         append_trivia(builder, node);
     }
     
@@ -171,45 +171,58 @@ print_node :: (
         return true;
         
         
-      case Node_Operation;
-        operation := node.(*Node_Operation);
-        _operator := get_operator(script, operation);
+      case Node_Unary_Operator;
+        unary_operator := node.(*Node_Unary_Operator);
+        operator_info := get_operator_info(script, unary_operator);
         
-        if _operator.kind == {
+        if operator_info.lexical_type == {
           case .PREFIX;
-            append(builder, operation.name);
-            print_node_or_return(script, operation.left, builder, indent);
+            append(builder, unary_operator.token);
+            print_node_or_return(script, unary_operator.expression, builder, indent);
             return true;
             
           case .POSTFIX;
-            print_node_or_return(script, operation.left, builder, indent);
-            append(builder, operation.name);
+            print_node_or_return(script, unary_operator.expression, builder, indent);
+            append(builder, unary_operator.token);
             return true;
+            
+          case;
+            assert(false, "Invalid operator lexical type in print_node case for Node_Binary_Operator: %", operator_info.lexical_type);
         }
+        
+        return true;
+        
+        
+      case Node_Binary_Operator;
+        binary_operator := node.(*Node_Binary_Operator);
+        operator_info := get_operator_info(script, binary_operator);
+        
+        assert(is_binary(operator_info.lexical_type), "Invalid operator lexical type in print_node case for Node_Binary_Operator: %", operator_info.lexical_type);
         
         // we only parenthesize expressions implicitly here if the precedence requires it
         // and the subexpressions weren't already explicitly flagged as parenthesized
-        node_prec := _operator.precedence;
+        node_prec := operator_info.precedence;
         do_parenthesize_left, do_parenthesize_right := false;
-        if operation.left.node_type == Node_Operation {
-            left_prec := get_precedence(script, xx operation.left);
-            do_parenthesize_left = left_prec < node_prec && !(operation.left.flags & .PARENTHESIZED);
+        if binary_operator.left.node_type == Node_Operator {
+            left_prec := get_precedence(script, xx binary_operator.left);
+            do_parenthesize_left = left_prec < node_prec && !(binary_operator.left.flags & .PARENTHESIZED);
         }
-        if operation.right.node_type == Node_Operation {
-            right_prec := get_precedence(script, xx operation.right);
-            do_parenthesize_right = right_prec < node_prec && !(operation.right.flags & .PARENTHESIZED);
+        if binary_operator.right.node_type == Node_Operator {
+            right_prec := get_precedence(script, xx binary_operator.right);
+            do_parenthesize_right = right_prec < node_prec && !(binary_operator.right.flags & .PARENTHESIZED);
         }
         
         if do_parenthesize_left  append(builder, "(");
-        print_node_or_return(script, operation.left, builder, indent);
+        print_node_or_return(script, binary_operator.left, builder, indent);
         if do_parenthesize_left  append(builder, ")");
-        // append(builder, " ");
+        
         append_trivia(builder, node);
-        append(builder, operation.name);
-        // append(builder, " ");
+        append(builder, binary_operator.token);
+        
         if do_parenthesize_right  append(builder, "(");
-        print_node_or_return(script, operation.right, builder, indent);
+        print_node_or_return(script, binary_operator.right, builder, indent);
         if do_parenthesize_right  append(builder, ")");
+        
         return true;
         
         
@@ -224,7 +237,7 @@ print_node :: (
         append(builder, ")");
         return true;
         
-      
+        
       case Node_Cast;
         _cast := node.(*Node_Cast);
         print_node_or_return(script, _cast.value, builder, indent);

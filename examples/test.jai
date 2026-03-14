@@ -52,15 +52,15 @@ main :: () {
     }
     register_directive(*script, "declare", add_named_value, *named_values);
     
-    make_binary :: (using call: *Directive_Call, left: *Node, right: *Node) -> bool, *Node {
+    make_binary_plus :: (using call: *Directive_Call, left: *Node, right: *Node) -> bool, *Node {
         if phase == .TYPECHECK {
             operator_name := "+";
-            is_operator, operator_index := get_binary_operator(script, operator_name);
+            is_operator, operator_id := get_binary_operator(script, operator_name);
             if !is_operator  return false, null;
             
-            node := alloc_node(script, Node_Operation);
-            node.name           = operator_name;
-            node.operator_index = operator_index;
+            node := alloc_node(script, Node_Binary_Operator);
+            node.token          = operator_name;
+            node.operator_id    = operator_id;
             node.left           = left;
             node.right          = right;
             // print("left : %\n", left);
@@ -70,7 +70,7 @@ main :: () {
         }
         return true, null;
     }
-    register_directive(*script, "add", make_binary);
+    register_directive(*script, "add", make_binary_plus);
     
     
     r1: Vector2;
@@ -83,8 +83,8 @@ main :: () {
     y := 16.0;
     z := Vector2.{ 3, 5 };
     
-    // a := 3;
-    // b := 5;
+    a := 3;
+    b := 5;
     
     str := "this is a string";
     
@@ -107,8 +107,8 @@ main :: () {
     declare_variable(*script, "y", y);
     declare_variable(*script, "z", z);
     
-    // declare_variable(*script, "a", a);
-    // declare_variable(*script, "b", b);
+    declare_variable(*script, "a", a);
+    declare_variable(*script, "b", b);
     
     declare_variable(*script, "r1", r1);
     declare_variable(*script, "r2", r2);

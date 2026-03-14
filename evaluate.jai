@@ -115,8 +115,11 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_Identifier;
         result = evaluate_identifier(script, xx node, provided_storage, flags);
         
-      case Node_Operation;
-        result = evaluate_operation(script, xx node, provided_storage, flags);
+      case Node_Unary_Operator;
+        result = evaluate_unary_operator(script, xx node, provided_storage, flags);
+        
+      case Node_Binary_Operator;
+        result = evaluate_binary_operator(script, xx node, provided_storage, flags);
         
       case Node_Procedure_Call;
         result = evaluate_procedure_call(script, xx node, provided_storage, flags);
@@ -238,48 +241,68 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
     return result;
 }
 
-evaluate_operation :: (script: *Script, operation: *Node_Operation, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
-    if operation.flags & .OVERLOAD {
+evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operator, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+    if unary_operator.flags & .OVERLOAD {
         dprint("Evaluating overloaded operator...");
-        return script.my_evaluate_node(script, operation.overload_procedure, provided_storage = provided_storage);
+        return script.my_evaluate_node(script, unary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
-    // TODO: special case for assignment to an Any. We should check that left and right types match.
-    // special case: operator = is always a simple memcpy
-    if operation.name == "=" {
-        dprint("Operation is simple assignment.");
-        assert(should_push_by_pointer(operation.left));
-        evaluate_node_or_return(script, operation.left);
-        value_pointer := pop_as(*script.stack, *void);
-        script.my_evaluate_node(script, operation.right, provided_storage = value_pointer);
-        return VOID_ANY; // NOTE: all assignments return void
-    }
-    
-    _operator := get_operator(script, operation);
-    dprint("Operator name: %, index: %, kind: %", operation.name, operation.operator_index, _operator.kind);
+    operator_info := get_operator_info(script, unary_operator);
+    dprint("Unary operator name: %, index: %, kind: %", unary_operator.token, unary_operator.operator_id, operator_info.lexical_type);
     
     result_value_pointer: *void;
-    if _operator.kind != .ASSIGNMENT {
-        result_value_pointer = get_result_storage(script, operation, provided_storage);
+    if operator_info.lexical_type != .ASSIGNMENT {
+        result_value_pointer = get_result_storage(script, unary_operator, provided_storage);
         if !result_value_pointer  return NULL_ANY;
     }
     defer_restore(*script.stack.top);
     
-    right: Any;
-    left := evaluate_node_or_return(script, operation.left);
-    if !is_unary(_operator.kind) {
-        right = evaluate_node_or_return(script, operation.right);
+    expression_value := evaluate_node_or_return(script, unary_operator.expression);
+    
+    dprint("expression: %, result pointer: %", expression_value, result_value_pointer);
+    if !execute_builtin_operation(unary_operator.builtin_operation_index, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
+    
+    return Any.{ unary_operator.value_type, result_value_pointer };
+}
+
+evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Operator, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+    if binary_operator.flags & .OVERLOAD {
+        dprint("Evaluating overloaded operator...");
+        return script.my_evaluate_node(script, binary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
-    if operation.flags & .SWAP_OPERANDS {
-        dprint("Swapping operands...");
+    // special case: operator = is always a simple memcpy
+    if binary_operator.token == "=" {
+        dprint("Binary operator is simple assignment.");
+        assert(should_push_by_pointer(binary_operator.left));
+        evaluate_node_or_return(script, binary_operator.left);
+        value_pointer := pop_as(*script.stack, *void);
+        evaluate_node_or_return(script, binary_operator.right, provided_storage = value_pointer);
+        return VOID_ANY; // NOTE: all assignments return void
+    }
+    
+    operator_info := get_operator_info(script, binary_operator);
+    dprint("Binary operator name: %, index: %, kind: %", binary_operator.token, binary_operator.operator_id, operator_info.lexical_type);
+    
+    result_value_pointer: *void;
+    if operator_info.lexical_type != .ASSIGNMENT {
+        result_value_pointer = get_result_storage(script, binary_operator, provided_storage);
+        if !result_value_pointer  return NULL_ANY;
+    }
+    defer_restore(*script.stack.top);
+    
+    left  := evaluate_node_or_return(script, binary_operator.left);
+    right := evaluate_node_or_return(script, binary_operator.right);
+    
+    if binary_operator.flags & .SWAP_OPERANDS {
+        dprint("Swapping operands");
         left, right = right, left;
     }
     
     dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
-    if !execute_builtin_operation(operation.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
+    if !execute_builtin_operation(binary_operator.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
     
-    return Any.{ operation.value_type, result_value_pointer };
+    return Any.{ binary_operator.value_type, result_value_pointer };
 }
 
 evaluate_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Call, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
