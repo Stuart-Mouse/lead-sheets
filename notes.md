@@ -1935,6 +1935,8 @@ making the language more expressive
 
 
 creating interfaces for more language features/concepts
+    identifiers and declarations
+        create interface for generic 'referent'
     literals
     scopes
         types
@@ -1944,9 +1946,14 @@ creating interfaces for more language features/concepts
             get_declaration(s)
                 collect all, find by name, find before particular statement in block
     casts
+        how to make implicit casts more transient on AST, can be removed when we retypecheck
     control flow
+        how to make more expressive
     operators
-    
+        the standard binary and unary operators provide a more simple interface for introducing custom operators
+        if custom operators need to do more complex things, they should just be implemented as separate nodes much like dot and subscript
+        (I am still figuring out the final relation between operators and dot/subscript)
+
 it may be worthwhile in the long run to use custom type info structures rather than using the ones that Jai has built-in.
     or maybe not, but it's a least something to consider.
     I will have to evaluate this after getting to the point of allowing users to declare their own data structures in the language.

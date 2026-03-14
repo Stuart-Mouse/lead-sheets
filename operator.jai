@@ -16,11 +16,14 @@
         now we care about the lexical type of the operator, as well as disambiguating between standard binary operators and assignment operators
         at this stage, we go from a generalized OPERATOR-type token to an index into the operator table
         our only new error case is in checking whether the operator is being used correctly lexically
-        
+    
     typechecking operators
         operator needs to resolve to some concrete operations between two typed operands
         We now move form using an operator_index to using an index to a builtin operation or to some overload procedure
-        
+    
+    TODO: figure out if we want "=" to remain a special case or not. perhaps we should just let people override it in the same way as other operators
+    TODO: now that I've done all the work to split unary and binary operators, go back and think about whether that was really a good idea or not
+          because it seems we really don't actually want to make dot and subscript be binary operators, and I'm not sure what the change gains us
 */
 
 // check if a token is an operator, and optionally check if it is a specific operator
@@ -116,7 +119,6 @@ is_unary :: inline (op: Operator_Info) -> bool { return is_unary(op.lexical_type
 
 is_binary :: inline (lexical_type: Operator_Info.Lexical_Type) -> bool { return lexical_type == .BINARY || lexical_type == .ASSIGNMENT; }
 is_binary :: inline (op: Operator_Info) -> bool { return is_binary(op.lexical_type); }
-
 
 register_operator :: (script: *Script, lexical_type: Operator_Info.Lexical_Type, token: string, precedence: int, directive := "") -> bool {
     for script.operator_table {
