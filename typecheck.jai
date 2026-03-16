@@ -100,14 +100,14 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, from:
             
             owner_declarations := get_additional_declarations_from_owner(scope);
             for owner_declarations {
-                if get_declaration_name(script, it) == identifier  return it;
+                if get_name(script, it) == identifier  return it;
             }
         }
         scope = scope.scope;
     }
     
     for script.global_declarations {
-        if get_declaration_name(script, it) == identifier {
+        if get_name(script, it) == identifier {
             return it;
         }
     }
@@ -118,7 +118,7 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, from:
 find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
         if it.node_type == Node_Declaration {
-            if get_declaration_name(script, xx it) == identifier {
+            if get_name(script, it.(*Node_Declaration)) == identifier {
                 return xx it;
             }
         }
@@ -127,10 +127,10 @@ find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: s
 }
 
 find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string) -> *Node_Declaration {
-    if for_loop.it_decl && get_declaration_name(script, for_loop.it_decl) == identifier {
+    if for_loop.it_decl && get_name(script, for_loop.it_decl) == identifier {
         return for_loop.it_decl;
     }
-    if for_loop.it_index_decl && get_declaration_name(script, for_loop.it_index_decl) == identifier {
+    if for_loop.it_index_decl && get_name(script, for_loop.it_index_decl) == identifier {
         return for_loop.it_index_decl;
     }
     return null;
@@ -349,7 +349,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
             //     return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
             // }
             // if identifier.declaration.flags & .CANNOT_BE_USED_AS_LVALUE {
-            //     if need_lvalue then set_typecheck_error(script, "The declaration '%' cannot be used as an lvalue.", get_declaration_name(script, identifier.declaration), node = node);
+            //     if need_lvalue then set_typecheck_error(script, "The declaration '%' cannot be used as an lvalue.", get_name(script, identifier.declaration), node = node);
             //     return false;
             // }
             return true;
@@ -539,7 +539,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
             return;
         }
         
-        dprint("found declaration: %", get_declaration_name(script, declaration));
+        dprint("found declaration: %", get_name(script, declaration));
         
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
@@ -547,16 +547,21 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
         return;
     }
     
-    // TODO: maybe we should add some checks to make sure that all externally inserted identifiers don't conflict across categories
-    //       for example, we should not have a type identifier which conflicts with an external variable or procedure
+    if script.resolve_identifier_in_global_scope(script, identifier)  return;
     
+    // NOTE: we don't attach an error message here, because most likely this error will be caught and handled
+    set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
+    return;
+}
+
+default_resolve_identifier_in_global_scope :: (using script: *Script, identifier: *Node_Identifier) -> bool {
     for type_table {
         if it.name == identifier.name {
             identifier.flags |= .IS_CONSTANT;   // the type table is assumed to be constant during the script's lifetime
             identifier.identifier_type = .TYPE;
             identifier.index           = it_index;
             identifier.value_type      = xx Type;
-            return;
+            return true;
         }
     }
     
@@ -565,13 +570,11 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
             identifier.identifier_type = .EXTERNAL_VARIABLE;
             identifier.index           = it_index;
             identifier.value_type      = ifx it.flags & .ANY then xx Any else variables[it_index].type;
-            return;
+            return true;
         }
     }
     
-    // NOTE: we don't attach an error message here, because most likely this error will be caught and handled
-    set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
-    return;
+    return false;
 }
 
 
@@ -661,16 +664,16 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    builtin_operation_index, swap_args := resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
-    if builtin_operation_index >= 0 {
-        binary_operator.builtin_operation_index = builtin_operation_index;
+    builtin_operation_id, swap_arguments := resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
+    if builtin_operation_id >= 0 {
+        binary_operator.builtin_operation_id = builtin_operation_id;
         
-        if swap_args then binary_operator.flags |= .SWAP_OPERANDS;
+        if swap_arguments then binary_operator.flags |= .SWAP_OPERANDS;
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
-        binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
-        dprint("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_index]);
+        binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
+        dprint("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_id]);
         
         if left_type.type == .ENUM && left_type == right_type {
             if binary_operator.value_type != left_underlying_type {
@@ -713,10 +716,10 @@ typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_
         then expression_value_type.(*Type_Info_Enum).internal_type.(*Type_Info) 
         else expression_value_type;
     
-    builtin_operation_index, swap_args := resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
-    if builtin_operation_index >= 0 {
-        unary_operator.builtin_operation_index = builtin_operation_index;
-        unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_index].result.(*Type_Info);
+    builtin_operation_id, swap_args := resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
+    if builtin_operation_id >= 0 {
+        unary_operator.builtin_operation_id = builtin_operation_id;
+        unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
         return;
     }
     
@@ -927,7 +930,8 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
             // TODO: need to be able to call some simple make_literal() proc here and actually init the literal value
         } else {
             member_identifier.identifier_type = .STRUCT_MEMBER;
-            member_identifier.member = .{ member_info, member_offset };
+            member_identifier.struct_member_info = member_info;
+            dot.member_offset = member_offset;
         }
         
         member_identifier.value_type = member_info.type;
@@ -1136,7 +1140,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
-            dprint("declaration name: %", get_declaration_name(script, declaration));
+            dprint("declaration name: %", get_name(script, declaration));
             dprint("declaration stack_offset: %", declaration.stack_offset);
         }
     }

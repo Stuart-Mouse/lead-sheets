@@ -1886,7 +1886,10 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
     - add automatic type assertions for virtual members within the scope in which they are declared
     - allow virtual member declarations with only type to serve the same purpose without 'redeclaring' the value
 - [ ] enum literals should not be created as identifier nodes they should be literals first and foremost
+    - actually no. lexically, it makes sense that we parse an identifier, and then that identifier refers to some literal value
+    - the thing to figure out is just how to simplify both literals and identifiers so that they are more intuitive and extensible
 - [ ] maybe remove node_dot and node_subscript, use binary_operator node instead and separate binary/unary operator nodes
+    - evaluate whether the unary/binary operator node split is worthwhile
 - [ ] maybe create interface for identifier referents
 - [ ] make better proc for generating literals from aggregates, try to remove the .ANY literal_type
 - [ ] document logic around pushing aggregates to the stack

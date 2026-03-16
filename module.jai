@@ -41,6 +41,9 @@ Script :: struct {
     
     my_print_node       := print_node;
     
+    resolve_identifier_in_global_scope := default_resolve_identifier_in_global_scope;
+    
+    
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
     get_virtual_member:             (*Script, Any, string) -> bool, Any;
     get_virtual_member_user_data:   *void;
@@ -115,6 +118,9 @@ register_type :: (script: *Script, name: string, type: *Type_Info) {
     }
     array_add(*script.type_table, .{ name, type });
 }
+
+
+
 
 get_named_block :: (script: *Script, name: string) -> *Node_Block {
     for script.named_blocks

@@ -163,7 +163,7 @@ print_node :: (
         
         
       case Node_Identifier;
-        name := get_identifier_name(script, xx node);
+        name := get_name(script, node.(*Node_Identifier));
         do_backtick := !is_legal_identifier(name);
         if do_backtick  append(builder, "`");
         append(builder, name);
@@ -347,12 +347,12 @@ print_node :: (
         
         // TODO: come up with better way to signify that default it and it_index declarations were used
         if for_loop.it_decl {
-            if get_declaration_name(script, for_loop.it_decl) != "it" {
+            if get_name(script, for_loop.it_decl) != "it" {
                 print_node_or_return(script, for_loop.it_decl.left, builder, indent);
             }
         }
         if for_loop.it_index_decl {
-            if get_declaration_name(script, for_loop.it_index_decl) != "it_index" {
+            if get_name(script, for_loop.it_index_decl) != "it_index" {
                 append(builder, ", ");
                 print_node_or_return(script, for_loop.it_index_decl.left, builder, indent);
             }

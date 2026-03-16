@@ -260,7 +260,7 @@ evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operato
     expression_value := evaluate_node_or_return(script, unary_operator.expression);
     
     dprint("expression: %, result pointer: %", expression_value, result_value_pointer);
-    if !execute_builtin_operation(unary_operator.builtin_operation_index, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
+    if !execute_builtin_operation(unary_operator.builtin_operation_id, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
     
     return Any.{ unary_operator.value_type, result_value_pointer };
 }
@@ -300,7 +300,7 @@ evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Oper
     }
     
     dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
-    if !execute_builtin_operation(binary_operator.builtin_operation_index, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
+    if !execute_builtin_operation(binary_operator.builtin_operation_id, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
     
     return Any.{ binary_operator.value_type, result_value_pointer };
 }
@@ -452,7 +452,7 @@ evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null
         if should_push_by_pointer(dot.left) || doing_implict_dereference {
             evaluate_node_or_return(script, dot.left);
             struct_pointer := pop_as(*script.stack, *void);
-            member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset };
+            member_any := Any.{ dot.value_type, struct_pointer + dot.member_offset };
             return prepare_result(script, dot, member_any, provided_storage);
         }
         
@@ -472,7 +472,7 @@ evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null
         evaluate_node_or_return(script, dot.left);
         struct_pointer := pop(*script.stack, left_type.runtime_size);
         
-        member_any := Any.{ dot.value_type, struct_pointer + dot.right.(*Node_Identifier).member.offset };
+        member_any := Any.{ dot.value_type, struct_pointer + dot.member_offset };
         
         if should_push_by_pointer(dot) {
             memcpy(result.value_pointer, *member_any.value_pointer, size_of(*void));
@@ -555,7 +555,7 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
     // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
     if declaration.flags & .MACRO  return VOID_ANY;
     
-    dprint("declaration name: %", get_declaration_name(script, declaration));
+    dprint("declaration name: %", get_name(script, declaration));
     value_pointer := get_value_pointer(script, declaration);
     // dprint("declaration value_pointer: %", value_pointer);
     dprint("declaration value_pointer: %", value_pointer);

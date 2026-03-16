@@ -1,8 +1,3 @@
-/*
-    TODO:
-        create debug flag
-        in debug mode, add some mechanism to make sure the each push and pop size matches
-*/
 
 Stack :: struct {
     memory:         *void;

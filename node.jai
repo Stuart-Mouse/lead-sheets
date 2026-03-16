@@ -15,7 +15,7 @@ Node :: struct {
     
     Flags :: enum_flags { 
         // lexical flags
-        PARENTHESIZED;          // explicitly
+        PARENTHESIZED;          // explicitly, textually
         IS_ARROW;               // denotes that a Node_Dot is actually an arrow
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
@@ -166,25 +166,8 @@ Node_Cast :: struct {
     }
 }
 
+
 /*
-    TODO: maybe we can generalize identifier reference such that we just have an interface defining things like get_name, get_type, get_value, etc.
-    
-    Referent :: struct {
-        meta:   *Meta;
-        handle: Handle;
-        
-        Handle :: struct {
-            pointer:    *void;
-            index:      int;
-        }
-        
-        Meta :: struct {
-            get_name:   (Referent) -> bool, string;
-            get_type:   (Referent) -> bool, *Type_Info;
-            get_value:  (Referent) -> bool, Any; // How would this actually work without broader context?
-        }
-    }
-    
     NOTES:
         identifier.name is only valid when identifier_type is UNRESOLVED
             because of this, the identifer in Node_Declaration.left is always left as UNRESOLVED 
@@ -193,21 +176,70 @@ Node_Cast :: struct {
         this indireciton means that we can change the identifier more dynamically now while the code is still in AST
         but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
 */
+
+// Referent_Type :: struct {
+//     get_name:   (*Script, *Referent) -> bool, string;
+//     get_type:   (*Script, *Referent) -> bool, *Type_Info;
+//     compare:    (*Script, *Referent, *Referent) -> bool;
+//     // get_value:  (Referent) -> bool, Any; // How would this actually work without broader context?
+// }
+
+// Referent :: struct {
+//     referent_type:  *Referent_Type;
+//     handle:         Handle;
+    
+//     Handle :: struct {
+//         pointer:    *void;
+//         index:      int;
+//     }
+// }
+
+// get_name :: (script: *Script, referent: *Referent) -> bool, string {
+//     return referent.referent_type.get_name(script, referent);
+// }
+
+// get_type :: (script: *Script, referent: *Referent) -> bool, *Type_Info {
+//     return referent.referent_type.get_type(script, referent);
+// }
+
 Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
 
 Node_Identifier :: struct {
     using #as node_base:    Node;
     identifier_type:        Identifier_Type;
     union {
-        name:           string;
-        index:          int;    // external variable, procedure, or type
-        declaration:    *Node_Declaration;
-        member:         struct { info: *Type_Info_Struct_Member; offset: int; };
+        name:               string;     // NOTE: This should only be read when referent is null. Otherwise, get the name from the referent.
+        // referent:           *Referent;
+        index:              int;    // external variable, procedure, or type
+        declaration:        *Node_Declaration;
         
-        // NOTE: This exists only for enum literals. We should probably find another way to handle this case.
-        literal:        *Node_Literal;  // we may end up needing to also store a name for this, in case the literal was not an enum...
+        // TODO: don't store offset here. We can store on the dot node or something.
+        struct_member_info: *Type_Info_Struct_Member;
+        literal:            *Node_Literal;
     }
 }
+
+
+// STRUCT_MEMBER_REFERENT_TYPE :: Referent_Type.{
+//     get_name = (script: *Script, referent: *Referent) -> bool, string {
+//         return true, script.variables[referent.index].name;
+//     },
+//     get_type = (script: *Script, referent: *Referent) -> bool, string {
+//         return true, script.variables[referent.index].type;
+//     },
+//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
+//         return referent_a.handle.index == referent_b.handle.index;
+//     },
+// };
+
+// TODO: would be nice to maybe deduplicate these somehow?
+// make_struct_member_referent :: () -> *Referent {
+    
+// }
+
+
+
+
 
 #if false
 is_unresolved_identifier :: (node: *Node) -> bool {
@@ -216,23 +248,32 @@ is_unresolved_identifier :: (node: *Node) -> bool {
         && node.(*Node_Identifier).identifier_type == .UNRESOLVED;
 }
 
-get_identifier_name :: (script: *Script, identifier: *Node_Identifier) -> string {
+get_name :: (script: *Script, identifier: *Node_Identifier) -> string {
     if #complete identifier.identifier_type == {
       case .UNRESOLVED;         return identifier.name;
       case .TYPE;               return script.type_table[identifier.index].name;
       case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
       case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
-      case .STRUCT_MEMBER;      return identifier.member.info.name;
-      case .DECLARATION;        return get_declaration_name(script, identifier.declaration);
+      case .STRUCT_MEMBER;      return identifier.struct_member_info.name;
+      case .DECLARATION;        return get_name(script, identifier.declaration);
       case .LITERAL;
+        // TODO: should use this code path for true/false literals as well
+        // TODO: we should probably have a context procedure for getting an identifier name from a literal value
         assert(identifier.literal.value_type.type == .ENUM, "Invalid value type '%' for identifier.literal. Only enums are currently supported.", as_type(identifier.literal.value_type));
         return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.as_s64);
     }
     unreachable();
+    
+    // if identifier.referent {
+    //     _, name := get_name(script, identifier.referent);
+    //     return name;
+    // }
+    // return identifier.name;
 }
 
-identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
-    if !i1 || !i2 || i1.identifier_type != i2.identifier_type  return false;
+compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
+    if !i1 || !i2 || i1.referent_type != i2.referent_type  return false;
+    // return i1.referent_type.compare(script, i1.referent, i2.referent);
     if #complete i1.identifier_type == {
       case .UNRESOLVED;         return false;
       case .TYPE;               return i1.index == i2.index;
@@ -244,6 +285,9 @@ identifiers_refer_to_the_same_thing :: (script: *Script, i1: *Node_Identifier, i
     }
 }
 
+
+
+
 // TODO: value pointer should get set once during evaluation, then other things can just get the value_pointer directly 
 Node_Declaration :: struct {
     using #as node_base:    Node;
@@ -254,6 +298,9 @@ Node_Declaration :: struct {
     }
     type_expression:        *Node;
     init_expression:        *Node;
+    
+    // This is filled in when declaration is typechecked
+    // referent: Referent;
 }
 
 get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void {
@@ -266,17 +313,36 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     return script.stack.frame + declaration.stack_offset;
 }
 
-get_declaration_name :: (script: *Script, declaration: *Node_Declaration) -> string {
+get_name :: (script: *Script, declaration: *Node_Declaration) -> string {
     if declaration == null  return "";
     
     if declaration.left.node_type == {
       case Node_Identifier;
-        return get_identifier_name(script, declaration.left.(*Node_Identifier));
+        return get_name(script, declaration.left.(*Node_Identifier));
     }
     
     // TODO: figure out what to do about virtual member declarations
     return "";
 }
+
+// DECLARATION_REFERENT_TYPE :: Referent_Type.{
+//     get_name = (script: *Script, referent: *Referent) -> bool, string {
+//         declaration := (referent - offset_of(Node_Declaration, "referent")).(*Node_Declaration);
+//         return true, get_name(script, declaration);
+//     },
+//     get_type = (script: *Script, referent: *Referent) -> bool, string {
+//         declaration := (referent - offset_of(Node_Declaration, "referent")).(*Node_Declaration);
+//         return true, declaration.value_type;
+//     },
+//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
+//         // If the pointers match, then the referents are pointing at the same Node_Declaration.
+//         return referent_a == referent_b;
+//     },
+// };
+
+
+
+// ===== Procedures and Directives =====
 
 Node_Procedure_Call :: struct {
     using #as node_base:    Node;
@@ -292,7 +358,10 @@ Node_Directive :: struct {
     runtime_node:           *Node;  // returned from directive as a replacement node. We still keep the directive itself around for re-serialization, though.
 }
 
-// TODO: probably make unary dot enum literal an actual Node_Literal instead of an identifier
+
+
+// ===== Literals =====
+
 // TODO: figure out a better way to implement the ANY literal type
 Node_Literal :: struct {
     using #as node_base: Node;
@@ -301,8 +370,8 @@ Node_Literal :: struct {
         number:  Any_Number;
         text:    string;
         aggregate: struct {
-            value_pointer:      *void;      // once type is resolved, we store pointer to allocated value here
-            expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting statements
+            value_pointer:      *void;      // will only be used if literal is constant or malleable
+            expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting assignment statements
         }
         any: Any;
     }
@@ -333,14 +402,17 @@ is_malleable :: (literal: *Node_Literal) -> bool {
     return (literal.flags & .IS_MALLEABLE).(bool);
 }
 
+
+// ===== Operators =====
+
 Node_Operator :: struct {
     using #as node_base: Node;
     token:          string;
     operator_id:    Operator_ID;
     
     union { // check node.flag & .OVERLOAD
-        builtin_operation_index:    Builtin_Operation_ID;
-        overload_procedure:         *Node_Procedure_Call;
+        builtin_operation_id:   Builtin_Operation_ID;
+        overload_procedure:     *Node_Procedure_Call;
     }
     directive: *Node_Directive;
 }
@@ -355,8 +427,6 @@ Node_Unary_Operator :: struct {
     expression: *Node;
 }
 
-
-
 get_operator_info :: inline (script: *Script, node: *Node_Operator) -> *Operator_Info { 
     return get_operator_info(script, node.operator_id); 
 }
@@ -369,14 +439,18 @@ get_operator_lexical_type :: inline (script: *Script, node: *Node_Operator) -> T
     return get_operator_node_type(script, node).kind;
 }
 
-// TODO: maybe remove Node_Dot and Node_Subscript in favor of just using a general Binary Operator Node
-//       then separate binary and unary operators since they are lexically and semantially different
-// TODO: maybe we can shortcut evaluation of certain dot nodes when they're chained but only the last bit is relevant
-//       if I'm thinking of the tree correctly, then because the dot is high prec and (i think it's considered left-associateive?) that it gets put further down the tree (left side gets extended and right side is always the terminal bit) 
-//       need to verify this, but if this is the case then we actually get the last dot node first in tree walking order, so we can easily short-circuit evaluate it if left side is some constant expression
+
+// ===== Indexing Expresions =====
+
+/*
+    These are not implemented as Operators because they really need entirely different logic.
+    We also don't need to consider operator precedence for these nodes because they always have an essentially infinite binding power.
+*/
+
 Node_Dot :: struct {
     using #as node_base:        Node;
     left, right:                *Node;
+    member_offset:              int;
 }
 
 Node_Subscript :: struct {
@@ -386,45 +460,40 @@ Node_Subscript :: struct {
 }
 
 
+
 // ===== Flow Control Statements =====
 
 /*
-    TODO: I think we will very soon want to refactor how control flow statements are fit into the AST
-    so that they are attached to the block rather than the other way around.
+    TODO: more refactoring
     
-    the only downsides I can think of at the moment are:
-        1. the condition of an if statement is evaluated after the scope is pushed
-            - but we can probably fix that
-        2. we now have both and 'owner' node and 'flow control' node on the node_block
-            owner will still be needed for structs and such, but maybe we can just use owner for the flow control node anyhow
+    as we make blocks work as expressions and return values, this will mean doingsome work on flow control as well
     
-    just now thinking about this, but also, if blocks can return values or be used as expressions, 
-        this means we can have flow control statements return values in a very trivial way
-        because the flow control is not actually returning a value at all, rather the block is
-        but we would really need to workshop some syntax around this and find out what works and what does not
     
-    ok wait we have one major problem
-        else blocks...
 */
 
-Node_Flow_Control :: struct {
-    using #as node_base: Node;
-    block:          *Node_Block;
-    // declarations:   [] *Node_Declaration;
-}
-
 Node_If_Statement :: struct {
-    using #as flow_control_base: Node_Flow_Control;
+    using #as node_base: Node;
+    block:     *Node_Block;
     condition: *Node;
 }
 
+// TODO: implement
+// Node_Else :: struct {
+//     using #as node_base: Node;
+//     expression: *Node;
+// }
+
 Node_While_Loop :: struct {
-    using #as flow_control_base: Node_Flow_Control;
+    using #as node_base: Node;
+    block:     *Node_Block;
     condition: *Node;
 }
 
 Node_For_Loop :: struct {
-    using #as flow_control_base: Node_Flow_Control;
+    using #as node_base: Node;
+    block:        *Node_Block;
+    
+    // TODO: should just accept a `control_expression: *Node` here and make range/list part of the type system
     control_type: enum { RANGE; ARRAY; LIST; };
     union {
         array_expression:   *Node;
@@ -437,7 +506,12 @@ Node_For_Loop :: struct {
     #overlay(declarations[1]) it_index_decl:  *Node_Declaration;
 }
 
-// TODO: is_flow_control_node()
+// Targets the nearest enclosing for/while statement by default
+// Node_Break :: struct {
+//     using #as node_base: Node;
+//     from:       *Node_Identifier;
+//     values:     [] *Node;
+// }
 
 
 
@@ -612,7 +686,7 @@ make_cast :: (script: *Script, source_token: Token, value: *Node, type_expr: *No
 // TODO: need to have some kind of flag on such a node so that we know whether we need to print the fully qualified enum name with type or not
 //       and that will depend on whether this node is held by a node_identifier/node_dot or not
 //       if this node is held by a node_identifier or node_dot, then it actually won't get directly called by print_node anyhow though
-//       since the identifier will just print itself with get_identifier_name. so i guess it's actually just fine to always use the fully qualified enum name if we print an enum literal?
+//       since the identifier will just print itself with get_name. so i guess it's actually just fine to always use the fully qualified enum name if we print an enum literal?
 //       or maybe we use a flag like .IMPLICIT to signify that the enum literal was using a unary dot in the source text.
 
 // NOTE: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
