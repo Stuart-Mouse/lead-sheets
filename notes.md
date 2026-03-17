@@ -1977,3 +1977,10 @@ combined with blocks as expressions, this could lead to very interesting semanti
 implement #ifdef() directive that checks if an identifier is defined and then returns the result of that identifier if it is, else null
 
 
+
+fix stack frames again
+
+I think we don't actually need to do the stack frame thing at all.
+instead, we can just push the space we need on entry to each block and use the stack offset on the block + offset on declaration
+then when we push stack frames we just store the previous frame pointer and don't need to push push space at that time.
+

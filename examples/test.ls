@@ -1,30 +1,43 @@
 
+// v1 := 1;
+
+// for l1: 0..v1 {
+//     v2 := 2;
+    
+//     for l2: 0..v2 {
+//         v3 := 3;
+        
+//         echo(l2);
+//     }
+// }
+
+
 
 // struct literals
 r1 = Vector2.{ 3, 4 } * 5.0;
 r1 -= .{ 3, 2 };
 
 // operators and procedure calls
-r2 = (1 + 2) * pow(2.0, sin(3.14159/2.0) + 2.0);
+r2 = (1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
 r3 = a + b;
 
 // while loops
-while echo(r2) > 20 {
+while echo(r2) > 20.0 {
    r2 = r2 - 1;
    r3 = r3 + r3;
 }
 
 // for loops and casting
-for arr1  if it > 1  it = it_index.(float) * 7;
+for arr1  if it > 1.0  it = it_index.(float) * 7.0;
 for arr1  echo(it);
 
 // local declarations
 local: float;
 local = 5 + 5 * 2;
-echo(local/2);
+echo(local/2.0);
 
 // test recursion depth... currently crashes the program because jai is generating massive stack frames
-// local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;// + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
+// local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
 
 // assignment operators redux
 local = 2;
@@ -121,12 +134,12 @@ test_block: {
 }
 
 
+// testing binary operation type hinting
+//    the idea here is that the type hint passed to the operation is for 'int',
+//    but we don't want the number literal to receive that type hint,
+//    rather, we want it to receive the type hint from the other side of the operation, '_float'
+_float := 5.0;
+_int := (_float + 3).(int);
+echo(_int);
 
-// for loop in expression
 
-// found := for array { if it == 5  break true, it_index; } else[0:1] -1;
-// if found != -1 {
-//     echo("array contains the number 5");
-// } else {
-//     echo("array does not contain the number 5");
-// }

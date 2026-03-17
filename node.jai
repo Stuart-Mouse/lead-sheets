@@ -75,7 +75,7 @@ Node_Block :: struct {
     
     name:                   string;
     stack_frame_size:       int;
-    stack_offset:           int;    // offset from stack frame
+    stack_pointer:          *void;    // offset from stack frame
 }
 
 /*
@@ -86,35 +86,13 @@ Node_Block :: struct {
             honestly not sure what purpose this stack size serves for non-frame blocks atm
 */
 get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block) -> stack_offset: int {
-    current_stack_watermark := script.stack_watermark;
+    offset := block.stack_frame_size;
     
     // pad to 8 byte alignment
     size := (requested_size + 7) & ~7;
     block.stack_frame_size += size;
-    bump_stack_watermark(script, size);
     
-    return current_stack_watermark;
-}
-
-// get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block, align := true) -> stack_offset: int {
-//     // block = get_stack_frame_block(script, block);
-    
-//     offset := block.stack_frame_size;
-//     if align then offset = (offset + 7) & ~7;
-//     block.stack_frame_size = offset + requested_size;
-//     return offset;
-// }
-
-get_stack_frame_block :: (script: *Script, scope: *Node_Block) -> *Node_Block {
-    while scope {
-        if is_stack_frame_block(script, scope)  return scope;
-        scope = scope.scope;
-    }
-    return null;
-}
-
-is_stack_frame_block :: (script: *Script, block: *Node_Block) -> bool {
-    return block.name || block == script.ast_root;
+    return offset;
 }
 
 // NOTE: caller is not responsible for freeing the returned array view
@@ -128,31 +106,6 @@ get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Decla
         }
     }
     return .[];
-}
-
-bump_stack_watermark :: (script: *Script, size_in_bytes: int) {
-    script.stack_watermark += size_in_bytes;
-    script.stack_high_watermark = max(script.stack_high_watermark, script.stack_watermark);
-}
-
-set_stack_watermark :: (script: *Script, watermark: int) {
-    script.stack_watermark = watermark;
-    script.stack_high_watermark = max(script.stack_high_watermark, watermark);
-}
-
-reset_stack_watermark :: (script: *Script) {
-    script.stack_watermark = 0;
-    script.stack_high_watermark = 0;
-}
-
-#if false
-shelf_watermark_info :: (script: *Script) #expand {
-    previous_watermark      := script.stack_watermark;
-    previous_high_watermark := script.stack_high_watermark;
-    `defer {
-        script.stack_watermark      = previous_watermark;
-        script.stack_high_watermark = previous_high_watermark;
-    }
 }
 
 
@@ -268,7 +221,6 @@ compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifie
 
 
 
-// TODO: value pointer should get set once during evaluation, then other things can just get the value_pointer directly 
 Node_Declaration :: struct {
     using #as node_base:    Node;
     left:                   *Node;
@@ -278,9 +230,6 @@ Node_Declaration :: struct {
     }
     type_expression:        *Node;
     init_expression:        *Node;
-    
-    // This is filled in when declaration is typechecked
-    // referent: Referent;
 }
 
 get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void {
@@ -290,7 +239,7 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     if declaration.flags & .MACRO {
         return declaration.value_pointer;
     }
-    return script.stack.frame + declaration.stack_offset;
+    return declaration.scope.stack_pointer + declaration.stack_offset;
 }
 
 get_name :: (script: *Script, declaration: *Node_Declaration) -> string {

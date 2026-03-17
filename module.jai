@@ -25,8 +25,8 @@ Script :: struct {
     
     
     current_scope:          *Node_Block;
-    stack_watermark:        int;
-    stack_high_watermark:   int;
+    // stack_watermark:        int;
+    // stack_high_watermark:   int;
     
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.

@@ -1,4 +1,17 @@
  
+// v1 := 1;
+
+// for l1: 0..v1 {
+//     v2 := 2;
+    
+//     for l2: 0..v2 {
+//         v3 := 3;
+        
+//         echo(l2);
+//     }
+// }
+
+
 
 // struct literals
 r1 =  Vector2.{ 3.0, 4.0 } * 5.0; 
@@ -24,7 +37,7 @@ local =  5.0 +  5.0 * 2.0;
 echo(local/2.0); 
 
 // test recursion depth... currently crashes the program because jai is generating massive stack frames
-// local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;// + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
+// local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
 
 // assignment operators redux
 local = 2.0; 
@@ -119,3 +132,12 @@ echo(some_value);
 test_block: {
    print("Running test block.");
 }
+
+
+// testing binary operation type hinting
+//    the idea here is that the type hint passed to the operation is for 'int',
+//    but we don't want the number literal to receive that type hint,
+//    rather, we want it to receive the type hint from the other side of the operation, '_float'
+_float := 5.0;
+_int := (_float + 3.0).(int);
+echo(_int);

@@ -572,22 +572,22 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
     // NOTE: we don't execute named blocks unless explicitly called
     if block.name && !(flags & .EXPLICIT_CALL)  return VOID_ANY;
     
-    is_stack_frame := is_stack_frame_block(script, block);
-    if is_stack_frame {
-        if !push_frame(*script.stack, block.stack_frame_size) {
-            set_execution_error(script, type = .STACK_OVERFLOW, node = block);
-            return NULL_ANY;
-        }
+    block.stack_pointer = push(*script.stack, null, block.stack_frame_size);
+    dprint("pushed % bytes to stack @ % for declarations in block", block.stack_frame_size, block.stack_pointer);
+    
+    if !block.stack_pointer {
+        set_execution_error(script, type = .STACK_OVERFLOW, node = block);
+        return NULL_ANY;
     }
+    defer pop(*script.stack, block.stack_frame_size);
+        
     for block.statements {
         stack_top_before := script.stack.top;
         defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %. stack top: %, stack top before: %", get_location(it), script.stack.top, stack_top_before);
         
         evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
     }
-    if is_stack_frame {
-        pop_frame(*script.stack);
-    }
+    
     return VOID_ANY;
 }
 

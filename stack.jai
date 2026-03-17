@@ -25,39 +25,42 @@ is_on_stack :: (using stack: *Stack, pointer: *void) -> bool {
     return pointer >= stack.memory && pointer < stack.memory + stack.allocated;
 }
 
+// TODO: reintroduce this stuff later, but probably just push a frame pointer for every single block rather than only particular blocks
+//       it is more simple this way and the cost is quite low for the time being
+
 // TODO: if in debug mode, maybe we should also push some magic number in the header to check when we call pop_frame
-Stack_Frame_Header :: struct {
-    previous_frame: *void;
-    frame_size:     int;
-}
+// Stack_Frame_Header :: struct {
+//     previous_frame: *void;
+//     // frame_size:     int;
+// }
 
-push_frame :: (stack: *Stack, size: int, loc := #caller_location) -> bool {
-    previous_frame := stack.frame;
+// push_frame :: (stack: *Stack, size: int, loc := #caller_location) -> bool {
+//     previous_frame := stack.frame;
     
-    header := Stack_Frame_Header.{ previous_frame, size };
-    if !push_value(stack, *header)  return false;
+//     header := Stack_Frame_Header.{ previous_frame };
+//     if !push_value(stack, *header)  return false;
     
-    stack.frame = stack.top;
-    if !push(stack, null, size)  return false;
+//     stack.frame = stack.top;
+//     // if !push(stack, null, size)  return false;
     
-    return true;
-}
+//     return true;
+// }
 
-pop_frame :: (stack: *Stack, loc := #caller_location) {
-    top_before_pop   := stack.top;
-    frame_before_pop := stack.frame;
+// pop_frame :: (stack: *Stack, loc := #caller_location) {
+//     top_before_pop   := stack.top;
+//     frame_before_pop := stack.frame;
     
-    stack.top = stack.frame;
-    header := pop_as(stack, Stack_Frame_Header);
+//     stack.top = stack.frame;
+//     header := pop_as(stack, Stack_Frame_Header);
     
-    stack.frame = header.previous_frame;
+//     stack.frame = header.previous_frame;
     
-    // Since pushes are always aligned to 8 bytes, we round up the frame size here as well to determine the expected stack top.
-    expected_stack_top_before_pop := frame_before_pop + ((header.frame_size + 7) & ~7);
-    if top_before_pop != expected_stack_top_before_pop {
-        log("Warning: Improper stack frame pop. Expected stack.top to be %, but it was %.", expected_stack_top_before_pop, top_before_pop);
-    }
-}
+//     // Since pushes are always aligned to 8 bytes, we round up the frame size here as well to determine the expected stack top.
+//     // expected_stack_top_before_pop := frame_before_pop + ((header.frame_size + 7) & ~7);
+//     // if top_before_pop != expected_stack_top_before_pop {
+//     //     log("Warning: Improper stack frame pop. Expected stack.top to be %, but it was %.", expected_stack_top_before_pop, top_before_pop);
+//     // }
+// }
 
 
 /*
