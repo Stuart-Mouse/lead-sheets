@@ -277,17 +277,3 @@ try_calling_procedure_with_wrapper :: (proc_info: *Type_Info_Procedure, proc_ptr
     log("Error: % has not been registered for use in a dynamic call.", (*proc_info).(*Type).*);
     return false;
 }
-
-
-
-// EXTERNAL_PROCEDURE_REFERENT_TYPE :: Referent_Type.{
-//     get_name = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.procedures[referent.index].name;
-//     },
-//     get_type = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.procedures[referent.index].__type_info;
-//     },
-//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
-//         return referent_a.handle.index == referent_b.handle.index;
-//     },
-// };

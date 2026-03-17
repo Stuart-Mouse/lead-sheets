@@ -202,7 +202,7 @@ Node_Cast :: struct {
 //     return referent.referent_type.get_type(script, referent);
 // }
 
-Identifier_Type :: enum { UNRESOLVED; TYPE; LITERAL; STRUCT_MEMBER; DECLARATION; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+Identifier_Type :: enum { UNRESOLVED; DECLARATION; LITERAL; STRUCT_MEMBER; EXTERNAL_TYPE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
 
 Node_Identifier :: struct {
     using #as node_base:    Node;
@@ -220,26 +220,6 @@ Node_Identifier :: struct {
 }
 
 
-// STRUCT_MEMBER_REFERENT_TYPE :: Referent_Type.{
-//     get_name = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.variables[referent.index].name;
-//     },
-//     get_type = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.variables[referent.index].type;
-//     },
-//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
-//         return referent_a.handle.index == referent_b.handle.index;
-//     },
-// };
-
-// TODO: would be nice to maybe deduplicate these somehow?
-// make_struct_member_referent :: () -> *Referent {
-    
-// }
-
-
-
-
 
 #if false
 is_unresolved_identifier :: (node: *Node) -> bool {
@@ -251,7 +231,7 @@ is_unresolved_identifier :: (node: *Node) -> bool {
 get_name :: (script: *Script, identifier: *Node_Identifier) -> string {
     if #complete identifier.identifier_type == {
       case .UNRESOLVED;         return identifier.name;
-      case .TYPE;               return script.type_table[identifier.index].name;
+      case .EXTERNAL_TYPE;      return script.type_table[identifier.index].name;
       case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
       case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
       case .STRUCT_MEMBER;      return identifier.struct_member_info.name;
@@ -276,7 +256,7 @@ compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifie
     // return i1.referent_type.compare(script, i1.referent, i2.referent);
     if #complete i1.identifier_type == {
       case .UNRESOLVED;         return false;
-      case .TYPE;               return i1.index == i2.index;
+      case .EXTERNAL_TYPE;      return i1.index == i2.index;
       case .EXTERNAL_VARIABLE;  return i1.index == i2.index;
       case .EXTERNAL_PROCEDURE; return i1.index == i2.index;
       case .STRUCT_MEMBER;      return i1.member == i2.member;
@@ -324,21 +304,6 @@ get_name :: (script: *Script, declaration: *Node_Declaration) -> string {
     // TODO: figure out what to do about virtual member declarations
     return "";
 }
-
-// DECLARATION_REFERENT_TYPE :: Referent_Type.{
-//     get_name = (script: *Script, referent: *Referent) -> bool, string {
-//         declaration := (referent - offset_of(Node_Declaration, "referent")).(*Node_Declaration);
-//         return true, get_name(script, declaration);
-//     },
-//     get_type = (script: *Script, referent: *Referent) -> bool, string {
-//         declaration := (referent - offset_of(Node_Declaration, "referent")).(*Node_Declaration);
-//         return true, declaration.value_type;
-//     },
-//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
-//         // If the pointers match, then the referents are pointing at the same Node_Declaration.
-//         return referent_a == referent_b;
-//     },
-// };
 
 
 

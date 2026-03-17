@@ -1905,6 +1905,7 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
     - [X] consider location of block within parent in stack requirement calculation
 - [ ] implement else blocks
 - [ ] implement expression-style if
+- [ ] simplify resoluiton of external declarations
 
 Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
 

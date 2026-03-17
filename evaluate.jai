@@ -211,6 +211,13 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
         variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
         result = prepare_result(script, identifier, variable_any, provided_storage);
         
+      case .LITERAL;
+        result = script.my_evaluate_node(script, identifier.literal, provided_storage = provided_storage);
+        
+      case .EXTERNAL_TYPE;
+        assert(!should_push_by_pointer(identifier));
+        result = prepare_result(script, identifier, script.type_table[identifier.index].type, provided_storage);
+        
       case .EXTERNAL_VARIABLE;
         variable := *script.variables[identifier.index];
         value    := get_value(variable);
@@ -224,13 +231,6 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
       case .EXTERNAL_PROCEDURE;
         assert(!should_push_by_pointer(identifier));
         result = prepare_result(script, identifier, to_any(*script.procedures[identifier.index]), provided_storage);
-        
-      case .LITERAL;
-        result = script.my_evaluate_node(script, identifier.literal, provided_storage = provided_storage);
-        
-      case .TYPE;
-        assert(!should_push_by_pointer(identifier));
-        result = prepare_result(script, identifier, script.type_table[identifier.index].type, provided_storage);
         
         // identifier types that should never be executed:
       case .UNRESOLVED; #through;

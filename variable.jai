@@ -123,19 +123,6 @@ set_variable_name :: (script: *Script, index: int, name: string) -> bool {
 }
 
 
-// EXTERNAL_VARIABLE_REFERENT_TYPE :: Referent_Type.{
-//     get_name = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.variables[referent.index].name;
-//     },
-//     get_type = (script: *Script, referent: *Referent) -> bool, string {
-//         return true, script.variables[referent.index].type;
-//     },
-//     compare = (script: *Script, referent_a: *Referent, referent_b: *Referent) -> bool {
-//         return referent_a.handle.index == referent_b.handle.index;
-//     },
-// };
-
-
 #scope_module
 
 __internal_set_variable :: (script: *Script, var: *External_Variable, any: Any, override := false) -> bool {

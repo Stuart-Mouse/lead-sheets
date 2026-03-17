@@ -102,9 +102,10 @@ has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; 
 clear_error :: (script: *Script) { script.error = .{}; }
 
 
+
 Name_And_Type :: struct {
-    name:   string; 
-    type:   *Type_Info;
+    name: string;
+    type: *Type_Info;
 }
 
 // ensures no name conflicts

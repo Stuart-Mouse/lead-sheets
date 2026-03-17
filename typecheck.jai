@@ -316,16 +316,13 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
             if need_lvalue then set_typecheck_error(script, "An unresolved identifier cannot be used as an lvalue.", node = node);
             return false;
             
-          case .TYPE;               
+          case .EXTERNAL_TYPE;               
             if need_lvalue then set_typecheck_error(script, "A type identifier cannot be used as an lvalue.", node = node);
             return false;
             
           case .EXTERNAL_PROCEDURE; 
             if need_lvalue then set_typecheck_error(script, "An external procedure cannot be used as an lvalue.", node = node);
             return false;
-            
-          case .STRUCT_MEMBER;
-            return true;
             
           case .EXTERNAL_VARIABLE;
             variable := *script.variables[identifier.index];
@@ -337,6 +334,9 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
                 if need_lvalue then set_typecheck_error(script, "An external variable cannot be used as an lvalue when marked as readonly.", node = node);
                 return false;
             }
+            return true;
+            
+          case .STRUCT_MEMBER;
             return true;
             
           case .LITERAL;
@@ -558,7 +558,7 @@ default_resolve_identifier_in_global_scope :: (using script: *Script, identifier
     for type_table {
         if it.name == identifier.name {
             identifier.flags |= .IS_CONSTANT;   // the type table is assumed to be constant during the script's lifetime
-            identifier.identifier_type = .TYPE;
+            identifier.identifier_type = .EXTERNAL_TYPE;
             identifier.index           = it_index;
             identifier.value_type      = xx Type;
             return true;
