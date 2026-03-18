@@ -569,8 +569,10 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
 }
 
 evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+    result_storage := get_result_storage(script, block, provided_storage);
+    
     // NOTE: we don't execute named blocks unless explicitly called
-    if block.name && !(flags & .EXPLICIT_CALL)  return VOID_ANY;
+    if block.name && !(flags & .EXPLICIT_CALL)  return Any.{ block.value_type, result_storage };
     
     block.stack_pointer = push(*script.stack, null, block.stack_frame_size);
     dprint("pushed % bytes to stack @ % for declarations in block", block.stack_frame_size, block.stack_pointer);
@@ -580,15 +582,16 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
         return NULL_ANY;
     }
     defer pop(*script.stack, block.stack_frame_size);
-        
-    for block.statements {
+    
+    statements_except_last := array_view(block.statements, 0, block.statements.count-1);
+    for statements_except_last {
         stack_top_before := script.stack.top;
         defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %. stack top: %, stack top before: %", get_location(it), script.stack.top, stack_top_before);
         
         evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
     }
     
-    return VOID_ANY;
+    return evaluate_node_or_return(script, block.statements[block.statements.count-1], result_storage);
 }
 
 evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {

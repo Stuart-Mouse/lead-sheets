@@ -141,3 +141,13 @@ test_block: {
 _float := 5.0;
 _int := (_float + 3.0).(int);
 echo(_int);
+
+
+// test blocks as expressions
+block_result := {
+   a := 5.0;
+   b := 3.0;
+   Vector2.{ b,  a + b };
+};
+
+echo(block_result);

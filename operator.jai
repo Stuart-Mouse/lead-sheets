@@ -7,7 +7,7 @@
     In order to do this, I think I will need to first cleanly separate the idea of operators as a lexical construct from operators as a particular action performed on some operand.
     I think for now I will just differntiate with the term 'operator' vs 'operation' where the operator is the lexical construct and the operation is the overloadable, typed construct.
     
-    Stages of Operator_Info Resolution
+    Stages of Operator Resolution
     
     lexing operators
         concerns only a sequence of characters, no disambiguation over operator's lexical type (prefix, postfix, binary)
@@ -106,7 +106,7 @@ default_operator_table :: Operator_Info.[
 Operator_ID :: int;
 
 Operator_Info :: struct {
-    lexical_type:               Lexical_Type;
+    lexical_type:       Lexical_Type;
     token:              string;
     precedence:         int;
     directive_name:     string;

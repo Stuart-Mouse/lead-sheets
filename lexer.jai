@@ -180,7 +180,7 @@ lex_next_token :: (script: *Script) -> Token {
     
     trivia, ok := skip_whitespace_and_comments(*script.lexer);
     if !ok    return make_error_token(location, .UNEXPECTED_EOF, message = "in the middle of a comment");
-    if !file  return .{ type = .EOF, location = location };
+    if !file  return .{ type = .EOF, location = location, trivia = trivia };
     
     // we grab cursor location at top so that it points to start of token
     token_location := script.lexer.location;

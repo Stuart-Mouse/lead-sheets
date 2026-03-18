@@ -38,6 +38,7 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
     return statements, true;
 }
 
+// TODO: probably remove this as part of doing blocks as expressions
 // used in if/for/while, where we need to wrap single statements in a block implicitly.
 parse_block_or_statement :: (using script: *Script, parent: *Node, expect_semicolon := true) -> *Node_Block {
     block := alloc_node(script, Node_Block);
@@ -175,20 +176,6 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         for_loop.block.owner = for_loop;
         
         return for_loop;
-        
-        
-      case .OPEN_BRACE;
-        dprint("BLOCK"); dprint_push_indent();
-        open_brace := get_token(script);
-        block := alloc_node(script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
-        current_scope = block; 
-        
-        statements, ok := parse_statements(script, .CLOSE_BRACE);
-        if !ok  return null;
-        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
-        
-        current_scope = block.scope; 
-        return block;
     }
     
     /*
@@ -277,11 +264,21 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return declaration;
     }
     
-    if expect_token_type(script, .SEMICOLON) || !expect_semicolon {
-        return left;
+    // check for semicolon
+    token = peek_token(script);
+    
+    // We generally require semicolons to delimit statements, but since blocks are now treated as expressions, we make a special exception for blocks.
+    if left.node_type == Node_Block {//&& contains(token.trivia, #char "\n") {
+        expect_semicolon = false;
     }
     
-    log("%: returning null in parse_statement", format_location(script.lexer.location));
+    // always consume semicolon if it is present
+    if token.type == .SEMICOLON { get_token(script); return left; }
+    
+    // if we don't expect to see one then we are ok whether we saw one or not
+    if !expect_semicolon  return left;
+    
+    set_parse_error(script, "expected a semicolon after statement, but saw this: '%' (%)", token.text, token.type, loc = script.lexer.location);
     return null;
 }
 
@@ -316,6 +313,19 @@ parse_leaf :: (using script: *Script) -> *Node {
             return make_dot(script, token, null, identifier);
         }
         else set_parse_error(script, "%: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
+        
+      case .OPEN_BRACE;
+        dprint("BLOCK"); dprint_push_indent();
+        open_brace := token;
+        block := alloc_node(script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
+        current_scope = block; 
+        
+        statements, ok := parse_statements(script, .CLOSE_BRACE);
+        if !ok  return null;
+        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
+        
+        current_scope = block.scope; 
+        return block;
         
       case .OPEN_PAREN;
         open_paren_location := token.location;
@@ -352,7 +362,7 @@ parse_leaf :: (using script: *Script) -> *Node {
       case .STRING;
         dprint("STRING (\"%\")", token.text);
         return make_string_literal(script, token);
-    
+        
       case .DIRECTIVE;
         dprint("DIRECTIVE"); dprint_push_indent();
         directive := alloc_node(script, Node_Directive, loc = token.location, trivia = token.trivia);
@@ -394,6 +404,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         return make_identifier(script, token);
     }
     
+    set_parse_error(script, "unexpected token encountered in parse_leaf: '%'", token.text, loc = token.location);
     return null;
 }
 

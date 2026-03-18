@@ -331,8 +331,6 @@ Convert :: #import "Convert";
     #import "dyncall";
 }
 
-// TODO: we could improve indentation handling by splitting the formatted string on newlines and inserting indentation between each non-empty line
-
 #if DEBUG { #add_context dprint: struct { indent: int; skip_indent: bool; }; }
 
 dprint :: (format_string: string, args: ..Any, newline := true) {

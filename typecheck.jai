@@ -1152,7 +1152,7 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
     }
-    block.value_type = xx void;
+    block.value_type = block.statements[block.statements.count-1].value_type;
     return;
 }
 
