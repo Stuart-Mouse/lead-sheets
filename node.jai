@@ -403,11 +403,13 @@ Node_If_Statement :: struct {
     subcondition:   *Node;
 }
 
-// Node_Else :: struct {
-//     using #as node_base: Node;
-//     expression: *Node;
-//     condition:  *Node;
-// }
+Node_Else :: struct {
+    using #as node_base: Node;
+    expression: *Node; // or block
+    condition:  *Node;
+    
+    OPERATOR_PRECEDENCE :: 2;
+}
 
 Node_While_Loop :: struct {
     using #as node_base: Node;

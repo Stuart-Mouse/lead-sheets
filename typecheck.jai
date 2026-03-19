@@ -69,6 +69,7 @@ typecheck_node :: (
       case Node_If_Statement;      typecheck_if_statement    (script, xx node, check_flags, hint_type);
       case Node_While_Loop;        typecheck_while_loop      (script, xx node, check_flags, hint_type);
       case Node_For_Loop;          typecheck_for_loop        (script, xx node, check_flags, hint_type);
+      case Node_Else;              typecheck_else            (script, xx node, check_flags, hint_type);
       case;
         set_typecheck_error(script, "Unhandled node type % in typecheck_node.", node.node_type, node = node);
     }
@@ -390,6 +391,10 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         
       case Node_Procedure_Call;     
         if need_lvalue then set_typecheck_error(script, "Using the result of a procedure call as an lvalue is not currently supported", node = node);
+        return false;
+        
+      case Node_Else;
+        if need_lvalue then set_typecheck_error(script, "Using the result of an else expression as an lvalue is not currently supported", node = node);
         return false;
         
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
@@ -1055,10 +1060,6 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
 }
 
 typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    // NOTE: we currently only allow declarations to be used as statements, so we flag them all with .VALUE_TYPE_IS_NOMINAL
-    //       this currently serves no funcitonal purpose other than to make our assertions happy in evaluate_node_or_return 
-    // declaration.flags |= .VALUE_TYPE_IS_NOMINAL;
-    
     explicit_type: *Type_Info;
     if declaration.type_expression {
         type_expression := declaration.type_expression;
@@ -1282,3 +1283,17 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     for_loop.value_type = xx void;
     return;
 }
+
+
+typecheck_else :: (using script: *Script, _else: *Node_Else, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    condition_value_type  := typecheck_node_or_return(script, _else.condition);
+    expression_value_type := typecheck_node_or_return(script, _else.expression);
+    
+    if condition_value_type != expression_value_type {
+        set_typecheck_error(script, "Mismatched types in else expression. Left type is %, but right type is %.", as_type(condition_value_type), as_type(expression_value_type), node = _else);
+        return;
+    }
+    
+    _else.value_type = _else.condition.value_type;
+}
+

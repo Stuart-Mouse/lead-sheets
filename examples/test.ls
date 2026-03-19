@@ -164,3 +164,5 @@ if [val >= min] val := 2 + 7 {
     echo(val);
 }
 
+echo(2 - 2 else 5);
+echo(2 - 1 else 5);

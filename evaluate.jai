@@ -148,6 +148,9 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_For_Loop;
         result = evaluate_for_loop(script, xx node, provided_storage, flags);
         
+      case Node_Else;
+        result = evaluate_else(script, xx node, provided_storage, flags);
+        
       case;
         assert(false, "Unhandled node type in script.my_evaluate_node: %", node.node_type);
     }
@@ -684,6 +687,19 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
         assert(false, "Invalid control expression in for loop.");
     }
     return VOID_ANY;
+}
+
+evaluate_else :: (script: *Script, _else: *Node_Else, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+    result_storage := get_result_storage(script, _else, provided_storage);
+    
+    result := evaluate_node_or_return(script, _else.condition, result_storage);
+    
+    _, condition_as_bool := Convert.any_to(bool, result);
+    if !condition_as_bool {
+        result = evaluate_node_or_return(script, _else.expression, result_storage);
+    }
+    
+    return result;
 }
 
 #scope_file

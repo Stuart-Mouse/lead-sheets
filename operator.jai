@@ -78,29 +78,32 @@ default_operator_table :: Operator_Info.[
     .{ .ASSIGNMENT, "&=", 1, "" },
     .{ .ASSIGNMENT, "^=", 1, "" },
     
-    .{ .BINARY, "&&", 2, "" },
-    .{ .BINARY, "||", 2, "" },
+    // NOTE: `else` has a functional precedence of 2, though it is not technically an operator
     
-    .{ .BINARY, "==", 3, "" },
-    .{ .BINARY, "!=", 3, "" },
-    .{ .BINARY, ">=", 3, "" },
-    .{ .BINARY, "<=", 3, "" },
-    .{ .BINARY, ">",  3, "" },
-    .{ .BINARY, "<",  3, "" },
+    .{ .BINARY, "&&", 3, "" },
+    .{ .BINARY, "||", 3, "" },
     
-    .{ .BINARY, "|",  4, "" },
-    .{ .BINARY, "&",  4, "" },
-    .{ .BINARY, "~",  4, "" },
-    .{ .BINARY, "^",  4, "" },
+    .{ .BINARY, "==", 4, "" },
+    .{ .BINARY, "!=", 4, "" },
+    .{ .BINARY, ">=", 4, "" },
+    .{ .BINARY, "<=", 4, "" },
+    .{ .BINARY, ">",  4, "" },
+    .{ .BINARY, "<",  4, "" },
     
-    .{ .BINARY, "+",  5, "" },
-    .{ .BINARY, "-",  5, "" },
-    .{ .BINARY, "*",  6, "" },
-    .{ .BINARY, "/",  6, "" },
+    .{ .BINARY, "|",  5, "" },
+    .{ .BINARY, "&",  5, "" },
+    .{ .BINARY, "~",  5, "" },
+    .{ .BINARY, "^",  5, "" },
     
-    .{ .PREFIX, "-",  7, "" },
-    .{ .PREFIX, "~",  7, "" },
-    .{ .PREFIX, "!",  7, "" },
+    .{ .BINARY, "+",  6, "" },
+    .{ .BINARY, "-",  6, "" },
+    
+    .{ .BINARY, "*",  7, "" },
+    .{ .BINARY, "/",  7, "" },
+    
+    .{ .PREFIX, "-",  8, "" },
+    .{ .PREFIX, "~",  8, "" },
+    .{ .PREFIX, "!",  8, "" },
 ];
 
 Operator_ID :: int;

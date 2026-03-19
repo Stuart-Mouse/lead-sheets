@@ -574,6 +574,22 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         if !expect_token_type(script, .CLOSE_BRACKET)  return null;
         
         return make_subscript(script, open_bracket_token, left, indexing_expr);
+        
+        
+      case .ELSE;
+        dprint("EXPRESSION ELSE");
+        if Node_Else.OPERATOR_PRECEDENCE <= min_prec  return left;
+        
+        else_token := get_token(script);
+        
+        _else := alloc_node(script, Node_Else, loc = token.location, trivia = token.trivia);
+        _else.condition = left;
+        
+        right := my_parse_expression(script, Node_Else.OPERATOR_PRECEDENCE);
+        if right == null  return null;
+        
+        _else.expression = right;
+        return _else;
     }
     
     // We only consume the binary operator here if it is of a higher precedence than the previous binary operator.
