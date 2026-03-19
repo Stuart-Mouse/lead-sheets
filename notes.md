@@ -1978,9 +1978,114 @@ implement #ifdef() directive that checks if an identifier is defined and then re
 
 
 
-fix stack frames again
 
-I think we don't actually need to do the stack frame thing at all.
-instead, we can just push the space we need on entry to each block and use the stack offset on the block + offset on declaration
-then when we push stack frames we just store the previous frame pointer and don't need to push push space at that time.
+Making control flow expressive:
+
+If statement returns boolean value of result.
+Else statement functions like a binary operator where result of LHS controls whether RHS executes. Then the else returns the value of either the LHS or RHS.
+Then statement works like else, except it only executes the RHS when the LHS evaluates as true.
+    An added complication with 'then' will be that when used immediately after an if, it gets desugared as just a filler word. We will need some flag on the if node for this.
+    
+For returns true/false based on whether the loop was broken from.
+    If we wanted to get really crazy we could have for loops return the value type of the block that is attached, and this 'sum' value could be declared as a third identifier on the for loop
+    the usefulness of this is honestly pretty limited, so maybe it's not worth the added complexity. and also this requires both it and it_index to be explicitly named, which reduces the overall appeal of even using such a feature.
+    
+While loop can do the same thing, I suppose.
+    We also want to have a postfix while that just indicates that the condition is executed after the body, e.g. do while.
+    I don't necessarily want to add a `do` keyword, but it may be a good idea to indicate that we are entering a loop at the start of the block.
+    and perhaps this keyword would give us a place for some extra syntax like a block label. worth considering...
+```
+value := block :> {
+    // assign value to block identifier to set the 'return value' 
+    block = get_some_default_value();
+    
+    a := some_calculation();
+    b := some_other_calculation();
+    
+    // can break from the block and assign the 'return value' in one statement
+    if a < b  break[block] result = a;
+    
+    c := a_third_calculation();
+    
+    // whatever value result has at the end of the block will be assigned to 'value' in the outer scope
+    result = c;
+}
+```
+
+now that we have a simple version of blocks as expressions, we need to figure out how to make a sort of 'break' that can target an arbitrary block
+and/or some way to directly assign to the result of the block
+
+Another idea: indexing flow control statements
+This idea would particulrly be useful if the language had a robust concept of tuples or multiple return values
+The idea is that you could index an element of a tuple inline in certain control flow statements, for instance an if statement:
+```
+if[2] returns_multiple_values() {
+    // do something
+}
+```
+If we combined this idea with allowing scoped declarations in if statements, then maybe we get something quite useful:
+```
+if[ok] a, b, ok := returns_multiple_values() {
+    // do something with a and b
+}
+```
+really, we could just make the 'indexing' expression act as the actual condition and then it doesn't just have to be this really special thing
+the numeric case would need to be reconsidered, but in that case maybe we just allow indexing the tuple result of the proc call more direclty which is also probabyl something people want to do
+
+perhaps a better idea is just to use tuples in the if condition slot where each element is evaluated and only the final one is used as the actual condition
+the drawback with this version is that if we have a declaration in there, we need to enclose it in parentheses
+```
+if ( a, b, ok := returns_multiple_values() ), ok {
+    // do something with a and b
+}
+```
+this would require that we allow declarations at expression-level though, which I am not sure I like.
+if we use the indexing syntax then at least we can just treat the root of the condition as a statement without having to allow declarations in other weird places.
+
+
+
+other use cases for targetted control flow expressions
+break and continue obviously benefit from being able to target outer loops
+and using the brackets means we can still use some other syntax after the bracket, for instance for a result value
+```
+for x: xs
+for y: ys {
+    if cond(y)  break[x];
+}
+```
+
+
+## tuples
+
+I think it may be worth adding tuples to the language on down the line but there is a ton that would need to happen before then
+so I will just use this section to jot down some ideas and musing about tuples
+
+tuples should be a very lightweight feature that you don't really think about that much
+I don't really want people constructing and passing around tuples often, they should just use structs
+so, tuples will basically fall apart and deconstruct themselves at every available opporunity
+    in assignments, when returned from procedures, etc
+
+jai has no concept of tuples, though it allows things like multiple return values 
+    most of the time this is fine, but perhaps having a real concrete node for tuples would actually simplify certain things in the compiler
+    
+
+so in order to use a tuple or receive/assign it as such, you need to use the tuple() builtin function
+
+tuples are indexable, so you can do things like this:
+```
+if tuple(returns_multiple_values())[2] { ... }
+```
+the keyword is still required here because otherwise we would deconstruct the tuple and assume you are trying to index the first return value
+maybe we could also consider something like an `@` operator which can interact with tuples and index them. I am not sure yet!
+on the one hand maybe it is better if the tuple keyword adds just a tiny bit of friction, so that people will consider before using, but on the other hand, it does make the code harder to read...
+```
+if returns_multiple_values() @ 2 { ... }
+```
+
+
+need to be clear on which situations tuples are created implicitly, and in which they must be explicit
+implicit tuples
+    declarations
+    procedure return values
+    return statements
 

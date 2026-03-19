@@ -547,25 +547,26 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
                 initialize_any(member_value);
             }
         }
-        return VOID_ANY;
+        
+        return prepare_result(script, declaration, member_value, provided_storage);
     }
-    
-    
-    // early return on macro for now so that we don't overwrite value of malleable literal
-    // the initial value is evaluated in typechecking phase, which is fine since for now we only allow simple literals in a macro decl
-    if declaration.flags & .MACRO  return VOID_ANY;
     
     dprint("declaration name: %", get_name(script, declaration));
+    
     value_pointer := get_value_pointer(script, declaration);
-    // dprint("declaration value_pointer: %", value_pointer);
     dprint("declaration value_pointer: %", value_pointer);
     
-    if declaration.init_expression {
-        evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
-    } else {
-        initialize_any(Any.{ declaration.value_type, value_pointer });
+    result := Any.{ declaration.value_type, value_pointer };
+    
+    if !(declaration.flags & .MACRO) {
+        if declaration.init_expression {
+            evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
+        } else {
+            initialize_any(result);
+        }
     }
-    return VOID_ANY;
+    
+    return prepare_result(script, declaration, result, provided_storage);
 }
 
 evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
@@ -597,11 +598,24 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
 evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     evaluate_node_or_return(script, if_statement.condition);
     
-    condition := pop_any(*script.stack, if_statement.condition.value_type);
-    dprint("condition: % %", as_type(condition.type), condition);
+    // TODO: clean up this logic.
+    //       we should not need this VALUE_TYPE_IS_NOMINAL flag anymore, probably
+    // condition: Any;
+    // if !if_statement.condition.flags & .VALUE_TYPE_IS_NOMINAL {
+        condition := pop_any(*script.stack, if_statement.condition.value_type);
+        dprint("condition: % %", as_type(condition.type), condition);
+    // }
+    
+    subcondition: Any;
+    if if_statement.subcondition {
+        evaluate_node_or_return(script, if_statement.subcondition);
+        subcondition = pop_any(*script.stack, if_statement.subcondition.value_type);
+        dprint("subcondition: % %", as_type(condition.type), condition);
+    }
     
     condition_as_bool: bool;
-    Convert.any_to_bool(condition_as_bool, condition);
+    Convert.any_to_bool(condition_as_bool, ifx if_statement.subcondition then subcondition else condition);
+    
     if condition_as_bool {
         evaluate_node_or_return(script, if_statement.block, null, .DISCARD_VALUE);
     }

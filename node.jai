@@ -103,6 +103,13 @@ get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Decla
           case Node_For_Loop;
             for_loop := block.owner.(*Node_For_Loop);
             return for_loop.declarations;
+            
+          case Node_If_Statement;
+            if_statement := block.owner.(*Node_If_Statement);
+            if if_statement.condition.node_type == Node_Declaration {
+                array := (*Node_Declaration).[xx if_statement.condition];
+                return array_copy(array);
+            }
         }
     }
     return .[];
@@ -391,8 +398,9 @@ Node_Subscript :: struct {
 
 Node_If_Statement :: struct {
     using #as node_base: Node;
-    block:      *Node_Block;
-    condition:  *Node;
+    block:          *Node_Block;
+    condition:      *Node;
+    subcondition:   *Node;
 }
 
 // Node_Else :: struct {

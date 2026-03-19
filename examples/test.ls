@@ -1,153 +1,167 @@
 
-// v1 := 1;
+// // v1 := 1;
 
-// for l1: 0..v1 {
-//     v2 := 2;
+// // for l1: 0..v1 {
+// //     v2 := 2;
     
-//     for l2: 0..v2 {
-//         v3 := 3;
+// //     for l2: 0..v2 {
+// //         v3 := 3;
         
-//         echo(l2);
-//     }
+// //         echo(l2);
+// //     }
+// // }
+
+
+
+// // struct literals
+// r1 = Vector2.{ 3, 4 } * 5.0;
+// r1 -= .{ 3, 2 };
+
+// // operators and procedure calls
+// r2 = (1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
+// r3 = a + b;
+
+// // while loops
+// while echo(r2) > 20.0 {
+//    r2 = r2 - 1;
+//    r3 = r3 + r3;
+// }
+
+// // for loops and casting
+// for arr1  if it > 1.0  it = it_index.(float) * 7.0;
+// for arr1  echo(it);
+
+// // local declarations
+// local: float;
+// local = 5 + 5 * 2;
+// echo(local/2.0);
+
+// // test recursion depth... currently crashes the program because jai is generating massive stack frames
+// // local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
+
+// // assignment operators redux
+// local = 2;
+// local += 5;
+// echo(local);
+
+// // range-based for loops and unary operators
+// for -5..9  echo(it);
+
+// // strings
+// print(str);
+// print("this is also a string");
+
+// local_str := "this is yet another string";
+// print(local_str);
+// str = local_str;
+
+
+// // Directives Test
+// // #declare will call add_named_value in test.jai, which will add a new Named_Value to the array and add that value as a variable in the script.
+// // This allows the script to use 'named_1' as a simple variable although its storage is managed externally.
+// #declare("named_1");
+// named_1 = 7;
+// echo(named_1);
+
+
+// // struct literal and operator overload test
+// vec3 := Vector3.{ 1, 2, 3 } * 7;
+// echo(vec3);
+
+
+// // malleable literals
+// // you will notice that the value of 5 in the declaration for const will be overwritten with 7 when this file is re-serialized (look at output.ls)
+// // also, if you were to execute the script multiple times, it would only be 5 on the first run
+// const :: 5?;
+// echo(const);
+
+// const = 7;
+// echo(const);
+
+
+// // backticked identifier strings test
+// `identifier string` := 69;
+// echo(`identifier string`);
+
+
+// // identifier resolution callbacks / node replacement test
+// // cool_number will be replaced with '35' when re-serialized
+// // node replacement is not really something to be used if one plans to re-serialize their ast later, since it's inherently a destructive transformation.
+// // but, for throwaway scripts or expressions it can be very handy
+// // asdf := cool_number;
+// // echo(asdf);
+// // echo(cool_number);
+
+
+// e := Fruits.BANANA;
+// echo(e);
+// e = .PEAR;
+// echo(e);
+
+// // test of better procedure overload resolution
+// echo(length(.{1, 2} + .{2, 2}));
+// echo(f32(5)); // stupid and confusing example
+// {
+//    a: int = 5;
+//    b: u8  = 3; 
+//    echo(a);
+//    echo(b);
+//    a = b;
+//    echo(a);
+// }
+
+// // test of implicit reference semantics for procedure arguments
+// // v2 is taken by reference in call to 'scale'
+// v2 := Vector2.{ 1, 2 };
+// scale(v2, 3);
+// echo(v2);
+
+// // comma separated lists for iteration 
+// // this is sort of a cope for not having array literals
+// {
+//    a := 5;
+//    b := 96;
+//    c := -8;
+//    for a, b, c  echo(it);
+// }
+
+// some_value := #add(1, 2);
+// echo(some_value);
+
+// // named blocks
+// test_block: {
+//    print("Running test block.");
 // }
 
 
-
-// struct literals
-r1 = Vector2.{ 3, 4 } * 5.0;
-r1 -= .{ 3, 2 };
-
-// operators and procedure calls
-r2 = (1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
-r3 = a + b;
-
-// while loops
-while echo(r2) > 20.0 {
-   r2 = r2 - 1;
-   r3 = r3 + r3;
-}
-
-// for loops and casting
-for arr1  if it > 1.0  it = it_index.(float) * 7.0;
-for arr1  echo(it);
-
-// local declarations
-local: float;
-local = 5 + 5 * 2;
-echo(local/2.0);
-
-// test recursion depth... currently crashes the program because jai is generating massive stack frames
-// local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
-
-// assignment operators redux
-local = 2;
-local += 5;
-echo(local);
-
-// range-based for loops and unary operators
-for -5..9  echo(it);
-
-// strings
-print(str);
-print("this is also a string");
-
-local_str := "this is yet another string";
-print(local_str);
-str = local_str;
+// // testing binary operation type hinting
+// //    the idea here is that the type hint passed to the operation is for 'int',
+// //    but we don't want the number literal to receive that type hint,
+// //    rather, we want it to receive the type hint from the other side of the operation, '_float'
+// _float := 5.0;
+// _int := (_float + 3).(int);
+// echo(_int);
 
 
-// Directives Test
-// #declare will call add_named_value in test.jai, which will add a new Named_Value to the array and add that value as a variable in the script.
-// This allows the script to use 'named_1' as a simple variable although its storage is managed externally.
-#declare("named_1");
-named_1 = 7;
-echo(named_1);
+// // test blocks as expressions
+// block_result := {
+//    a := 5.0;
+//    b := 3.0;
+//    Vector2.{ b, a + b };
+// };
+
+// echo(block_result);
 
 
-// struct literal and operator overload test
-vec3 := Vector3.{ 1, 2, 3 } * 7;
-echo(vec3);
 
+// test declaration in if statement condition
+if val := 1  echo(val);
+if val := 0  echo(val);
 
-// malleable literals
-// you will notice that the value of 5 in the declaration for const will be overwritten with 7 when this file is re-serialized (look at output.ls)
-// also, if you were to execute the script multiple times, it would only be 5 on the first run
-const :: 5?;
-echo(const);
-
-const = 7;
-echo(const);
-
-
-// backticked identifier strings test
-`identifier string` := 69;
-echo(`identifier string`);
-
-
-// identifier resolution callbacks / node replacement test
-// cool_number will be replaced with '35' when re-serialized
-// node replacement is not really something to be used if one plans to re-serialize their ast later, since it's inherently a destructive transformation.
-// but, for throwaway scripts or expressions it can be very handy
-// asdf := cool_number;
-// echo(asdf);
-// echo(cool_number);
-
-
-e := Fruits.BANANA;
-echo(e);
-e = .PEAR;
-echo(e);
-
-// test of better procedure overload resolution
-echo(length(.{1, 2} + .{2, 2}));
-echo(f32(5)); // stupid and confusing example
-{
-   a: int = 5;
-   b: u8  = 3; 
-   echo(a);
-   echo(b);
-   a = b;
-   echo(a);
-}
-
-// test of implicit reference semantics for procedure arguments
-// v2 is taken by reference in call to 'scale'
-v2 := Vector2.{ 1, 2 };
-scale(v2, 3);
-echo(v2);
-
-// comma separated lists for iteration 
-// this is sort of a cope for not having array literals
-{
-   a := 5;
-   b := 96;
-   c := -8;
-   for a, b, c  echo(it);
-}
-
-some_value := #add(1, 2);
-echo(some_value);
-
-// named blocks
-test_block: {
-   print("Running test block.");
+// test subcondition on if statements
+min := 10;
+if [val >= min] val := 2 + 7 {
+    echo(val);
 }
 
 
-// testing binary operation type hinting
-//    the idea here is that the type hint passed to the operation is for 'int',
-//    but we don't want the number literal to receive that type hint,
-//    rather, we want it to receive the type hint from the other side of the operation, '_float'
-_float := 5.0;
-_int := (_float + 3).(int);
-echo(_int);
-
-
-// test blocks as expressions
-block_result := {
-   a := 5.0;
-   b := 3.0;
-   Vector2.{ b, a + b };
-};
-
-echo(block_result);

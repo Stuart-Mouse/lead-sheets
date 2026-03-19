@@ -40,23 +40,23 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
 
 // TODO: probably remove this as part of doing blocks as expressions
 // used in if/for/while, where we need to wrap single statements in a block implicitly.
-parse_block_or_statement :: (using script: *Script, parent: *Node, expect_semicolon := true) -> *Node_Block {
-    block := alloc_node(script, Node_Block);
+parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true) -> bool {
+    // block := alloc_node(script, Node_Block);
     current_scope = block; 
     
     open_brace := peek_token(script);
     if open_brace.type == .OPEN_BRACE {
         get_token(script);
         statements, ok := parse_statements(script, .CLOSE_BRACE);
-        if !ok  return null;
+        if !ok  return false;
         block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
         block.location = open_brace.location;
         block.trivia   = open_brace.trivia;
     } else {
         statement := parse_statement(script, expect_semicolon);
         if statement == null {
-            set_parse_error(script, "Expected a statement.", node = parent);
-            return null;
+            set_parse_error(script, "Expected a statement after if condition.", loc = lexer.location);
+            return false;
         }
         block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
         block.statements[0] = statement;
@@ -65,7 +65,7 @@ parse_block_or_statement :: (using script: *Script, parent: *Node, expect_semico
     }
     
     current_scope = block.scope; 
-    return block;
+    return true;
 }
 
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
@@ -75,34 +75,55 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         dprint("IF STATEMENT"); dprint_push_indent();
         if_token := get_token(script);
         if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
-        {
-            dprint("CONDITION"); dprint_push_indent();
-            if_statement.condition = my_parse_expression(script, 0);
-            if if_statement.condition == null  return null;
+        
+        if_statement.block = alloc_node(script, Node_Block);
+        if_statement.block.owner = if_statement;
+        
+        open_bracket_token := peek_token(script);
+        if open_bracket_token.type == .OPEN_BRACKET {
+            get_token(script);
+            dprint("SUBCONDITION"); dprint_push_indent();
+            
+            // the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
+            // this will give the subcondition access to identifiers that are declared in the main condition
+            current_scope = if_statement.block;  
+            defer current_scope = if_statement.scope;
+            
+            if_statement.subcondition = my_parse_expression(script, 0);
+            if if_statement.subcondition == null  return null;
+            
+            close_bracket_token := get_token(script);
+            if close_bracket_token.type != .CLOSE_BRACKET {
+                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
+                return null;
+            }
         }
-        {
-            dprint("STATEMENT"); dprint_push_indent();
-            if_statement.block = parse_block_or_statement(script, if_statement, expect_semicolon);
-            if if_statement.block == null  return null; 
-            if_statement.block.owner = if_statement;
-        }
+        
+        dprint("CONDITION"); dprint_push_indent();
+        if_statement.condition = parse_statement(script, false);
+        if if_statement.condition == null  return null;
+        
+        dprint("STATEMENT"); dprint_push_indent();
+        if !parse_block_or_statement(script, if_statement.block, expect_semicolon)  return null; 
+        
         return if_statement;
         
       case .WHILE;
         dprint("WHILE LOOP"); dprint_push_indent();
         while_token := get_token(script);
         while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
-        {
-            dprint("CONDITION");
-            while_loop.condition = my_parse_expression(script, 0);
-            if while_loop.condition == null  return null;
-        }
-        {
-            dprint("STATEMENT");
-            while_loop.block = parse_block_or_statement(script, while_loop, expect_semicolon);
-            if while_loop.block == null  return null; 
-            while_loop.block.owner = while_loop;
-        }
+        
+        while_loop.block = alloc_node(script, Node_Block);
+        while_loop.block.owner = while_loop;
+        
+        dprint("CONDITION");
+        while_loop.condition = my_parse_expression(script, 0);
+        if while_loop.condition == null  return null;
+        
+        dprint("STATEMENT");
+        if !parse_block_or_statement(script, while_loop.block, expect_semicolon)  return null;
+        while_loop.block.owner = while_loop;
+            
         return while_loop;
         
       case .FOR;
@@ -170,10 +191,11 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             for_loop.control_type = .LIST;
         }
         
-        dprint("STATEMENT");
-        for_loop.block = parse_block_or_statement(script, for_loop, expect_semicolon);
-        if for_loop.block == null  return null; 
+        for_loop.block = alloc_node(script, Node_Block);
         for_loop.block.owner = for_loop;
+        
+        dprint("STATEMENT");
+        if !parse_block_or_statement(script, for_loop.block, expect_semicolon)  return null;
         
         return for_loop;
     }
@@ -230,7 +252,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             declaration.type_expression = my_parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
-                set_parse_error(script, "%: type expression of a declaration must be an identifier. (was %)", get_location(left), declaration.type_expression.node_type);
+                set_parse_error(script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = left.location);
                 return null;
             }
         }
@@ -257,7 +279,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         if !expect_token_type(script, .SEMICOLON) && expect_semicolon {
-            set_parse_error(script, "%: Expected semicolon after statement.", script.lexer.location);
+            set_parse_error(script, "Expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
             return null;
         }
         
@@ -278,7 +300,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     // If we don't expect to see one then we are ok whether we saw one or not
     if !expect_semicolon  return left;
     
-    set_parse_error(script, "expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
+    set_parse_error(script, "Expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
     return null;
 }
 
@@ -312,7 +334,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             identifier := make_identifier(script, token_after_dot);
             return make_dot(script, token, null, identifier);
         }
-        else set_parse_error(script, "%: unexpected % token '%' after unary dot.", token_after_dot.location, token_after_dot.type, token_after_dot.text);
+        else set_parse_error(script, "Unexpected % token '%' after unary dot.", token_after_dot.type, token_after_dot.text, loc = token_after_dot.location);
         
       case .OPEN_BRACE;
         dprint("BLOCK"); dprint_push_indent();
@@ -336,7 +358,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         
         close_paren_token := get_token(script);
         if close_paren_token.type != .CLOSE_PAREN {
-            set_parse_error(script, "%: expected a closing paren for open paren at %.", close_paren_token.location, open_paren_location);
+            set_parse_error(script, "Expected a closing paren for open paren at %.", open_paren_location, loc = close_paren_token.location);
             return null;
         }
         return expression;
@@ -375,7 +397,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             }
         }
         if directive.directive_index == -1 {
-            set_parse_error(script, "%: Unable to resolve directive '%'\n", directive.location, directive.name);
+            set_parse_error(script, "Unable to resolve directive '%'\n", directive.name, loc = directive.location);
             return null;
         }
         
@@ -387,14 +409,14 @@ parse_leaf :: (using script: *Script) -> *Node {
                 
                 close_paren_token := get_token(script);
                 if close_paren_token.type != .CLOSE_PAREN {
-                    set_parse_error(script, "%: expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.location, close_paren_token.text);
+                    set_parse_error(script, "Expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.text, loc = close_paren_token.location);
                     return null;
                 }
             }
         }
         
         if !evaluate_directive(script, directive, .PARSE) {
-            set_parse_error(script, "%: failed while trying to execute a directive during parsing.", token.location);
+            set_parse_error(script, "Failed while trying to execute a directive during parsing.", loc = token.location);
             return null;
         }
         return directive;
@@ -404,7 +426,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         return make_identifier(script, token);
     }
     
-    set_parse_error(script, "unexpected token encountered in parse_leaf: '%'", token.text, loc = token.location);
+    set_parse_error(script, "Unexpected token encountered in parse_leaf: '%'", token.text, loc = token.location);
     return null;
 }
 
@@ -511,7 +533,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             type_expr := my_parse_expression(script, 0);
             close_paren := get_token(script);
             if close_paren.type != .CLOSE_PAREN {
-                set_parse_error(script, "%: unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.location, close_paren.type);
+                set_parse_error(script, "Unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.type, loc = close_paren.location);
                 return null;
             }
             return make_cast(script, dot_token, left, type_expr);
@@ -523,14 +545,14 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
           case .OPEN_BRACE;
             struct_contents, ok := parse_contents_of_struct_literal(script);
             if !ok {
-                set_parse_error(script, "%: failed to parse contents of struct literal.", token.location);
+                set_parse_error(script, "Failed to parse contents of struct literal.", loc = token.location);
                 return null;
             }
             literal := make_struct_literal(script, token_after_dot, struct_contents);
             return make_dot(script, dot_token, left, literal);
         }
         
-        set_parse_error(script, "%: unexpected % token '%' after dot.", token.location, token.type, token.text);
+        set_parse_error(script, "Unexpected % token '%' after dot.", token.type, token.text, loc = token.location);
         return null;
         
         
@@ -544,7 +566,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
             return make_arrow(script, arrow_token, left, identifier);
         }
         
-        set_parse_error(script, "%: unexpected % token '%' after arrow.", token.location, token.type, token.text);
+        set_parse_error(script, "Unexpected % token '%' after arrow.", token.type, token.text, loc = token.location);
         return null;
         
         
@@ -588,7 +610,7 @@ parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := T
     
     scope_end := get_token(script);
     if scope_end.type != scope_end_token {
-        set_parse_error(script, "%: expected a closing brace after initialization expressions of struct literal. Instead got % '%'\n", scope_end.location, scope_end.type, scope_end.text);
+        set_parse_error(script, "Expected a closing brace after initialization expressions of struct literal. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
         return .[], false;
     }
     
@@ -603,7 +625,7 @@ parse_procedure_arguments :: (using script: *Script, scope_end_token := Token_Ty
     
     scope_end := get_token(script);
     if scope_end.type != scope_end_token {
-        set_parse_error(script, "%: expected a closing paren after arguments of procedure call. Instead we saw %\n", scope_end.location, scope_end.text);
+        set_parse_error(script, "Expected a closing paren after arguments of procedure call. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
         return .[], false;
     }
     

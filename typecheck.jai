@@ -1057,7 +1057,7 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
 typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: we currently only allow declarations to be used as statements, so we flag them all with .VALUE_TYPE_IS_NOMINAL
     //       this currently serves no funcitonal purpose other than to make our assertions happy in evaluate_node_or_return 
-    declaration.flags |= .VALUE_TYPE_IS_NOMINAL;
+    // declaration.flags |= .VALUE_TYPE_IS_NOMINAL;
     
     explicit_type: *Type_Info;
     if declaration.type_expression {
@@ -1157,7 +1157,13 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
 }
 
 typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    typecheck_node_or_return(script, if_statement.condition); // TODO: must be bool or coercible to bool
+    // NOTE: we treat the condition as a statement-level construct so that the user can write a declaration in there.
+    typecheck_node_or_return(script, if_statement.condition, .IS_STATEMENT_ROOT);
+    
+    if if_statement.subcondition {
+        typecheck_node_or_return(script, if_statement.subcondition);
+    }
+    
     typecheck_node_or_return(script, if_statement.block, .IS_STATEMENT_ROOT);
     
     if_statement.value_type = type_info(void);
@@ -1165,7 +1171,7 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
 }
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    typecheck_node_or_return(script, while_loop.condition); // TODO: must be bool or coercible to bool
+    typecheck_node_or_return(script, while_loop.condition);
     typecheck_node_or_return(script, while_loop.block, .IS_STATEMENT_ROOT);
     
     while_loop.value_type = type_info(void);
