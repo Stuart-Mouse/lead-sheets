@@ -264,21 +264,21 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return declaration;
     }
     
-    // check for semicolon
+    // Check for semicolon
     token = peek_token(script);
+    
+    // Always consume semicolon if it is present
+    if token.type == .SEMICOLON { get_token(script); return left; }
     
     // We generally require semicolons to delimit statements, but since blocks are now treated as expressions, we make a special exception for blocks.
     if left.node_type == Node_Block {//&& contains(token.trivia, #char "\n") {
         expect_semicolon = false;
     }
     
-    // always consume semicolon if it is present
-    if token.type == .SEMICOLON { get_token(script); return left; }
-    
-    // if we don't expect to see one then we are ok whether we saw one or not
+    // If we don't expect to see one then we are ok whether we saw one or not
     if !expect_semicolon  return left;
     
-    set_parse_error(script, "expected a semicolon after statement, but saw this: '%' (%)", token.text, token.type, loc = script.lexer.location);
+    set_parse_error(script, "expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
     return null;
 }
 
