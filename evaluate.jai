@@ -598,13 +598,8 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
 evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
     evaluate_node_or_return(script, if_statement.condition);
     
-    // TODO: clean up this logic.
-    //       we should not need this VALUE_TYPE_IS_NOMINAL flag anymore, probably
-    // condition: Any;
-    // if !if_statement.condition.flags & .VALUE_TYPE_IS_NOMINAL {
-        condition := pop_any(*script.stack, if_statement.condition.value_type);
-        dprint("condition: % %", as_type(condition.type), condition);
-    // }
+    condition := pop_any(*script.stack, if_statement.condition.value_type);
+    dprint("condition: % %", as_type(condition.type), condition);
     
     subcondition: Any;
     if if_statement.subcondition {
@@ -613,8 +608,7 @@ evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, pro
         dprint("subcondition: % %", as_type(condition.type), condition);
     }
     
-    condition_as_bool: bool;
-    Convert.any_to_bool(condition_as_bool, ifx if_statement.subcondition then subcondition else condition);
+    _, condition_as_bool := Convert.any_to(bool, ifx if_statement.subcondition then subcondition else condition);
     
     if condition_as_bool {
         evaluate_node_or_return(script, if_statement.block, null, .DISCARD_VALUE);
@@ -629,8 +623,7 @@ evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_
         condition := pop_any(*script.stack, while_loop.condition.value_type);
         dprint("condition: % %", as_type(condition.type), condition);
         
-        condition_as_bool: bool;
-        Convert.any_to_bool(condition_as_bool, condition);
+        _, condition_as_bool := Convert.any_to(bool, condition);
         if !condition_as_bool  break loop;
         
         evaluate_node_or_return(script, while_loop.block, null, .DISCARD_VALUE);

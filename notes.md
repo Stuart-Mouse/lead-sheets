@@ -2089,3 +2089,14 @@ implicit tuples
     procedure return values
     return statements
 
+
+
+
+decarations will have to remain a purely statement-level construct, due to the fact that they conflict syntactically with other uses of `:`, for instance in for loops with iterator declarations
+
+
+
+
+
+
+

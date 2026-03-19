@@ -103,6 +103,19 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if_statement.condition = parse_statement(script, false);
         if if_statement.condition == null  return null;
         
+        // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
+        if if_statement.condition.node_type == {
+          case Node_If_Statement;
+            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_While_Loop;
+            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_For_Loop;
+            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+        }
+        
         dprint("STATEMENT"); dprint_push_indent();
         if !parse_block_or_statement(script, if_statement.block, expect_semicolon)  return null; 
         
@@ -200,41 +213,28 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return for_loop;
     }
     
-    /*
-        TODO:
-            we can improve this section if we beef up the lexer so that we scan a few more tokens ahead, or pre-tokenize the entire file.
-            If we could peek 2 tokens ahead we could capture the identifer + colon case before the general expression case.
-            which would prevent us from making the identifier node and throwing it away just to stick the name on the declaration or assignment expression
-        NOTE:
-            after later consideration, I've decided not to do the above, even though I've increased the lexer lookahead.
-            There are two reasons for this:
-                1. We can provide a better error message below, since we can recognize that some invalid expression was used on the left-hand side of a declaration, where only an identifier should go.
-                2. I am now thining that perhaps we will want to be able to do the same identifier renaming for declarations that we support (or are working on supporting) for other cases of identifiers.
-                    If we go through with this, we will need to stop throwing away the identifier on the declaration and store a *Node instead of the name as a string.
-    */
-    
     dprint("EXPRESSION...");
     
-    left := my_parse_expression(script, 0);
-    if left == null  return null;
+    expression := my_parse_expression(script, 0);
+    if expression == null  return null;
     
     if expect_token_type(script, .COLON) {
         // colon followed by open brace is a named block, not a standard declaration
         // maybe we should make a named block a type of declaration so that we can resolve it by identifier in the standard way? idk yet...
         // also, for now we will require that all named blocks are top-level, since we will actually just push these blocks into a special array
         if peek_token(script).type == .OPEN_BRACE {
-            dprint("NAMED BLOCK (%)", left.(*Node_Identifier).name); dprint_push_indent();
+            dprint("NAMED BLOCK (%)", expression.(*Node_Identifier).name); dprint_push_indent();
             if script.current_scope != script.ast_root {
-                set_parse_error(script, "%: named blocks can only be declared at the top-level scope, but the current scope is %", get_location(left), script.current_scope.location);
+                set_parse_error(script, "%: named blocks can only be declared at the top-level scope, but the current scope is %", get_location(expression), script.current_scope.location);
                 return null;
             }
             
             block := parse_statement(script).(*Node_Block);
             if block == null  return null;
             assert(block.node_type == Node_Block);
-            block.name = left.(*Node_Identifier).name;
-            block.location = left.location;
-            block.trivia   = left.trivia;
+            block.name = expression.(*Node_Identifier).name;
+            block.location = expression.location;
+            block.trivia   = expression.trivia;
             
             array_add(*script.named_blocks, block);
             return block;
@@ -243,8 +243,8 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         dprint("DECLARATION"); dprint_push_indent();
         
-        declaration := alloc_node(script, Node_Declaration, loc = left.location);
-        declaration.left = left.(*Node_Identifier);
+        declaration := alloc_node(script, Node_Declaration, loc = expression.location);
+        declaration.left = expression.(*Node_Identifier);
         
         next_token := peek_token(script);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
@@ -252,7 +252,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             declaration.type_expression = my_parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
-                set_parse_error(script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = left.location);
+                set_parse_error(script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = expression.location);
                 return null;
             }
         }
@@ -278,27 +278,22 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             if is_macro_declaration then declaration.flags |= .MACRO;
         }
         
-        if !expect_token_type(script, .SEMICOLON) && expect_semicolon {
-            set_parse_error(script, "Expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
-            return null;
-        }
-        
-        return declaration;
+        expression = declaration;
     }
     
     // Check for semicolon
     token = peek_token(script);
     
     // Always consume semicolon if it is present
-    if token.type == .SEMICOLON { get_token(script); return left; }
+    if token.type == .SEMICOLON { get_token(script); return expression; }
     
     // We generally require semicolons to delimit statements, but since blocks are now treated as expressions, we make a special exception for blocks.
-    if left.node_type == Node_Block {//&& contains(token.trivia, #char "\n") {
+    if expression.node_type == Node_Block {//&& contains(token.trivia, #char "\n") {
         expect_semicolon = false;
     }
     
     // If we don't expect to see one then we are ok whether we saw one or not
-    if !expect_semicolon  return left;
+    if !expect_semicolon  return expression;
     
     set_parse_error(script, "Expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
     return null;
