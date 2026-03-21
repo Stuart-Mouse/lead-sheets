@@ -69,7 +69,6 @@ typecheck_node :: (
       case Node_If_Statement;      typecheck_if_statement    (script, xx node, check_flags, hint_type);
       case Node_While_Loop;        typecheck_while_loop      (script, xx node, check_flags, hint_type);
       case Node_For_Loop;          typecheck_for_loop        (script, xx node, check_flags, hint_type);
-      case Node_Else;              typecheck_else            (script, xx node, check_flags, hint_type);
       case;
         set_typecheck_error(script, "Unhandled node type % in typecheck_node.", node.node_type, node = node);
     }
@@ -393,24 +392,20 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         if need_lvalue then set_typecheck_error(script, "Using the result of a procedure call as an lvalue is not currently supported", node = node);
         return false;
         
-      case Node_Else;
-        if need_lvalue then set_typecheck_error(script, "Using the result of an else expression as an lvalue is not currently supported", node = node);
-        return false;
-        
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
-      case Node_Declaration;        
+      case Node_Declaration;
         if need_lvalue then set_typecheck_error(script, "A declaration cannot be used as an lvalue", node = node);
         return false;
-      case Node_Block;              
+      case Node_Block;
         if need_lvalue then set_typecheck_error(script, "A block cannot be used as an lvalue", node = node);
         return false;
-      case Node_If_Statement;       
+      case Node_If_Statement;
         if need_lvalue then set_typecheck_error(script, "An if statement cannot be used as an lvalue", node = node);
         return false;
-      case Node_While_Loop;         
+      case Node_While_Loop;
         if need_lvalue then set_typecheck_error(script, "A while loop cannot be used as an lvalue", node = node);
         return false;
-      case Node_For_Loop;           
+      case Node_For_Loop;
         if need_lvalue then set_typecheck_error(script, "A for loop cannot be used as an lvalue", node = node);
         return false;
     }
@@ -1165,7 +1160,7 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
         typecheck_node_or_return(script, if_statement.subcondition);
     }
     
-    typecheck_node_or_return(script, if_statement.block, .IS_STATEMENT_ROOT);
+    typecheck_node_or_return(script, if_statement.then_block, .IS_STATEMENT_ROOT);
     
     if_statement.value_type = type_info(void);
     return;
@@ -1282,18 +1277,5 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     
     for_loop.value_type = xx void;
     return;
-}
-
-
-typecheck_else :: (using script: *Script, _else: *Node_Else, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    condition_value_type  := typecheck_node_or_return(script, _else.condition);
-    expression_value_type := typecheck_node_or_return(script, _else.expression);
-    
-    if condition_value_type != expression_value_type {
-        set_typecheck_error(script, "Mismatched types in else expression. Left type is %, but right type is %.", as_type(condition_value_type), as_type(expression_value_type), node = _else);
-        return;
-    }
-    
-    _else.value_type = _else.condition.value_type;
 }
 

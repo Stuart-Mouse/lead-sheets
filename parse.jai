@@ -55,7 +55,9 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
     } else {
         statement := parse_statement(script, expect_semicolon);
         if statement == null {
-            set_parse_error(script, "Expected a statement after if condition.", loc = lexer.location);
+            if !has_error(script) {
+                set_parse_error(script, "Expected a statement.", loc = lexer.location);
+            }
             return false;
         }
         block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
@@ -71,56 +73,6 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
-      case .IF; 
-        dprint("IF STATEMENT"); dprint_push_indent();
-        if_token := get_token(script);
-        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
-        
-        if_statement.block = alloc_node(script, Node_Block);
-        if_statement.block.owner = if_statement;
-        
-        open_bracket_token := peek_token(script);
-        if open_bracket_token.type == .OPEN_BRACKET {
-            get_token(script);
-            dprint("SUBCONDITION"); dprint_push_indent();
-            
-            // the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
-            // this will give the subcondition access to identifiers that are declared in the main condition
-            current_scope = if_statement.block;  
-            defer current_scope = if_statement.scope;
-            
-            if_statement.subcondition = my_parse_expression(script, 0);
-            if if_statement.subcondition == null  return null;
-            
-            close_bracket_token := get_token(script);
-            if close_bracket_token.type != .CLOSE_BRACKET {
-                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
-                return null;
-            }
-        }
-        
-        dprint("CONDITION"); dprint_push_indent();
-        if_statement.condition = parse_statement(script, false);
-        if if_statement.condition == null  return null;
-        
-        // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
-        if if_statement.condition.node_type == {
-          case Node_If_Statement;
-            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-          case Node_While_Loop;
-            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-          case Node_For_Loop;
-            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-        }
-        
-        dprint("STATEMENT"); dprint_push_indent();
-        if !parse_block_or_statement(script, if_statement.block, expect_semicolon)  return null; 
-        
-        return if_statement;
-        
       case .WHILE;
         dprint("WHILE LOOP"); dprint_push_indent();
         while_token := get_token(script);
@@ -288,14 +240,16 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     if token.type == .SEMICOLON { get_token(script); return expression; }
     
     // We generally require semicolons to delimit statements, but since blocks are now treated as expressions, we make a special exception for blocks.
-    if expression.node_type == Node_Block {//&& contains(token.trivia, #char "\n") {
+    if expression.node_type == {
+      case Node_If_Statement; #through;
+      case Node_Block;
         expect_semicolon = false;
     }
     
     // If we don't expect to see one then we are ok whether we saw one or not
     if !expect_semicolon  return expression;
     
-    set_parse_error(script, "Expected a semicolon after statement, but saw % token: '%'", token.type, token.text, loc = script.lexer.location);
+    set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = script.lexer.location);
     return null;
 }
 
@@ -314,6 +268,67 @@ parse_leaf :: (using script: *Script) -> *Node {
     }
     
     if token.type == {
+      case .IF; 
+        dprint("IF"); dprint_push_indent();
+        if_token := token;
+        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
+        
+        if_statement.then_block = alloc_node(script, Node_Block);
+        if_statement.then_block.owner = if_statement;
+        
+        open_bracket_token := peek_token(script);
+        if open_bracket_token.type == .OPEN_BRACKET {
+            get_token(script);
+            dprint("SUBCONDITION"); dprint_push_indent();
+            
+            // the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
+            // this will give the subcondition access to identifiers that are declared in the main condition
+            current_scope = if_statement.then_block;  
+            defer current_scope = if_statement.scope;
+            
+            if_statement.subcondition = my_parse_expression(script, 0);
+            if if_statement.subcondition == null  return null;
+            
+            close_bracket_token := get_token(script);
+            if close_bracket_token.type != .CLOSE_BRACKET {
+                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
+                return null;
+            }
+        }
+        
+        dprint("CONDITION"); dprint_push_indent();
+        if_statement.condition = parse_statement(script, false);
+        if if_statement.condition == null  return null;
+        
+        // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
+        if if_statement.condition.node_type == {
+          case Node_If_Statement;
+            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_While_Loop;
+            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_For_Loop;
+            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+        }
+        
+        token = peek_token(script);
+        
+        if token.type == {
+          case .THEN;
+            get_token(script);
+            #through;
+            
+          case;
+            dprint("THEN BLOCK"); dprint_push_indent();
+            if !parse_block_or_statement(script, if_statement.then_block, true)  return null; 
+        }
+        
+        
+        
+        return if_statement;
+        
       case .DOT;
         dprint("UNARY DOT");
         token_after_dot := get_token(script);
@@ -574,22 +589,6 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         if !expect_token_type(script, .CLOSE_BRACKET)  return null;
         
         return make_subscript(script, open_bracket_token, left, indexing_expr);
-        
-        
-      case .ELSE;
-        dprint("EXPRESSION ELSE");
-        if Node_Else.OPERATOR_PRECEDENCE <= min_prec  return left;
-        
-        else_token := get_token(script);
-        
-        _else := alloc_node(script, Node_Else, loc = token.location, trivia = token.trivia);
-        _else.condition = left;
-        
-        right := my_parse_expression(script, Node_Else.OPERATOR_PRECEDENCE);
-        if right == null  return null;
-        
-        _else.expression = right;
-        return _else;
     }
     
     // We only consume the binary operator here if it is of a higher precedence than the previous binary operator.
@@ -598,6 +597,8 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     if is_operator {
         _operator := get_operator_info(script, operator_index);
         if _operator.precedence <= min_prec  return left;
+        
+        dprint("BINARY OPERATOR: %", _operator.token);
         
         operator_token := get_token(script);
         right := my_parse_expression(script, _operator.precedence);

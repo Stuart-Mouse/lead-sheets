@@ -328,7 +328,7 @@ print_node :: (
         append(builder, "if");
         print_node_or_return(script, if_statement.condition, builder, indent);
         // append(builder, "  ");
-        print_node_or_return(script, if_statement.block, builder, indent);
+        print_node_or_return(script, if_statement.then_block, builder, indent);
         return true;
         
         
