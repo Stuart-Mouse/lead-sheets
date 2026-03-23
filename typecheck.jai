@@ -1150,11 +1150,21 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
 }
 
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    block.value_type = null;
+    
     block.stack_frame_size = 0;
     for block.statements {
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
     }
-    block.value_type = block.statements[block.statements.count-1].value_type;
+    
+    if block.name {
+        if block.value_type == null {
+            block.value_type = xx void;
+        }
+    } else {
+        assert(block.value_type == null, "Non-named block had its value_type set!");
+        block.value_type = xx void;
+    }
 }
 
 typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {

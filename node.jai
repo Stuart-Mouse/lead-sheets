@@ -384,18 +384,6 @@ Node_Subscript :: struct {
 
 // ===== Flow Control Statements =====
 
-/*
-    TODO: more refactoring
-    
-    as we make blocks work as expressions and return values, this will mean doingsome work on flow control as well
-    
-    we need blocks as expressions before we can really implement expression-style else
-    
-    If we allow using these flow control statements in an expresison context, we may need to give them some kind of precedence like binary operators.
-    Just relying on the structure of parsing is probably not a very good solution, since unlike dot and subscript, we don't want infinite operator precedence, we actually wnat quite low precedence, maybe just above assignment and comparison
-    
-*/
-
 Node_If_Statement :: struct {
     using #as node_base: Node;
     then_block:     *Node_Block;
@@ -410,14 +398,6 @@ Node_If_Expression :: struct {
     else_expression:    *Node;
     condition:          *Node;
 }
-
-// Node_Else :: struct {
-//     using #as node_base: Node;
-//     expression: *Node; // or block
-//     condition:  *Node;
-    
-//     OPERATOR_PRECEDENCE :: 2;
-// }
 
 Node_While_Loop :: struct {
     using #as node_base: Node;

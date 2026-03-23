@@ -1885,10 +1885,10 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
 - [ ] improve implicit casting on virtual members
     - add automatic type assertions for virtual members within the scope in which they are declared
     - allow virtual member declarations with only type to serve the same purpose without 'redeclaring' the value
-- [ ] enum literals should not be created as identifier nodes they should be literals first and foremost
+- [/] enum literals should not be created as identifier nodes they should be literals first and foremost
     - actually no. lexically, it makes sense that we parse an identifier, and then that identifier refers to some literal value
     - the thing to figure out is just how to simplify both literals and identifiers so that they are more intuitive and extensible
-- [ ] maybe remove node_dot and node_subscript, use binary_operator node instead and separate binary/unary operator nodes
+- [/] maybe remove node_dot and node_subscript, use binary_operator node instead and separate binary/unary operator nodes
     - evaluate whether the unary/binary operator node split is worthwhile
 - [ ] maybe create interface for identifier referents
 - [ ] make better proc for generating literals from aggregates, try to remove the .ANY literal_type
@@ -1903,8 +1903,8 @@ Doing a lot of spring cleaning in order to prepare for implementing bytecode stu
     - main difference will be that nonconstant values can be used as constants in many situations (e.g. a nonconstant type can be used in a declaration's type slot)
 - [X] optimize stack frame sizes
     - [X] consider location of block within parent in stack requirement calculation
-- [ ] implement else blocks
-- [ ] implement expression-style if
+- [X] implement else blocks
+- [X] implement expression-style if
 - [ ] simplify resoluiton of external declarations
 
 Since I apparently got a lot of ideas about refactoring all at once, it may be a good idea to just list the various broader ideas and consider how they will interact
@@ -1964,16 +1964,6 @@ it may be worthwhile in the long run to use custom type info structures rather t
     And really, the first starting place will just be making array literals actually a thing, and creating those new type infos and storing them somewhere.
 
 
-consider making then and else work as operators
-```
-foo := get_foo() else INVALID_FOO;
-bar := is_valid(foo) then get_bar(foo) else DEFAULT_BAR;
-```
-combined with blocks as expressions, this could lead to very interesting semantics and flow control
-    one issue is that this makes it more difficult to access an else block from an if/for/while on the AST, since the else is the parent of the if
-    maybe we can just use some owner node pointer on these constructs in this case, though that adds more bidirectionality to the AST, which I am not sure about how much of that we want at the moment
-
-
 implement #ifdef() directive that checks if an identifier is defined and then returns the result of that identifier if it is, else null
 
 
@@ -1995,7 +1985,7 @@ While loop can do the same thing, I suppose.
     I don't necessarily want to add a `do` keyword, but it may be a good idea to indicate that we are entering a loop at the start of the block.
     and perhaps this keyword would give us a place for some extra syntax like a block label. worth considering...
 ```
-value := block :> {
+value := block: {
     // assign value to block identifier to set the 'return value' 
     block = get_some_default_value();
     
@@ -2003,12 +1993,12 @@ value := block :> {
     b := some_other_calculation();
     
     // can break from the block and assign the 'return value' in one statement
-    if a < b  break[block] result = a;
+    if a < b  break[block] a;
     
     c := a_third_calculation();
     
     // whatever value result has at the end of the block will be assigned to 'value' in the outer scope
-    result = c;
+    break[block] c;
 }
 ```
 
@@ -2093,10 +2083,24 @@ implicit tuples
 
 
 decarations will have to remain a purely statement-level construct, due to the fact that they conflict syntactically with other uses of `:`, for instance in for loops with iterator declarations
+unfortunately, this would actually make it so that all colons need to be at statement level, which is not really great for implementing named blocks
 
+We will finally need to add a bit more lookahead into the lexer
+because in order to properly parse named blocks as expressions, we need to be able to see a colon + open brace combo
+either that, or we need to make everythign be an expression, which has other problems I don't want to deal with quite right now
 
+else
+    then
+        if
+            condition
+            subcondition
+        expression
+    expression
 
+its kind of weird to see the else/then/if structure this way
+and weird for the if to only return the result of the condition/subcondition
 
+we could do a weird parsing hack to implicitly create then nodes after an if
 
 
 

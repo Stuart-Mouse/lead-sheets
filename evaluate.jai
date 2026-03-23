@@ -586,15 +586,14 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
     }
     defer pop(*script.stack, block.stack_frame_size);
     
-    statements_except_last := array_view(block.statements, 0, block.statements.count-1);
-    for statements_except_last {
+    for block.statements {
         stack_top_before := script.stack.top;
         defer assert(script.stack.top == stack_top_before, "Invalid stack use on statement at %. stack top: %, stack top before: %", get_location(it), script.stack.top, stack_top_before);
         
         evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
     }
     
-    return evaluate_node_or_return(script, block.statements[block.statements.count-1], result_storage);
+    return prepare_result(script, block, Any.{ block.value_type, null }, provided_storage);
 }
 
 evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
@@ -726,7 +725,10 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
             dprint(" (%)", as_type(any.type));
         }
         
-        memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
+        if any.value_pointer 
+            then memcpy(provided_storage, any.value_pointer, any.type.runtime_size);
+            else memset(provided_storage, 0, any.type.runtime_size);
+        
         return Any.{ any.type, provided_storage };
     }
     

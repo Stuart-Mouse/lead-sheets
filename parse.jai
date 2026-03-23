@@ -240,29 +240,13 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     expression := my_parse_expression(script, 0);
     if expression == null  return null;
     
+    if expression.node_type == Node_Block 
+    && expression.(*Node_Block).name
+    && script.current_scope == script.ast_root {
+        array_add(*script.named_blocks, xx expression);
+    }
+    
     if expect_token_type(script, .COLON) {
-        // colon followed by open brace is a named block, not a standard declaration
-        // maybe we should make a named block a type of declaration so that we can resolve it by identifier in the standard way? idk yet...
-        // also, for now we will require that all named blocks are top-level, since we will actually just push these blocks into a special array
-        if peek_token(script).type == .OPEN_BRACE {
-            dprint("NAMED BLOCK (%)", expression.(*Node_Identifier).name); dprint_push_indent();
-            if script.current_scope != script.ast_root {
-                set_parse_error(script, "%: named blocks can only be declared at the top-level scope, but the current scope is %", get_location(expression), script.current_scope.location);
-                return null;
-            }
-            
-            block := parse_statement(script).(*Node_Block);
-            if block == null  return null;
-            assert(block.node_type == Node_Block);
-            block.name = expression.(*Node_Identifier).name;
-            block.location = expression.location;
-            block.trivia   = expression.trivia;
-            
-            array_add(*script.named_blocks, block);
-            return block;
-        }
-        
-        
         dprint("DECLARATION"); dprint_push_indent();
         
         declaration := alloc_node(script, Node_Declaration, loc = expression.location);
@@ -481,6 +465,24 @@ parse_leaf :: (using script: *Script) -> *Node {
         return directive;
         
       case .IDENTIFIER;
+        if peek_token(script, 0).type == .COLON 
+        && peek_token(script, 1).type == .OPEN_BRACE {
+            name_token  := token;
+            colon_token := get_token(script);
+            
+            dprint("NAMED BLOCK (%)", name_token.text); dprint_push_indent();
+            
+            block := my_parse_leaf(script).(*Node_Block);
+            if block == null  return null;
+            assert(block.node_type == Node_Block);
+            
+            block.name     = name_token.text;
+            block.location = name_token.location;
+            block.trivia   = name_token.trivia;
+            
+            return block;
+        }
+        
         dprint("IDENTIFIER (%)", token.text);
         return make_identifier(script, token);
     }
