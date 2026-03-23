@@ -196,8 +196,16 @@ walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, da
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
         return walk_nodes(script, xx *if_statement.condition, callback, data)
-            && walk_nodes(script, xx *if_statement.block, callback, data);
+            && walk_nodes(script, xx *if_statement.subcondition, callback, data)
+            && walk_nodes(script, xx *if_statement.then_block, callback, data)
+            && walk_nodes(script, xx *if_statement.else_block, callback, data);
         
+      case Node_If_Expression;
+        if_expression := node.(*Node_If_Expression);
+        return walk_nodes(script, xx *if_expression.condition, callback, data)
+            && walk_nodes(script, xx *if_expression.then_expression, callback, data)
+            && walk_nodes(script, xx *if_expression.else_expression, callback, data);
+            
       case Node_While_Loop;
         while_loop := node.(*Node_While_Loop);
         return walk_nodes(script, xx *while_loop.condition, callback, data)
