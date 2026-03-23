@@ -161,11 +161,12 @@ if val := 0  echo(val);
 // test subcondition on if statements
 min := 5;
 if [val >= min] val := 2 + 7 {
-    echo(val);
+   echo(val);
 } else {
-    echo(min);
+   echo(min);
 }
 
-echo(if 2 - 2 then 7 else 5);
-echo(if 2 - 1 else 5);
+// test expression-style if
+echo(ifx 2 - 2 then 7 else 5);
+echo(ifx 2 - 1 else 5);
 

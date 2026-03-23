@@ -72,7 +72,6 @@ print_node_or_return :: (
     node:           *Node, 
     builder:        *String_Builder,
     indent:         int,
-    special_case_omit_semicolon := false,
 ) #expand {
     if !script.my_print_node(script, node, builder, indent)  `return false;
 }
@@ -82,7 +81,6 @@ print_node :: (
     node:           *Node, 
     builder:        *String_Builder,
     indent:         int,
-    special_case_omit_semicolon := false,
 ) -> bool {
     if node == null {
         log("Tried to read from null pointer in print_node().");
@@ -90,8 +88,11 @@ print_node :: (
         return false;
     }
     
-    // TODO: why do we have this exception?
-    if node.node_type != Node_Operator {
+    // TODO: we should put some kind of whitespace before a parenthesized binary operator. I don't think we keep this trivia atm...
+    //       perhaps if some expression is parenthetical, we should store the whitespace before the parens and reinsert it accordingly. i dunno though..
+    
+    // TODO: why do we have this exception? (Because the binary operator's trivia goes after the first operand.)
+    if node.node_type != Node_Binary_Operator {
         append_trivia(builder, node);
     }
     
@@ -310,7 +311,7 @@ print_node :: (
         for block.statements {
             // TODO: we would like to append_spaces here when the statement was inserted, but right now it's not entirely clear how to robustly check this.
             print_node_or_return(script, it, builder, indent);
-            if !should_skip_placing_semicolon(it) && !special_case_omit_semicolon {
+            if !should_skip_placing_semicolon(it) {
                 append(builder, ";");
             } 
             // if it_index != block.statements.count-1 then append(builder, "\n");
@@ -328,15 +329,41 @@ print_node :: (
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);
         append(builder, "if");
-        print_node_or_return(script, if_statement.condition, builder, indent);
-        // append(builder, "  ");
-        if if_statement.then_block {
-            append(builder, " then");
-            print_node_or_return(script, if_statement.then_block, builder, indent);
+        
+        if if_statement.subcondition {
+            append(builder, " [");
+            print_node_or_return(script, if_statement.subcondition, builder, 0);
+            append(builder, "]");
         }
+        
+        print_node_or_return(script, if_statement.condition, builder, 0);
+        
+        // TODO: need some way to indicate whether 'then' token is present
+        append(builder, " then");
+        print_node_or_return(script, if_statement.then_block, builder, indent);
+        
         if if_statement.else_block {
             append(builder, " else");
             print_node_or_return(script, if_statement.else_block, builder, indent);
+        }
+        return true;
+        
+        
+      case Node_If_Expression;
+        if_expression := node.(*Node_If_Expression);
+        append(builder, "ifx");
+        
+        print_node_or_return(script, if_expression.condition, builder, 0);
+        
+        // TODO: need some way to indicate whether 'then' token is present
+        if if_expression.then_expression {
+            append(builder, " then");
+            print_node_or_return(script, if_expression.then_expression, builder, indent);
+        }
+        
+        if if_expression.else_expression {
+            append(builder, " else");
+            print_node_or_return(script, if_expression.else_expression, builder, indent);
         }
         return true;
         
@@ -398,6 +425,7 @@ print_node :: (
 
 should_skip_placing_semicolon :: (node: *Node) -> bool {
     if node.node_type == {
+      case Node_If_Statement; #through;
       case Node_Block; 
         return true;
     }

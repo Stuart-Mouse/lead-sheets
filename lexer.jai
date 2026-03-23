@@ -91,6 +91,7 @@ Token_Type :: enum {
     DIRECTIVE;
     
     IF;
+    IFX;
     WHILE;
     FOR;
     THEN;
@@ -239,6 +240,7 @@ lex_next_token :: (script: *Script) -> Token {
           case "true";      type = .TRUE;
           case "false";     type = .FALSE;
           case "if";        type = .IF;
+          case "ifx";       type = .IFX;
           case "for";       type = .FOR;
           case "while";     type = .WHILE;
           case "then";      type = .THEN;

@@ -141,6 +141,9 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_If_Statement;
         result = evaluate_if_statement(script, xx node, provided_storage, flags);
         
+      case Node_If_Expression;
+        result = evaluate_if_expression(script, xx node, provided_storage, flags);
+        
       case Node_While_Loop;
         result = evaluate_while_loop(script, xx node, provided_storage, flags);
         
@@ -609,31 +612,36 @@ evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, pro
     
     _, condition_as_bool := Convert.any_to(bool, ifx if_statement.subcondition then subcondition else condition);
     
-    if if_statement.value_type == xx void {
-        if condition_as_bool {
-            if if_statement.then_block {
-                evaluate_node_or_return(script, if_statement.then_block, null, .DISCARD_VALUE);
-            }
-        } else if if_statement.else_block {
-            evaluate_node_or_return(script, if_statement.else_block, null, .DISCARD_VALUE);
-        }
-        
-        return VOID_ANY;
-    }
-    
-    // expression-style if
-    
     if condition_as_bool {
         if if_statement.then_block {
-            return evaluate_node_or_return(script, if_statement.then_block, null, .NONE);
-        } else {
-            return prepare_result(script, if_statement, condition, provided_storage);
+            evaluate_node_or_return(script, if_statement.then_block, null, .DISCARD_VALUE);
         }
     } else if if_statement.else_block {
-        return evaluate_node_or_return(script, if_statement.else_block, null, .NONE);
+        evaluate_node_or_return(script, if_statement.else_block, null, .DISCARD_VALUE);
     }
     
-    return prepare_result(script, if_statement, Any.{ if_statement.value_type, null }, provided_storage);
+    return VOID_ANY;
+}
+
+evaluate_if_expression :: (script: *Script, if_expression: *Node_If_Expression, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {
+    evaluate_node_or_return(script, if_expression.condition);
+    
+    condition := pop_any(*script.stack, if_expression.condition.value_type);
+    dprint("condition: % %", as_type(condition.type), condition);
+    
+    _, condition_as_bool := Convert.any_to(bool, condition);
+    
+    if condition_as_bool {
+        if if_expression.then_expression {
+            return evaluate_node_or_return(script, if_expression.then_expression, null, .NONE);
+        } else {
+            return prepare_result(script, if_expression, condition, provided_storage);
+        }
+    } else if if_expression.else_expression {
+        return evaluate_node_or_return(script, if_expression.else_expression, null, .NONE);
+    }
+    
+    return prepare_result(script, if_expression, Any.{ if_expression.value_type, null }, provided_storage);
 }
 
 evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {

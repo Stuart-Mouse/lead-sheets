@@ -67,6 +67,7 @@ typecheck_node :: (
       case Node_Declaration;       typecheck_declaration     (script, xx node, check_flags, hint_type);
       case Node_Block;             typecheck_block           (script, xx node, check_flags, hint_type);
       case Node_If_Statement;      typecheck_if_statement    (script, xx node, check_flags, hint_type);
+      case Node_If_Expression;     typecheck_if_expression   (script, xx node, check_flags, hint_type);
       case Node_While_Loop;        typecheck_while_loop      (script, xx node, check_flags, hint_type);
       case Node_For_Loop;          typecheck_for_loop        (script, xx node, check_flags, hint_type);
       case;
@@ -392,19 +393,27 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         if need_lvalue then set_typecheck_error(script, "Using the result of a procedure call as an lvalue is not currently supported", node = node);
         return false;
         
+      case Node_If_Expression;
+        if need_lvalue then set_typecheck_error(script, "Using the result of an if expression as an lvalue is not currently supported", node = node);
+        return false;
+        
       // TODO: These cases really should not even remotely happen... so maybe we should not even bother with an error message?
       case Node_Declaration;
         if need_lvalue then set_typecheck_error(script, "A declaration cannot be used as an lvalue", node = node);
         return false;
+        
       case Node_Block;
         if need_lvalue then set_typecheck_error(script, "A block cannot be used as an lvalue", node = node);
         return false;
+        
       case Node_If_Statement;
         if need_lvalue then set_typecheck_error(script, "An if statement cannot be used as an lvalue", node = node);
         return false;
+        
       case Node_While_Loop;
         if need_lvalue then set_typecheck_error(script, "A while loop cannot be used as an lvalue", node = node);
         return false;
+        
       case Node_For_Loop;
         if need_lvalue then set_typecheck_error(script, "A for loop cannot be used as an lvalue", node = node);
         return false;
@@ -1156,22 +1165,33 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
         typecheck_node_or_return(script, if_statement.subcondition);
     }
     
-    if if_statement.then_block {
-        then_type = typecheck_node_or_return(script, if_statement.then_block, .IS_STATEMENT_ROOT);
-    }
-    
-    // For now, if the if is at statement-level, then we will always treat it as having a value_type of void, and the results of both the 'then' and 'else' blocks will be discarded.
-    // Otherwise, the if must be used in some larger expression, so we assume the result value is actually used, and we must make sure the 'then' and 'else' blocks return the same value type.
+    assert(if_statement.then_block != null, "%: Then block of if statement is null!", get_location(if_statement));
+    typecheck_node_or_return(script, if_statement.then_block, .IS_STATEMENT_ROOT);
     
     if if_statement.else_block {
-        else_type := typecheck_node_or_return(script, if_statement.else_block, .IS_STATEMENT_ROOT);
-        if then_type != else_type && (check_flags & .IS_STATEMENT_ROOT) {
-            set_typecheck_error(script, "Mismatched value types in 'then' and 'else' cases of if expression: % != %", then_type, else_type, node = if_statement);
+        typecheck_node_or_return(script, if_statement.else_block, .IS_STATEMENT_ROOT);
+    }
+    
+    if_statement.value_type = type_info(void);
+}
+
+typecheck_if_expression :: (using script: *Script, if_expression: *Node_If_Expression, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    // NOTE: we treat the condition as a statement-level construct so that the user can write a declaration in there.
+    then_type := typecheck_node_or_return(script, if_expression.condition, .IS_STATEMENT_ROOT);
+    
+    if if_expression.then_expression {
+        then_type = typecheck_node_or_return(script, if_expression.then_expression, .IS_STATEMENT_ROOT);
+    }
+    
+    if if_expression.else_expression {
+        else_type := typecheck_node_or_return(script, if_expression.else_expression, .IS_STATEMENT_ROOT);
+        if then_type != else_type {
+            set_typecheck_error(script, "Mismatched value types in 'then' and 'else' cases of if expression: % != %", then_type, else_type, node = if_expression);
             return;
         }
     }
     
-    if_statement.value_type = ifx check_flags & .IS_STATEMENT_ROOT then type_info(void) else then_type;
+    if_expression.value_type = then_type;
 }
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {

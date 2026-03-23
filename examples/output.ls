@@ -1,4 +1,4 @@
- 
+
 // v1 := 1;
 
 // for l1: 0..v1 {
@@ -14,33 +14,33 @@
 
 
 // struct literals
-r1 =  Vector2.{ 3.0, 4.0 } * 5.0; 
-r1 -= .{ 3.0, 2.0 }; 
+r1 = Vector2.{ 3.0, 4.0 } * 5.0;
+r1 -= .{ 3.0, 2.0 };
 
 // operators and procedure calls
-r2 =  (1.0 + 2.0) * pow(2.0,  sin(3.14159/2.0) + 2.0); 
-r3 =  a + b;
+r2 =(1.0 + 2.0) * pow(2.0, sin(3.14159/2.0) + 2.0);
+r3 = a + b;
 
 // while loops
-while  echo(r2) > 20.0 { 
-   r2 =  r2 - 1.0; 
-   r3 =  r3 + r3;
+while echo(r2) > 20.0 {
+   r2 = r2 - 1.0;
+   r3 = r3 + r3;
 };
 
 // for loops and casting
-for arr1   if  it > 1.0 then   it =  it_index.(float) * 7.0;;;
+for arr1   if it > 1.0 then  it = it_index.(float) * 7.0;;
 for arr1   echo(it);;
 
 // local declarations
-local: float; 
-local =  5.0 +  5.0 * 2.0;
-echo(local/2.0); 
+local: float;
+local = 5.0 + 5.0 * 2.0;
+echo(local/2.0);
 
 // test recursion depth... currently crashes the program because jai is generating massive stack frames
 // local = 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5 + 5;
 
 // assignment operators redux
-local = 2.0; 
+local = 2.0;
 local += 5.0;
 echo(local);
 
@@ -52,20 +52,20 @@ print(str);
 print("this is also a string");
 
 local_str := "this is yet another string";
-print(local_str); 
+print(local_str);
 str = local_str;
 
 
 // Directives Test
 // #declare will call add_named_value in test.jai, which will add a new Named_Value to the array and add that value as a variable in the script.
 // This allows the script to use 'named_1' as a simple variable although its storage is managed externally.
-#declare("named_1"); 
+#declare("named_1");
 named_1 = 7.0;
 echo(named_1);
 
 
 // struct literal and operator overload test
-vec3 :=  Vector3.{ 1.0, 2.0, 3.0 } * 7.0;
+vec3 := Vector3.{ 1.0, 2.0, 3.0 } * 7.0;
 echo(vec3);
 
 
@@ -73,7 +73,7 @@ echo(vec3);
 // you will notice that the value of 5 in the declaration for const will be overwritten with 7 when this file is re-serialized (look at output.ls)
 // also, if you were to execute the script multiple times, it would only be 5 on the first run
 const :: 7?;
-echo(const); 
+echo(const);
 
 const = 7;
 echo(const);
@@ -94,18 +94,18 @@ echo(`identifier string`);
 
 
 e := Fruits.BANANA;
-echo(e); 
+echo(e);
 e = .PEAR;
 echo(e);
 
 // test of better procedure overload resolution
-echo(length( .{1.0, 2.0 } + .{2.0, 2.0 }));
+echo(length(.{1.0, 2.0 } + .{2.0, 2.0 }));
 echo(f32(5)); // stupid and confusing example
 {
    a: int = 5;
    b: u8 = 3; 
    echo(a);
-   echo(b); 
+   echo(b);
    a = b;
    echo(a);
 }
@@ -139,7 +139,7 @@ test_block: {
 //    but we don't want the number literal to receive that type hint,
 //    rather, we want it to receive the type hint from the other side of the operation, '_float'
 _float := 5.0;
-_int := (_float + 3.0).(int);
+_int :=(_float + 3.0).(int);
 echo(_int);
 
 
@@ -147,7 +147,7 @@ echo(_int);
 block_result := {
    a := 5.0;
    b := 3.0;
-   Vector2.{ b,  a + b };
+   Vector2.{ b, a + b };
 };
 
 echo(block_result);
@@ -155,16 +155,17 @@ echo(block_result);
 
 
 // test declaration in if statement condition
-if val := 1 then  echo(val);;
-if val := 0 then  echo(val);;
+if val := 1 then  echo(val);
+if val := 0 then  echo(val);
 
 // test subcondition on if statements
 min := 5;
-if val :=  2 + 7 then {
-    echo(val)
+if [val >= min] val := 2 + 7 then {
+   echo(val);
 } else {
-    echo(min);
-};
+   echo(min);
+}
 
-echo(if  2 - 2 then 7 else 5;);
-echo(if  2 - 1 else 5;);
+// test expression-style if
+echo(ifx 2 - 2 then 7 else 5);
+echo(ifx 2 - 1 else 5);

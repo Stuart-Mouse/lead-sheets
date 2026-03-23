@@ -16,7 +16,7 @@ Node :: struct {
     Flags :: enum_flags { 
         // lexical flags
         PARENTHESIZED;          // explicitly, textually
-        IS_ARROW;               // denotes that a Node_Dot is actually an arrow
+        IS_ARROW;               // denotes that a Node_Dot is actually an arrow (TODO: remove, make separate node type)
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
         
@@ -402,6 +402,13 @@ Node_If_Statement :: struct {
     else_block:     *Node_Block;
     condition:      *Node;
     subcondition:   *Node;
+}
+
+Node_If_Expression :: struct {
+    using #as node_base: Node;
+    then_expression:    *Node;
+    else_expression:    *Node;
+    condition:          *Node;
 }
 
 // Node_Else :: struct {

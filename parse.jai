@@ -40,7 +40,7 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
 
 // TODO: probably remove this as part of doing blocks as expressions
 // used in if/for/while, where we need to wrap single statements in a block implicitly.
-parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true, consume_semicolon := true) -> bool {
+parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true) -> bool {
     current_scope = block; 
     
     open_brace := peek_token(script);
@@ -52,7 +52,7 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
         block.location = open_brace.location;
         block.trivia   = open_brace.trivia;
     } else {
-        statement := parse_statement(script, expect_semicolon, consume_semicolon);
+        statement := parse_statement(script, expect_semicolon);
         if statement == null {
             if !has_error(script) {
                 set_parse_error(script, "Expected a statement.", loc = lexer.location);
@@ -69,9 +69,80 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
     return true;
 }
 
-parse_statement :: (using script: *Script, expect_semicolon := true, consume_semicolon := true) -> *Node {
+parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
+      case .IF; 
+        dprint("IF (STATEMENT)"); dprint_push_indent();
+        if_token := get_token(script);
+        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
+        
+        if_statement.then_block = alloc_node(script, Node_Block);
+        if_statement.then_block.owner = if_statement;
+        
+        open_bracket_token := peek_token(script);
+        if open_bracket_token.type == .OPEN_BRACKET {
+            get_token(script);
+            dprint("SUBCONDITION"); dprint_push_indent();
+            
+            // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
+            //       this will give the subcondition access to identifiers that are declared in the main condition
+            current_scope = if_statement.then_block;  
+            defer current_scope = if_statement.scope;
+            
+            if_statement.subcondition = my_parse_expression(script, 0);
+            if if_statement.subcondition == null  return null;
+            
+            close_bracket_token := get_token(script);
+            if close_bracket_token.type != .CLOSE_BRACKET {
+                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
+                return null;
+            }
+        }
+        
+        dprint("CONDITION"); dprint_push_indent();
+        if_statement.condition = parse_statement(script, false);
+        if if_statement.condition == null  return null;
+        
+        // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
+        if if_statement.condition.node_type == {
+          case Node_If_Statement;
+            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_While_Loop;
+            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+          case Node_For_Loop;
+            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            return null;
+        }
+        
+        token = peek_token(script);
+        if token.type == {
+          case .THEN;
+            get_token(script);
+            #through;
+            
+          case;
+            dprint("THEN BLOCK"); dprint_push_indent();
+            if !parse_block_or_statement(script, if_statement.then_block, false)  return null; 
+        }
+        
+        token = peek_token(script);
+        if token.type == .ELSE {
+            get_token(script);
+            dprint("ELSE BLOCK"); dprint_push_indent();
+            
+            if if_statement.else_block == null {
+                if_statement.else_block = alloc_node(script, Node_Block);
+                if_statement.else_block.owner = if_statement;
+            }
+            
+            if !parse_block_or_statement(script, if_statement.else_block, false)  return null; 
+        }
+        
+        return if_statement;
+        
       case .WHILE;
         dprint("WHILE LOOP"); dprint_push_indent();
         while_token := get_token(script);
@@ -236,7 +307,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true, consume_sem
     token = peek_token(script);
     
     if token.type == .SEMICOLON { 
-        if consume_semicolon  get_token(script); 
+        get_token(script); 
         return expression; 
     }
     
@@ -274,81 +345,38 @@ parse_leaf :: (using script: *Script) -> *Node {
     }
     
     if token.type == {
-      case .IF; 
-        dprint("IF"); dprint_push_indent();
+      case .IFX; 
+        dprint("IF (EXPRESSION)"); dprint_push_indent();
         if_token := token;
-        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
-        
-        if_statement.then_block = alloc_node(script, Node_Block);
-        if_statement.then_block.owner = if_statement;
-        
-        open_bracket_token := peek_token(script);
-        if open_bracket_token.type == .OPEN_BRACKET {
-            get_token(script);
-            dprint("SUBCONDITION"); dprint_push_indent();
-            
-            // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
-            //       this will give the subcondition access to identifiers that are declared in the main condition
-            current_scope = if_statement.then_block;  
-            defer current_scope = if_statement.scope;
-            
-            if_statement.subcondition = my_parse_expression(script, 0);
-            if if_statement.subcondition == null  return null;
-            
-            close_bracket_token := get_token(script);
-            if close_bracket_token.type != .CLOSE_BRACKET {
-                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
-                return null;
-            }
-        }
+        if_expression := alloc_node(script, Node_If_Expression, loc = if_token.location, trivia = if_token.trivia);
         
         dprint("CONDITION"); dprint_push_indent();
-        if_statement.condition = parse_statement(script, false);
-        if if_statement.condition == null  return null;
-        
-        // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
-        if if_statement.condition.node_type == {
-          case Node_If_Statement;
-            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-          case Node_While_Loop;
-            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-          case Node_For_Loop;
-            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
-            return null;
-        }
+        if_expression.condition = parse_expression(script, 0);
+        if if_expression.condition == null  return null;
         
         token = peek_token(script);
         if token.type == {
-          case .ELSE;
-            // TODO: this is a really dumb hack! If we have no then block, we just repurpose the one we already allocated to be the else block.
-            if_statement.else_block = if_statement.then_block;
-            if_statement.then_block = null;
+          case .ELSE; // no op
             
           case .THEN;
             get_token(script);
             #through;
             
           case;
-            dprint("THEN BLOCK"); dprint_push_indent();
-            if !parse_block_or_statement(script, if_statement.then_block, false, false)  return null; 
+            dprint("THEN EXPRESSION"); dprint_push_indent();
+            if_expression.then_expression = my_parse_expression(script, 0);
+            if if_expression.then_expression == null  return null;
         }
         
         token = peek_token(script);
         if token.type == .ELSE {
             get_token(script);
-            dprint("ELSE BLOCK"); dprint_push_indent();
-            
-            if if_statement.else_block == null {
-                if_statement.else_block = alloc_node(script, Node_Block);
-                if_statement.else_block.owner = if_statement;
-            }
-            
-            if !parse_block_or_statement(script, if_statement.else_block, false, false)  return null; 
+            dprint("ELSE EXPRESSION"); dprint_push_indent();
+            if_expression.else_expression = my_parse_expression(script, 0);
+            if if_expression.else_expression == null  return null;
         }
         
-        return if_statement;
+        return if_expression;
         
       case .DOT;
         dprint("UNARY DOT");
