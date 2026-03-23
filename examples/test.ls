@@ -162,7 +162,10 @@ if val := 0  echo(val);
 min := 5;
 if [val >= min] val := 2 + 7 {
     echo(val);
+} else {
+    echo(min);
 }
 
-// echo(2 - 2 else 5);
-// echo(2 - 1 else 5);
+echo(if 2 - 2 then 7 else 5);
+echo(if 2 - 1 else 5);
+

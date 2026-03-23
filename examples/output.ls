@@ -28,7 +28,7 @@ while  echo(r2) > 20.0 {
 };
 
 // for loops and casting
-for arr1   if  it > 1.0   it =  it_index.(float) * 7.0;;;
+for arr1   if  it > 1.0 then   it =  it_index.(float) * 7.0;;;
 for arr1   echo(it);;
 
 // local declarations
@@ -155,11 +155,16 @@ echo(block_result);
 
 
 // test declaration in if statement condition
-if val := 1  echo(val);;
-if val := 0  echo(val);;
+if val := 1 then  echo(val);;
+if val := 0 then  echo(val);;
 
 // test subcondition on if statements
 min := 5;
-if val :=  2 + 7 {
-    echo(val);
+if val :=  2 + 7 then {
+    echo(val)
+} else {
+    echo(min);
 };
+
+echo(if  2 - 2 then 7 else 5;);
+echo(if  2 - 1 else 5;);

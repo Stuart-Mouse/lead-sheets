@@ -1023,7 +1023,6 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     }
     
     set_typecheck_error(script, "Left side of dot expression must be a struct or type. Got: %", as_type(dot.left.value_type), node = dot);
-    return;
 }
 
 typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
@@ -1051,7 +1050,6 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
     if replacement  replace_node(*subscript.indexing_expression, replacement);
     
     subscript.value_type = base_type.element_type;
-    return;
 }
 
 typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
@@ -1140,7 +1138,6 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             dprint("declaration stack_offset: %", declaration.stack_offset);
         }
     }
-    return;
 }
 
 typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
@@ -1149,21 +1146,32 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
         typecheck_node_or_return(script, it, .IS_STATEMENT_ROOT);
     }
     block.value_type = block.statements[block.statements.count-1].value_type;
-    return;
 }
 
 typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: we treat the condition as a statement-level construct so that the user can write a declaration in there.
-    typecheck_node_or_return(script, if_statement.condition, .IS_STATEMENT_ROOT);
+    then_type := typecheck_node_or_return(script, if_statement.condition, .IS_STATEMENT_ROOT);
     
     if if_statement.subcondition {
         typecheck_node_or_return(script, if_statement.subcondition);
     }
     
-    typecheck_node_or_return(script, if_statement.then_block, .IS_STATEMENT_ROOT);
+    if if_statement.then_block {
+        then_type = typecheck_node_or_return(script, if_statement.then_block, .IS_STATEMENT_ROOT);
+    }
     
-    if_statement.value_type = type_info(void);
-    return;
+    // For now, if the if is at statement-level, then we will always treat it as having a value_type of void, and the results of both the 'then' and 'else' blocks will be discarded.
+    // Otherwise, the if must be used in some larger expression, so we assume the result value is actually used, and we must make sure the 'then' and 'else' blocks return the same value type.
+    
+    if if_statement.else_block {
+        else_type := typecheck_node_or_return(script, if_statement.else_block, .IS_STATEMENT_ROOT);
+        if then_type != else_type && (check_flags & .IS_STATEMENT_ROOT) {
+            set_typecheck_error(script, "Mismatched value types in 'then' and 'else' cases of if expression: % != %", then_type, else_type, node = if_statement);
+            return;
+        }
+    }
+    
+    if_statement.value_type = ifx check_flags & .IS_STATEMENT_ROOT then type_info(void) else then_type;
 }
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
@@ -1276,6 +1284,5 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
     typecheck_node_or_return(script, for_loop.block, .IS_STATEMENT_ROOT);
     
     for_loop.value_type = xx void;
-    return;
 }
 

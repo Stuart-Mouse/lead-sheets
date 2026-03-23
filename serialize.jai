@@ -71,7 +71,8 @@ print_node_or_return :: (
     using script:   *Script, 
     node:           *Node, 
     builder:        *String_Builder,
-    indent:         int
+    indent:         int,
+    special_case_omit_semicolon := false,
 ) #expand {
     if !script.my_print_node(script, node, builder, indent)  `return false;
 }
@@ -80,7 +81,8 @@ print_node :: (
     using script:   *Script, 
     node:           *Node, 
     builder:        *String_Builder,
-    indent:         int
+    indent:         int,
+    special_case_omit_semicolon := false,
 ) -> bool {
     if node == null {
         log("Tried to read from null pointer in print_node().");
@@ -308,7 +310,7 @@ print_node :: (
         for block.statements {
             // TODO: we would like to append_spaces here when the statement was inserted, but right now it's not entirely clear how to robustly check this.
             print_node_or_return(script, it, builder, indent);
-            if !should_skip_placing_semicolon(it) {
+            if !should_skip_placing_semicolon(it) && !special_case_omit_semicolon {
                 append(builder, ";");
             } 
             // if it_index != block.statements.count-1 then append(builder, "\n");
@@ -328,7 +330,14 @@ print_node :: (
         append(builder, "if");
         print_node_or_return(script, if_statement.condition, builder, indent);
         // append(builder, "  ");
-        print_node_or_return(script, if_statement.then_block, builder, indent);
+        if if_statement.then_block {
+            append(builder, " then");
+            print_node_or_return(script, if_statement.then_block, builder, indent);
+        }
+        if if_statement.else_block {
+            append(builder, " else");
+            print_node_or_return(script, if_statement.else_block, builder, indent);
+        }
         return true;
         
         

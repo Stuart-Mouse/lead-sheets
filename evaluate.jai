@@ -58,8 +58,7 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
         
         if flags & .DISCARD_VALUE {
             dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
-            pop_any(*script.stack, node.value_type);
-            return VOID_ANY;
+            return pop_any(*script.stack, node.value_type);
         }
     }
     return value;
@@ -610,10 +609,31 @@ evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, pro
     
     _, condition_as_bool := Convert.any_to(bool, ifx if_statement.subcondition then subcondition else condition);
     
-    if condition_as_bool {
-        evaluate_node_or_return(script, if_statement.then_block, null, .DISCARD_VALUE);
+    if if_statement.value_type == xx void {
+        if condition_as_bool {
+            if if_statement.then_block {
+                evaluate_node_or_return(script, if_statement.then_block, null, .DISCARD_VALUE);
+            }
+        } else if if_statement.else_block {
+            evaluate_node_or_return(script, if_statement.else_block, null, .DISCARD_VALUE);
+        }
+        
+        return VOID_ANY;
     }
-    return VOID_ANY;
+    
+    // expression-style if
+    
+    if condition_as_bool {
+        if if_statement.then_block {
+            return evaluate_node_or_return(script, if_statement.then_block, null, .NONE);
+        } else {
+            return prepare_result(script, if_statement, condition, provided_storage);
+        }
+    } else if if_statement.else_block {
+        return evaluate_node_or_return(script, if_statement.else_block, null, .NONE);
+    }
+    
+    return prepare_result(script, if_statement, Any.{ if_statement.value_type, null }, provided_storage);
 }
 
 evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_storage: *void = null, flags := Execution_Flags.NONE) -> Any {

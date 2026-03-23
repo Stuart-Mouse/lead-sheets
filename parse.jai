@@ -40,8 +40,7 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
 
 // TODO: probably remove this as part of doing blocks as expressions
 // used in if/for/while, where we need to wrap single statements in a block implicitly.
-parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true) -> bool {
-    // block := alloc_node(script, Node_Block);
+parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true, consume_semicolon := true) -> bool {
     current_scope = block; 
     
     open_brace := peek_token(script);
@@ -53,7 +52,7 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
         block.location = open_brace.location;
         block.trivia   = open_brace.trivia;
     } else {
-        statement := parse_statement(script, expect_semicolon);
+        statement := parse_statement(script, expect_semicolon, consume_semicolon);
         if statement == null {
             if !has_error(script) {
                 set_parse_error(script, "Expected a statement.", loc = lexer.location);
@@ -70,7 +69,7 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
     return true;
 }
 
-parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
+parse_statement :: (using script: *Script, expect_semicolon := true, consume_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
       case .WHILE;
@@ -236,12 +235,19 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     // Check for semicolon
     token = peek_token(script);
     
-    // Always consume semicolon if it is present
-    if token.type == .SEMICOLON { get_token(script); return expression; }
+    if token.type == .SEMICOLON { 
+        if consume_semicolon  get_token(script); 
+        return expression; 
+    }
     
-    // We generally require semicolons to delimit statements, but since blocks are now treated as expressions, we make a special exception for blocks.
+    // We generally require semicolons to delimit statements, 
+    // but since blocks are now treated as expressions, 
+    // we make a special exception for blocks.
     if expression.node_type == {
-      case Node_If_Statement; #through;
+      case Node_If_Statement;
+        _if := expression.(*Node_If_Statement);
+        expect_semicolon &&= (ifx _if.else_block else _if.then_block).flags & .IMPLICIT != 0;
+        
       case Node_Block;
         expect_semicolon = false;
     }
@@ -281,8 +287,8 @@ parse_leaf :: (using script: *Script) -> *Node {
             get_token(script);
             dprint("SUBCONDITION"); dprint_push_indent();
             
-            // the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
-            // this will give the subcondition access to identifiers that are declared in the main condition
+            // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
+            //       this will give the subcondition access to identifiers that are declared in the main condition
             current_scope = if_statement.then_block;  
             defer current_scope = if_statement.scope;
             
@@ -314,18 +320,33 @@ parse_leaf :: (using script: *Script) -> *Node {
         }
         
         token = peek_token(script);
-        
         if token.type == {
+          case .ELSE;
+            // TODO: this is a really dumb hack! If we have no then block, we just repurpose the one we already allocated to be the else block.
+            if_statement.else_block = if_statement.then_block;
+            if_statement.then_block = null;
+            
           case .THEN;
             get_token(script);
             #through;
             
           case;
             dprint("THEN BLOCK"); dprint_push_indent();
-            if !parse_block_or_statement(script, if_statement.then_block, true)  return null; 
+            if !parse_block_or_statement(script, if_statement.then_block, false, false)  return null; 
         }
         
-        
+        token = peek_token(script);
+        if token.type == .ELSE {
+            get_token(script);
+            dprint("ELSE BLOCK"); dprint_push_indent();
+            
+            if if_statement.else_block == null {
+                if_statement.else_block = alloc_node(script, Node_Block);
+                if_statement.else_block.owner = if_statement;
+            }
+            
+            if !parse_block_or_statement(script, if_statement.else_block, false, false)  return null; 
+        }
         
         return if_statement;
         
