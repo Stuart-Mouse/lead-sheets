@@ -205,6 +205,8 @@ evaluate_literal :: (script: *Script, literal: *Node_Literal, provided_storage: 
 }
 
 evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
+    dprint("identifier name: %", get_name(script, identifier));
+    
     result: Any;
     if #complete identifier.identifier_type == {
       case .DECLARATION;
@@ -226,6 +228,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
       case .EXTERNAL_VARIABLE;
         variable := *script.variables[identifier.index];
         value    := get_value(variable);
+        dprint("variable: %", variable.*);
         if variable.value_pointer == null {
             set_execution_error(script, "Unable to get value of external variable '%'.", variable.name, node = identifier);
             result = NULL_ANY;
@@ -580,7 +583,7 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
     script.break_result_storage = result_storage;
     
     // NOTE: we don't execute named blocks unless explicitly called
-    if block.name && !(flags & .EXPLICIT_CALL)  return Any.{ block.value_type, result_storage };
+    // if block.name && !(flags & .EXPLICIT_CALL)  return Any.{ block.value_type, result_storage };
     
     block.stack_pointer = push(*script.stack, null, block.stack_frame_size);
     dprint("pushed % bytes to stack @ % for declarations in block", block.stack_frame_size, block.stack_pointer);
@@ -596,9 +599,10 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
         
         evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
         
-        if script.break_target {
+        if script.break_target != null {
+            dprint("breaking from block");
             if script.break_target == block {
-                script.break_target = null;
+                script.break_target = null; 
                 
                 // This is a bit of a hack, but because we interrupt the usual control flow with a break 
                 // and store the result directly to the target block, we need to manually set the stack pointer
@@ -614,9 +618,8 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
     return Any.{ block.value_type, result_storage };
 }
 
-// TODO: how can we get the block's provided storage to use here?
-//       for now we will have to always make an extra copy...
 evaluate_break :: (script: *Script, _break: *Node_Break, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
+    dprint("script.break_result_storage: %", script.break_result_storage);
     result := evaluate_node_or_return(script, _break.value_expression, script.break_result_storage);
     script.break_target = _break.resolved_target;
     return result;
