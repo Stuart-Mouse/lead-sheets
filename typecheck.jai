@@ -1213,14 +1213,15 @@ typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := T
         if scope.node_type == {
           case Node_Block;
             block_name := get_name_as_break_target(script, scope);
-            if block_name == target_name || target_name == "" {
+            if block_name == target_name 
+            || (block_name != "" && target_name == "") {
                 _break.resolved_target = xx scope;
                 break;
             }
         }
         scope = scope.scope;
     }
-
+    
     if _break.resolved_target == null {
         set_typecheck_error(script, "Unable to resolve break target: '%'", target_name, node = _break.target_identifier);
         return;
