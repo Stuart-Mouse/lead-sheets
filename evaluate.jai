@@ -652,24 +652,24 @@ evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, pro
 }
 
 evaluate_if_expression :: (script: *Script, if_expression: *Node_If_Expression, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
-    evaluate_node_or_return(script, if_expression.condition);
+    result_storage := get_result_storage(script, if_expression, provided_storage);
     
-    condition := pop_any(*script.stack, if_expression.condition.value_type);
-    dprint("condition: % %", as_type(condition.type), condition);
+    condition := evaluate_node_or_return(script, if_expression.condition, null, .DISCARD_VALUE);
+    pop_any(*script.stack, if_expression.condition.value_type);
     
     _, condition_as_bool := Convert.any_to(bool, condition);
     
     if condition_as_bool {
         if if_expression.then_expression {
-            return evaluate_node_or_return(script, if_expression.then_expression, null, .NONE);
+            evaluate_node_or_return(script, if_expression.then_expression, null, .NONE);
         } else {
-            return prepare_result(script, if_expression, condition, provided_storage);
+            memcpy(result_storage, condition.value_pointer, if_expression.value_type.runtime_size);
         }
     } else if if_expression.else_expression {
-        return evaluate_node_or_return(script, if_expression.else_expression, null, .NONE);
+        evaluate_node_or_return(script, if_expression.else_expression, null, .NONE);
     }
     
-    return prepare_result(script, if_expression, Any.{ if_expression.value_type, null }, provided_storage);
+    return Any.{ if_expression.value_type, result_storage };
 }
 
 evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
