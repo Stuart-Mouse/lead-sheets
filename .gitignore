@@ -6,3 +6,4 @@ build/
 
 examples/test.jai
 examples/.build
+examples/output.ls
