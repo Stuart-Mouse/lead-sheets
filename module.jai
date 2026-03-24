@@ -6,7 +6,6 @@ Script :: struct {
     variables:              [..] External_Variable;
     procedures:             [..] External_Procedure;
     directives:             [..] Directive;
-    named_blocks:           [..] *Node_Block;
     type_table:             [..] Name_And_Type;
     operator_table:         [..] Operator_Info;
     
@@ -25,8 +24,10 @@ Script :: struct {
     
     
     current_scope:          *Node_Block;
-    // stack_watermark:        int;
-    // stack_high_watermark:   int;
+    
+    // if this is set while evaluating a block, we need to keep breaking until we hit this target
+    break_target:           *Node_Block;
+    break_result_storage:   *void;
     
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
@@ -61,7 +62,6 @@ Script :: struct {
 deinit_script :: (using script: *Script) {
     array_reset(*variables);
     array_reset(*procedures);
-    array_reset(*named_blocks);
     array_reset(*directives);
     array_reset(*type_table);
     array_reset(*operator_table);
@@ -78,8 +78,6 @@ deinit_script :: (using script: *Script) {
 init_script :: (script: *Script, stack_size := 2048) {
     script.* = .{};
     init(*script.pool);
-    
-    script.named_blocks.allocator = context.allocator;
     
     init_stack(*script.stack,, get_pool_allocator(*script.pool));
     
@@ -118,16 +116,6 @@ register_type :: (script: *Script, name: string, type: *Type_Info) {
         }
     }
     array_add(*script.type_table, .{ name, type });
-}
-
-
-
-
-get_named_block :: (script: *Script, name: string) -> *Node_Block {
-    for script.named_blocks
-        if it.name == name
-            return it;
-    return null;
 }
 
 

@@ -115,6 +115,19 @@ get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Decla
     return .[];
 }
 
+get_name_as_break_target :: (script: *Script, block: *Node_Block) -> string {
+    if block.name  return block.name;
+    
+    if block.owner {
+        if block.owner.node_type == {
+          case Node_For_Loop;
+            for_loop := block.owner.(*Node_For_Loop);
+            return ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
+        }
+    }
+    
+    return "";
+}
 
 
 Node_Cast :: struct {
@@ -422,13 +435,12 @@ Node_For_Loop :: struct {
     #overlay(declarations[1]) it_index_decl:  *Node_Declaration;
 }
 
-// Targets the nearest enclosing for/while statement by default
-// Node_Break :: struct {
-//     using #as node_base: Node;
-//     from:       *Node_Identifier;
-//     values:     [] *Node;
-// }
-
+Node_Break :: struct {
+    using #as node_base: Node;
+    target_identifier:  *Node_Identifier;
+    resolved_target:    *Node_Block;    // TODO: maybe try to remove later on, would require changes to Node_Identifier
+    value_expression:   *Node;
+}
 
 
 alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node_Block = null, loc := #caller_location, trivia := "") -> *Node_Type

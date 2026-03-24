@@ -63,7 +63,7 @@ can_register_directive :: (proc_info: *Type_Info_Procedure) -> bool {
         return false;
     }
     if proc_info.argument_types.count < 1 {
-        log("Error: directive must take at least 1 argument for Script pointer.");
+        log("Error: directive must take at least 1 argument for *Directive_Call.");
         return false;
     }
     if proc_info.argument_types[0] != type_info(*Directive_Call) {

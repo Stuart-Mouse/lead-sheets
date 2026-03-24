@@ -96,6 +96,7 @@ Token_Type :: enum {
     FOR;
     THEN;
     ELSE;
+    BREAK;
 }
 
 
@@ -245,6 +246,7 @@ lex_next_token :: (script: *Script) -> Token {
           case "while";     type = .WHILE;
           case "then";      type = .THEN;
           case "else";      type = .ELSE;
+          case "break";     type = .BREAK;
         }
         return .{ type, token_text, token_location, trivia, .NO_ERROR };
     }

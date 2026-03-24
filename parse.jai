@@ -72,6 +72,42 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
 parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
+      case .BREAK;
+        dprint("BREAK"); dprint_push_indent();
+        break_token := get_token(script);
+        _break := alloc_node(script, Node_Break, loc = break_token.location, trivia = break_token.trivia);
+        
+        open_bracket_token := peek_token(script);
+        if open_bracket_token.type == .OPEN_BRACKET {
+            get_token(script);
+            dprint("TARGET"); dprint_push_indent();
+            
+            _break.target_identifier = xx my_parse_expression(script, 0);
+            if _break.target_identifier == null  return null;
+            if _break.target_identifier.node_type != Node_Identifier {
+                set_parse_error(script, "Expected an identifier for break target.", loc = _break.target_identifier.location);
+                return null;
+            }
+            
+            close_bracket_token := get_token(script);
+            if close_bracket_token.type != .CLOSE_BRACKET {
+                set_parse_error(script, "Expected a closing bracket after break target identifier,but saw % token '%'.", close_bracket_token.type, close_bracket_token.text, loc = close_bracket_token.location);
+                return null;
+            }
+        }
+        
+        dprint("EXPRESSION"); dprint_push_indent();
+        
+        _break.value_expression = my_parse_expression(script, 0);
+        if _break.value_expression == null  return null;
+        
+        if !check_for_semicolon(script, _break.value_expression, expect_semicolon) {
+            set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = script.lexer.location);
+            return null;
+        }
+        
+        return _break;
+        
       case .IF; 
         dprint("IF (STATEMENT)"); dprint_push_indent();
         if_token := get_token(script);
@@ -235,16 +271,10 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return for_loop;
     }
     
-    dprint("EXPRESSION...");
+    dprint("EXPRESSION");
     
     expression := my_parse_expression(script, 0);
     if expression == null  return null;
-    
-    if expression.node_type == Node_Block 
-    && expression.(*Node_Block).name
-    && script.current_scope == script.ast_root {
-        array_add(*script.named_blocks, xx expression);
-    }
     
     if expect_token_type(script, .COLON) {
         dprint("DECLARATION"); dprint_push_indent();
@@ -287,31 +317,34 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         expression = declaration;
     }
     
-    // Check for semicolon
-    token = peek_token(script);
-    
-    if token.type == .SEMICOLON { 
-        get_token(script); 
-        return expression; 
+    if !check_for_semicolon(script, expression, expect_semicolon) {
+        set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = script.lexer.location);
+        return null;
     }
+    
+    return expression;
+}
+
+check_for_semicolon :: (script: *Script, expression: *Node, expect_semicolon := true) -> bool {
+    // Check for semicolon
+    token := peek_token(script);
+    
+    if token.type == .SEMICOLON { get_token(script); return true; }
     
     // We generally require semicolons to delimit statements, 
     // but since blocks are now treated as expressions, 
     // we make a special exception for blocks.
     if expression.node_type == {
-      case Node_If_Statement;
-        _if := expression.(*Node_If_Statement);
-        expect_semicolon &&= (ifx _if.else_block else _if.then_block).flags & .IMPLICIT != 0;
+      // case Node_If_Statement;
+      //   _if := expression.(*Node_If_Statement);
+      //   expect_semicolon &&= (ifx _if.else_block else _if.then_block).flags & .IMPLICIT != 0;
         
       case Node_Block;
         expect_semicolon = false;
     }
     
     // If we don't expect to see one then we are ok whether we saw one or not
-    if !expect_semicolon  return expression;
-    
-    set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = script.lexer.location);
-    return null;
+    return !expect_semicolon;
 }
 
 

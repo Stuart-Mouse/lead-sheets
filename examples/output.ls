@@ -143,16 +143,6 @@ _int :=(_float + 3.0).(int);
 echo(_int);
 
 
-// test blocks as expressions
-// block_result := {
-//    a := 5.0;
-//    b := 3.0;
-//    Vector2.{ b, a + b };
-// };
-
-// echo(block_result);
-
-
 
 // test declaration in if statement condition
 if val := 1 then  echo(val);
@@ -169,3 +159,14 @@ if [val >= min] val := 2 + 7 then {
 // test expression-style if
 echo(ifx 2 - 2 then 7 else 5);
 echo(ifx 2 - 1 else 5);
+
+
+// test blocks as expressions
+block_result := blk: {
+   a := 5.0;
+   b := 3.0;
+   
+   break [blk] Vector2.{ b, a + b };
+};
+
+echo(block_result);

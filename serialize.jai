@@ -325,6 +325,18 @@ print_node :: (
         }
         return true;
         
+      
+      case Node_Break;
+        _break := node.(*Node_Break);
+        append(builder, "break");
+        if _break.target_identifier {
+            append(builder, " [");
+            print_node_or_return(script, _break.target_identifier, builder, 0);
+            append(builder, "]");
+        }
+        print_node_or_return(script, _break.value_expression, builder, indent);
+        return true;
+        
         
       case Node_If_Statement;
         if_statement := node.(*Node_If_Statement);

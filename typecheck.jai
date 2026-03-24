@@ -70,6 +70,7 @@ typecheck_node :: (
       case Node_If_Expression;     typecheck_if_expression   (script, xx node, check_flags, hint_type);
       case Node_While_Loop;        typecheck_while_loop      (script, xx node, check_flags, hint_type);
       case Node_For_Loop;          typecheck_for_loop        (script, xx node, check_flags, hint_type);
+      case Node_Break;             typecheck_break           (script, xx node, check_flags, hint_type);
       case;
         set_typecheck_error(script, "Unhandled node type % in typecheck_node.", node.node_type, node = node);
     }
@@ -1204,12 +1205,44 @@ typecheck_if_expression :: (using script: *Script, if_expression: *Node_If_Expre
     if_expression.value_type = then_type;
 }
 
+typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    target_name := ifx _break.target_identifier then get_name(script, _break.target_identifier);
+    
+    scope := _break.scope;
+    while scope {
+        if scope.node_type == {
+          case Node_Block;
+            block_name := get_name_as_break_target(script, scope);
+            if block_name == target_name || target_name == "" {
+                _break.resolved_target = xx scope;
+                break;
+            }
+        }
+        scope = scope.scope;
+    }
+
+    if _break.resolved_target == null {
+        set_typecheck_error(script, "Unable to resolve break target: '%'", target_name, node = _break.target_identifier);
+        return;
+    }
+    
+    _break.value_type = typecheck_node_or_return(script, _break.value_expression);
+    
+    if _break.resolved_target.value_type {
+        if _break.value_type != _break.resolved_target.value_type {
+            set_typecheck_error(script, "Mismatched types in break statements targetting the same block '%': % != %", target_name, _break.value_type, _break.resolved_target.value_type, node = _break);
+            return;
+        }
+    } else {
+        _break.resolved_target.value_type = _break.value_type;
+    }
+}
+
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, while_loop.condition);
     typecheck_node_or_return(script, while_loop.block, .IS_STATEMENT_ROOT);
     
     while_loop.value_type = type_info(void);
-    return;
 }
 
 typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
