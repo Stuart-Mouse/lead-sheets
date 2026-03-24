@@ -603,7 +603,9 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
             dprint("breaking from block");
             if script.break_target == block {
                 script.break_target = null; 
-                
+            }
+            if script.break_target == block 
+            || script.break_target == block.owner {
                 // This is a bit of a hack, but because we interrupt the usual control flow with a break 
                 // and store the result directly to the target block, we need to manually set the stack pointer
                 // back to where it is supposed to be so that our stack usage checks remain happy.
@@ -620,8 +622,11 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
 
 evaluate_break :: (script: *Script, _break: *Node_Break, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     dprint("script.break_result_storage: %", script.break_result_storage);
-    result := evaluate_node_or_return(script, _break.value_expression, script.break_result_storage);
+    dprint("_break.resolved_target: %", _break.resolved_target);
     script.break_target = _break.resolved_target;
+    if _break.value_expression == null  return VOID_ANY;
+    
+    result := evaluate_node_or_return(script, _break.value_expression, script.break_result_storage);
     return result;
 }
 
@@ -683,6 +688,14 @@ evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_
         if !condition_as_bool  break loop;
         
         evaluate_node_or_return(script, while_loop.block, null, .DISCARD_VALUE);
+        
+        if script.break_target != null {
+            dprint("breaking from while loop");
+            if script.break_target == while_loop {
+                script.break_target = null;
+            }
+            break;
+        }
     }
     return VOID_ANY;
 }
@@ -705,6 +718,14 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             for_loop.it_decl.value_pointer += array_info.element_type.runtime_size;
             it_index += 1;
+            
+            if script.break_target != null {
+                dprint("breaking from for loop");
+                if script.break_target == for_loop {
+                    script.break_target = null;
+                }
+                break;
+            }
         }
         
       case .RANGE;
@@ -724,6 +745,14 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
         for lower_as_s64..upper_as_s64 {
             for_loop.it_decl.value_pointer = *it;
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
+            
+            if script.break_target != null {
+                dprint("breaking from for loop");
+                if script.break_target == for_loop {
+                    script.break_target = null;
+                }
+                break;
+            }
         }
         
       case .LIST;
@@ -734,6 +763,14 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
             evaluate_node_or_return(script, it);
             for_loop.it_decl.value_pointer = pop_any(*script.stack, for_loop.it_decl.value_type, true).value_pointer;
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
+            
+            if script.break_target != null {
+                dprint("breaking from for loop");
+                if script.break_target == for_loop {
+                    script.break_target = null;
+                }
+                break;
+            }
         }
         
       case;

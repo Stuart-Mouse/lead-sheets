@@ -334,7 +334,9 @@ print_node :: (
             print_node_or_return(script, _break.target_identifier, builder, 0);
             append(builder, "]");
         }
-        print_node_or_return(script, _break.value_expression, builder, indent);
+        if _break.value_expression {
+            print_node_or_return(script, _break.value_expression, builder, indent);
+        }
         return true;
         
         

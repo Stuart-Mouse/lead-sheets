@@ -166,8 +166,18 @@ block_result := blk: {
    a := 5.0;
    b := 3.0;
    
-   break[blk] Vector2.{ b, a + b };
+   break Vector2.{ b, a + b };
 };
 
 echo(block_result);
 
+// test targetted break in nested for loop
+for a: 1..10 {
+    for b: 1..10 {
+        if a >= 2 && b == a * 2 + 1 {
+            echo(a);
+            echo(b);
+            break [a];
+        }
+    }
+}

@@ -26,7 +26,7 @@ Script :: struct {
     current_scope:          *Node_Block;
     
     // if this is set while evaluating a block, we need to keep breaking until we hit this target
-    break_target:           *Node_Block;
+    break_target:           *Node;
     break_result_storage:   *void;
     
     

@@ -98,12 +98,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         dprint("EXPRESSION"); dprint_push_indent();
         
-        _break.value_expression = my_parse_expression(script, 0);
-        if _break.value_expression == null  return null;
-        
-        if !check_for_semicolon(script, _break.value_expression, expect_semicolon) {
-            set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = script.lexer.location);
-            return null;
+        if !expect_token_type(script, .SEMICOLON) {
+            _break.value_expression = my_parse_expression(script, 0);
+            if _break.value_expression == null  return null;
+            
+            if !check_for_semicolon(script, _break.value_expression, expect_semicolon) {
+                set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = script.lexer.location);
+                return null;
+            }
         }
         
         return _break;

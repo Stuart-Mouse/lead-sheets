@@ -1163,7 +1163,7 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
             block.value_type = xx void;
         }
     } else {
-        assert(block.value_type == null, "Non-named block had its value_type set!");
+        assert(block.value_type == null || block.value_type == xx void, "Non-named block had its value_type set!");
         block.value_type = xx void;
     }
 }
@@ -1208,26 +1208,17 @@ typecheck_if_expression :: (using script: *Script, if_expression: *Node_If_Expre
 typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     target_name := ifx _break.target_identifier then get_name(script, _break.target_identifier);
     
-    scope := _break.scope;
-    while scope {
-        if scope.node_type == {
-          case Node_Block;
-            block_name := get_name_as_break_target(script, scope);
-            if block_name == target_name 
-            || (block_name != "" && target_name == "") {
-                _break.resolved_target = xx scope;
-                break;
-            }
-        }
-        scope = scope.scope;
-    }
-    
+    _break.resolved_target = get_break_target(script, target_name, _break.scope);
     if _break.resolved_target == null {
         set_typecheck_error(script, "Unable to resolve break target: '%'", target_name, node = _break.target_identifier);
         return;
     }
     
-    _break.value_type = typecheck_node_or_return(script, _break.value_expression);
+    if _break.value_expression {
+        _break.value_type = typecheck_node_or_return(script, _break.value_expression);
+    } else {
+        _break.value_type = xx void;
+    }
     
     if _break.resolved_target.value_type {
         if _break.value_type != _break.resolved_target.value_type {
@@ -1238,6 +1229,31 @@ typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := T
         _break.resolved_target.value_type = _break.value_type;
     }
 }
+
+get_break_target :: (script: *Script, target_name: string, block: *Node_Block) -> *Node {
+    while block {
+        defer block = block.scope;
+        
+        if block.owner {
+            if block.owner.node_type == {
+              case Node_For_Loop;
+                for_loop := block.owner.(*Node_For_Loop);
+                loop_iterator_name := ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
+                if target_name == "" || (loop_iterator_name && target_name == loop_iterator_name)  return for_loop;
+                
+              case Node_While_Loop;
+                while_loop := block.owner.(*Node_While_Loop);
+                // TODO: named while loops
+                if target_name == ""  return while_loop;
+            }
+        }
+        
+        if block.name && (target_name == "" || target_name == block.name)  return block;
+    }
+    
+    return null;
+}
+
 
 typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, while_loop.condition);

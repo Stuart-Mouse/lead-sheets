@@ -115,20 +115,6 @@ get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Decla
     return .[];
 }
 
-get_name_as_break_target :: (script: *Script, block: *Node_Block) -> string {
-    if block.name  return block.name;
-    
-    if block.owner {
-        if block.owner.node_type == {
-          case Node_For_Loop;
-            for_loop := block.owner.(*Node_For_Loop);
-            return ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
-        }
-    }
-    
-    return "";
-}
-
 
 Node_Cast :: struct {
     using #as base:     Node;
@@ -438,7 +424,7 @@ Node_For_Loop :: struct {
 Node_Break :: struct {
     using #as node_base: Node;
     target_identifier:  *Node_Identifier;
-    resolved_target:    *Node_Block;    // TODO: maybe try to remove later on, would require changes to Node_Identifier
+    resolved_target:    *Node;    // TODO: maybe try to remove later on, would require changes to Node_Identifier
     value_expression:   *Node;
 }
 
