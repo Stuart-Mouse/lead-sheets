@@ -20,8 +20,8 @@ Node :: struct {
         IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
         
-        // TODO: change this to STATIC, reconsider semantics around malleable literals and declarations
-        MACRO;                  // marks declarations with :: which act as simple AST node references to the init_expression
+        STATIC;
+        HAS_BEEN_EVALUATED;
         
         GENERATED;              // Indicates that a node was generated in Jai code, not parsed from some source file. Generally, this means that during serialization, some default formatting will be used.
         
@@ -242,7 +242,7 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
     if declaration.left.node_type == Node_Dot {
         return null;
     }
-    if declaration.flags & .MACRO {
+    if declaration.flags & .STATIC {
         return declaration.value_pointer;
     }
     return declaration.scope.stack_pointer + declaration.stack_offset;

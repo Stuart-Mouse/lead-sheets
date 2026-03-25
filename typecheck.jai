@@ -1128,20 +1128,19 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         // NOTE: currently we do nothing here because we need neither a value pointer or stack space
         //       and we don't want to do the standard .MACRO case, since for a virtual member we handle static assignment differently
     } else {
-        if declaration.flags & .MACRO {
+        if declaration.flags & .STATIC {
             // NOTE: currently, macro declarations are only used to bind to malleable literals
             // TODO: rethink the semantics/syntax for static declarations and malleable literals
             literal := get_terminal_literal(declaration.init_expression);
-            if !literal || !is_malleable(literal) {
-                set_typecheck_error(script, "Macro declarations can only be made to simple literals at this time.", node = declaration);
-                return;
+            if literal && is_malleable(literal) {
+                declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
+                my_evaluate_node(script, declaration.init_expression);
+                if has_error(script)  return;
+                pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
+                declaration.flags |= .HAS_BEEN_EVALUATED;
+            } else {
+                declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
             }
-            literal.flags |= .IS_MALLEABLE;
-            
-            declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-            my_evaluate_node(script, declaration.init_expression);
-            if has_error(script)  return;
-            pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
             dprint("declaration name: %", get_name(script, declaration));
@@ -1292,7 +1291,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = xx int;
-        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        for_loop.it_decl.flags |= .STATIC; // @HACK: should just push stack space in evaluation
         
         if for_loop.it_index_decl {
             set_typecheck_error(script, "Cannot define an `it_index` in a range-based for loop.", node = for_loop.it_index_decl);
@@ -1319,7 +1318,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_decl.value_type = array_info.element_type;
         // for_loop.it_decl.stack_offset = get_stack_space_in_block(script, for_loop.it_decl.value_type.runtime_size, for_loop.scope);
-        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        for_loop.it_decl.flags |= .STATIC; // @HACK: should just push stack space in evaluation
         // for_loop.it_decl.flags |= .CANNOT_BE_USED_AS_LVALUE;
         
         if !for_loop.it_index_decl {
@@ -1328,7 +1327,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
         }
         for_loop.it_index_decl.value_type = xx int;
         // for_loop.it_index_decl.stack_offset = get_stack_space_in_block(script, for_loop.it_index_decl.value_type.runtime_size, for_loop.scope);
-        for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        for_loop.it_index_decl.flags |= .STATIC; // @HACK: should just push stack space in evaluation
         
         
       case .LIST;
@@ -1351,14 +1350,14 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             for_loop.it_decl.left = make_identifier(script, "it");
         }
         for_loop.it_decl.value_type = first_type;
-        for_loop.it_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        for_loop.it_decl.flags |= .STATIC; // @HACK: should just push stack space in evaluation
         
         if !for_loop.it_index_decl {
             for_loop.it_index_decl      = alloc_node(script, Node_Declaration, scope = for_loop.scope, loc = for_loop.location);
             for_loop.it_index_decl.left = make_identifier(script, "it_index");
         }
         for_loop.it_index_decl.value_type = xx int;
-        for_loop.it_index_decl.flags |= .MACRO; // @HACK: should just push stack space in evaluation
+        for_loop.it_index_decl.flags |= .STATIC; // @HACK: should just push stack space in evaluation
     }
     
     typecheck_node_or_return(script, for_loop.block, .IS_STATEMENT_ROOT);

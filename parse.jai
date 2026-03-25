@@ -313,7 +313,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             dprint("WITH ASSIGNMENT");
             declaration.init_expression = my_parse_expression(script, 0);
             if declaration.init_expression == null  return null;
-            if is_macro_declaration then declaration.flags |= .MACRO;
+            if is_macro_declaration then declaration.flags |= .STATIC;
         }
         
         expression = declaration;

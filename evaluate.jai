@@ -43,7 +43,7 @@ evaluate_statement :: (script: *Script, expr: string, store_global_declarations 
 Evaluation_Flags :: enum_flags {
     NONE :: 0;
     EXPLICIT_CALL :: 1;  // used to indicate that we ought to run a named block
-    DISCARD_VALUE;
+    DISCARD_VALUE;  // TODO: probably rename to AUTO_POP
 }
 
 evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any #expand {
@@ -51,16 +51,6 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
     
     value := script.my_evaluate_node(script, node, provided_storage, flags);
     if has_error(script)  `return NULL_ANY;
-    
-    // #if DEBUG
-    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type.type != .ANY {
-        assert(value.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(value.type));
-        
-        if flags & .DISCARD_VALUE {
-            dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
-            return pop_any(*script.stack, node.value_type);
-        }
-    }
     return value;
 }
 
@@ -156,6 +146,19 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case;
         assert(false, "Unhandled node type in script.my_evaluate_node: %", node.node_type);
     }
+    
+    node.flags |= .HAS_BEEN_EVALUATED;
+    
+    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type.type != .ANY {
+        // #if DEBUG
+        assert(result.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(result.type));
+        
+        if flags & .DISCARD_VALUE {
+            dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
+            return pop_any(*script.stack, node.value_type);
+        }
+    }
+    
     return result;
 }
 
@@ -211,9 +214,6 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
     if #complete identifier.identifier_type == {
       case .DECLARATION;
         declaration := identifier.declaration;
-        if declaration.flags & .MACRO {
-            // return script.my_evaluate_node(script, declaration.init_expression);
-        }
         
         variable_any := Any.{ declaration.value_type, get_value_pointer(script, declaration) };
         result = prepare_result(script, identifier, variable_any, provided_storage);
@@ -223,7 +223,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
         
       case .EXTERNAL_TYPE;
         assert(!should_push_by_pointer(identifier));
-        result = prepare_result(script, identifier, script.type_table[identifier.index].type, provided_storage);
+        result = prepare_result(script, identifier, as_type(script.type_table[identifier.index].type), provided_storage);
         
       case .EXTERNAL_VARIABLE;
         variable := *script.variables[identifier.index];
@@ -548,7 +548,7 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
             return false;
         }
         
-        if !(declaration.flags & .MACRO) || !redeclared {
+        if !(declaration.flags & .STATIC) || !redeclared {
             if declaration.init_expression {
                 evaluate_node_or_return(script, declaration.init_expression, provided_storage = member_value.value_pointer);
             } else {
@@ -566,7 +566,7 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
     
     result := Any.{ declaration.value_type, value_pointer };
     
-    if !(declaration.flags & .MACRO) {
+    if !( declaration.flags & (.STATIC | .HAS_BEEN_EVALUATED) == (.STATIC | .HAS_BEEN_EVALUATED) ) {
         if declaration.init_expression {
             evaluate_node_or_return(script, declaration.init_expression, provided_storage = value_pointer);
         } else {

@@ -283,7 +283,7 @@ print_node :: (
             if declaration.init_expression  append(builder, " ");
         }
         if declaration.init_expression {
-            if declaration.flags & .MACRO {
+            if declaration.flags & .STATIC {
                 append(builder, ":");
             } else {
                 append(builder, "=");
