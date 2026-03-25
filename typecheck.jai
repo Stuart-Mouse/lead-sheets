@@ -1129,14 +1129,11 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         //       and we don't want to do the standard .MACRO case, since for a virtual member we handle static assignment differently
     } else {
         if declaration.flags & .STATIC {
-            // NOTE: currently, macro declarations are only used to bind to malleable literals
-            // TODO: rethink the semantics/syntax for static declarations and malleable literals
             literal := get_terminal_literal(declaration.init_expression);
             if literal && is_malleable(literal) {
                 declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-                my_evaluate_node(script, declaration.init_expression);
+                my_evaluate_node(script, declaration.init_expression, null, .DISCARD_VALUE);
                 if has_error(script)  return;
-                pop_any(*script.stack, declaration.init_expression.value_type, should_push_by_pointer(declaration.init_expression));
                 declaration.flags |= .HAS_BEEN_EVALUATED;
             } else {
                 declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
