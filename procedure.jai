@@ -66,18 +66,28 @@ format_procedure_overload :: (builder: *String_Builder, script: *Script, overloa
     if overload.reject_reason == {
       case .ARG_COUNT;
         print(builder, 
-            "Mismatch on argument count: expected %, got %\n\n", 
+            "Mismatch on argument count: expected %, got %", 
             overload.reject_details.arg_count.expected, 
             overload.reject_details.arg_count.provided
         );
         
       case .ARG_TYPE;
         print(builder, 
-            "Type mismatch on argument %: expected %, got %\n\n", 
+            "Type mismatch on argument %: expected %, got %", 
             overload.reject_details.arg_type.index, 
             as_type(overload.reject_details.arg_type.expected_type), 
             as_type(overload.reject_details.arg_type.argument.value_type)
         );
+        
+      case .NONE;
+        if overload.coercion_distance {
+            print(builder, 
+                "Matched with cast distance score: %", 
+                overload.coercion_distance
+            );
+        } else {
+            print(builder, "Perfect match.");
+        }
     }
 }
 
@@ -108,39 +118,49 @@ format_procedure_overload_report :: (builder: *String_Builder, script: *Script, 
         format_procedure_overload(builder, script, overloads[best_overload_index]);
     }
     
-    print(builder, "Unable to resolve overloaded procedure.\n");
+    identifier := procedure_call.procedure_expression.(*Node_Identifier);
+    
+    append(builder, "Unable to resolve ");
+    if overloads.count > 1 then append(builder, "overloaded ");
+    append(builder, "procedure: \"");
+    append(builder, identifier.name);
+    append(builder, "\"\n");
     
     if overloads.count == 0 {
-        identifier := procedure_call.procedure_expression.(*Node_Identifier);
         assert(identifier.node_type == Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED); // so we can access name member validly
-        print(builder, "No procedures have been registered with identifier '%'\n\n", identifier.name);
+        print(builder, "No procedures have been registered with this name.\n", identifier.name);
     } else {
         if tied_for_best {
-            print(builder, "Could not decide between % matching overloads:\n\n", tied_for_best);
+            print(builder, "Could not decide between % suitable overloads:\n\n", tied_for_best);
             for overloads {
-                if it.reject_reason != .NONE 
-                || it.coercion_distance != best_overload_distance 
-                    then continue;
-                
+                if it.reject_reason != .NONE || it.coercion_distance != best_overload_distance then continue;
                 format_procedure_overload(builder, script, it);
             }
         }
-        if overloads.count > tied_for_best {
-            print(builder, "% failing overload(s):\n\n", overloads.count);
+        
+        count_rejected := overloads.count - tied_for_best;
+        if count_rejected > 0 {
+            print(builder, "%", overloads.count);
+            append(builder, " rejected overload");
+            if count_rejected > 1  append(builder, "(s)");
+            append(builder, ":");
             for overloads {
-                if it.reject_reason == .NONE  continue;
+                if it.reject_reason == .NONE && it.coercion_distance == best_overload_distance then continue;
+                append(builder, "\n\n");
                 format_procedure_overload(builder, script, it);
             }
         }
+        
+        if procedure_call.arguments {
+            print(builder, "Provided argument types were: ");
+            for procedure_call.arguments {
+                if it_index != 0  print(builder, ", ");
+                print(builder, "%", as_type(it.value_type));
+            }
+            print(builder, "\n");
+        }
     }
-    
-    print(builder, "Provided argument types were: ");
-    for procedure_call.arguments {
-        if it_index != 0  print(builder, ", ");
-        print(builder, "%", as_type(it.value_type));
-    }
-    print(builder, "\n");
 }
 
 get_procedure_overloads :: (script: *Script, name: string) -> [] Procedure_Overload_Report.Entry {
