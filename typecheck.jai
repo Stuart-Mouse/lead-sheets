@@ -1126,7 +1126,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     // set value pointer or stack offset
     if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
         // NOTE: currently we do nothing here because we need neither a value pointer or stack space
-        //       and we don't want to do the standard .MACRO case, since for a virtual member we handle static assignment differently
+        //       and we don't want to do the standard .STATIC case, since for a virtual member we handle static assignment differently
     } else {
         if declaration.flags & .STATIC {
             literal := get_terminal_literal(declaration.init_expression);

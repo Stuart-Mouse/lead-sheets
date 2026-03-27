@@ -155,10 +155,10 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
         
         if error.type == {
           case .UNEXPECTED_TOKEN;
-            print(builder, "Unexpected token: % %", token.text, token.trivia);
+            print(builder, "Unexpected token: % \"%\"", token.type, token.text);
             
           case .UNEXPECTED_CHARACTER;
-            print(builder, "Unexpected character: % %", token.text, token.trivia);
+            print(builder, "Unexpected character: % \"%\"", token.type, token.text);
         }
         
       case .PARSE_ERROR;
@@ -180,10 +180,10 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
             if error.type == {
               case .UNRESOLVED_IDENTIFIER;
                 assert(node.node_type == Node_Identifier);
-                print(builder, "Unresolved identifier: '%'\n", node.(*Node_Identifier).name);
+                print(builder, "Unresolved identifier: \"%\"", node.(*Node_Identifier).name);
                 
               case .MISSING_TYPE_HINT;
-                print(builder, "Unable to resolve type due to missing type hint.\n");
+                print(builder, "Unable to resolve type due to missing type hint.");
                 
               case .FAILED_IMPLICIT_CAST;
                 // NOTE: currently the full error is just in error.message
@@ -205,7 +205,7 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
             if error.type == {
               case .STACK_OVERFLOW;
                 assert(node.node_type == Node_Identifier);
-                print(builder, "Ran out of stack space. Try increasing stack size when initializing script.\n", node.(*Node_Identifier).name);
+                print(builder, "Ran out of stack space. Try increasing stack size when initializing script.", node.(*Node_Identifier).name);
             }
         } else {
             print(builder, "[node is null! error type is %] ", error.type);
@@ -215,7 +215,11 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
       case .GENERAL_ERROR;
     }
     
-    append(builder, to_string(*error.message));
+    message := to_string(*error.message);
+    if message {
+        append(builder, "\n");
+        append(builder, message);
+    }
 }
 
 format_error :: (script: *Script, append_jai_location := true, append_script_location := true) -> string {
