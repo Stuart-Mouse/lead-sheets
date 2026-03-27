@@ -1138,6 +1138,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             } else {
                 declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
             }
+        } else if script.flags & .ALWAYS_ALLOCATE_FOR_GLOBAL_DECLARATIONS {
+            declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
             dprint("declaration name: %", get_name(script, declaration));

@@ -27,8 +27,7 @@ evaluate_statement :: (script: *Script, expr: string, store_global_declarations 
     
     if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return NULL_ANY, false;
     
-    value := New_Any(root.value_type, initialized = false,, get_pool_allocator(*script.pool));
-    script.my_evaluate_node(script, root, provided_storage = value.value_pointer);
+    result := script.my_evaluate_node(script, root, flags = .DISCARD_VALUE);
     if has_error(script)  return NULL_ANY, false;
     
     if store_global_declarations {
@@ -37,7 +36,7 @@ evaluate_statement :: (script: *Script, expr: string, store_global_declarations 
         }
     }
     
-    return value, true;
+    return result, true;
 }
 
 Evaluation_Flags :: enum_flags {
@@ -147,18 +146,19 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         assert(false, "Unhandled node type in script.my_evaluate_node: %", node.node_type);
     }
     
-    node.flags |= .HAS_BEEN_EVALUATED;
-    
-    if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type.type != .ANY {
-        // #if DEBUG
-        assert(result.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(result.type));
+    if !has_error(script) {
+        node.flags |= .HAS_BEEN_EVALUATED;
         
-        if flags & .DISCARD_VALUE {
-            dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
-            return pop_any(*script.stack, node.value_type);
+        if !(node.flags & .VALUE_TYPE_IS_NOMINAL) && node.value_type.type != .ANY {
+            // #if DEBUG
+            assert(result.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(result.type));
+            
+            if flags & .DISCARD_VALUE {
+                dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
+                return pop_any(*script.stack, node.value_type);
+            }
         }
     }
-    
     return result;
 }
 
@@ -350,13 +350,13 @@ evaluate_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Cal
     
     #if USING_DYNCALL {
         if !do_dyncall(script.dyncall_vm, procedure, arguments, result_array) {
-            set_general_error(script, "Failed while trying to do dyncall.");
+            set_execution_error(script, "Failed while trying to do dyncall.", node = procedure_call);
             return NULL_ANY;
         }
     } else {
         procedure_pointer := procedure.value_pointer.(**void).*;
         if !try_calling_procedure_with_wrapper(procedure_info, procedure_pointer, arguments, result_array) {
-            set_general_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info));
+            set_execution_error(script, "Unable to find wrapper for procedure of type: %", as_type(procedure_info), node = procedure_call);
             return NULL_ANY;
         }
     }

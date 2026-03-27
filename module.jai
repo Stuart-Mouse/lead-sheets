@@ -56,6 +56,11 @@ Script :: struct {
         INITIALIZED;
         PARSED;
         TYPECHECKED;
+        
+        // TODO: this is basically a hack to make use of a script as a debug console work 
+        //       we need a better long term solution that manages storage for declarations more intelligently
+        //       one solution may be to use a multi-stack model for storing declarations in open blocks
+        ALWAYS_ALLOCATE_FOR_GLOBAL_DECLARATIONS;
     }
 }
 
