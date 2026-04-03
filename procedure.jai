@@ -150,15 +150,16 @@ format_procedure_overload_report :: (builder: *String_Builder, script: *Script, 
                 append(builder, "\n\n");
                 format_procedure_overload(builder, script, it);
             }
+            append(builder, "\n");
         }
         
         if procedure_call.arguments {
-            print(builder, "Provided argument types were: ");
+            append(builder, "Provided argument types were: ");
             for procedure_call.arguments {
-                if it_index != 0  print(builder, ", ");
+                if it_index != 0  append(builder, ", ");
                 print(builder, "%", as_type(it.value_type));
             }
-            print(builder, "\n");
+            append(builder, "\n");
         }
     }
 }
