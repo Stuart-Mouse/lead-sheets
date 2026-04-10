@@ -52,6 +52,11 @@ Script :: struct {
     declare_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any, bool;
     declare_virtual_member_user_data:   *void;
     
+    // timing_info: struct {
+    //     internal: Apollo_Time; // time spent in lead sheets procedures, not in user callbacks
+    //     time_spent_in_procedure_calls: Apollo_Time;
+    // }
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
