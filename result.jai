@@ -234,27 +234,27 @@ format_error :: (script: *Script, append_jai_location := true, append_script_loc
 // } @PrintLike
 
 set_general_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
-    script.error = .{ type = .GENERAL_ERROR, location = loc };
+    script.error.base = .{ type = .GENERAL_ERROR, location = loc };
     copy_from_string(*script.error.message, tprint(format, ..args));
 } @PrintLike
 
 set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, loc := #caller_location) {
     // assert(type & .CLASS_MASK == .PARSE_ERROR);
-    script.error = .{ type = .PARSE_ERROR, location = loc };
+    script.error.base = .{ type = .PARSE_ERROR, location = loc };
     script.error.parse.node = node;
     copy_from_string(*script.error.message, tprint(format, ..args));
 } @PrintLike
 
 set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
     assert(type & .CLASS_MASK == .TYPECHECK_ERROR);
-    script.error = .{ type = type, location = loc };
+    script.error.base = .{ type = type, location = loc };
     script.error.typecheck.node = node;
     copy_from_string(*script.error.message, tprint(format, ..args));
 } @PrintLike
 
 set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, loc := #caller_location) {
     assert(type & .CLASS_MASK == .EXECUTION_ERROR);
-    script.error = .{ type = type, location = loc };
+    script.error.base = .{ type = type, location = loc };
     script.error.execution.node = node;
     copy_from_string(*script.error.message, tprint(format, ..args));
 } @PrintLike

@@ -107,7 +107,7 @@ init_script :: (script: *Script, stack_size := 2048) {
 }
 
 has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
-clear_error :: (script: *Script) { script.error = .{}; }
+clear_error :: (script: *Script) { memzero(*script.error); }
 
 
 
