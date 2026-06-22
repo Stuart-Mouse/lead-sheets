@@ -37,6 +37,47 @@
     in debug builds, we will also want to be able to get the AST node that generated some bytecode
         we can probably do this by storing some index + count representing range of bytecode, along with pointer to ast node that generated it
         or maybe in the bytecode itself we just have an instruction that sets some 'cursor' in the script context that indicates the ast node 
+        
+        
+    
+    Literal Types
+    u8, u16, u32, u64
+    s8, s16, s32, s64
+    f32, f64    
+    pointer
+    struct/array (type erased, only size known)
+    
+    
+        
+    Instruction set:
+    
+    GOTO(location, condition)
+        location: 64-bit pointer/index used to set instruction pointer
+        condition: bool
+    ADD, SUB, MUL, DIV
+        variants:
+            u8, u16, u32, u64
+            s8, s16, s32, s64
+            f32, f64
+    CAST
+        variants: 
+            int -> int
+            int -> float
+            float -> int
+    PUSH_LITERAL
+        register-sized types
+        aggregate types
+    MODIFY_STACK_POINTER
+        SET, ADD
+    MEMCPY(to, from)
+        variants needed for copy from stack or from random memory location
+    PUSH_VARIABLE
+        performs a lookup in variables table, or maybe directly indexes
+    CALL_PROCEDURE(procedure_id)
+        what about operands?  some way to optimize the usual procedure calling method?        
+    
+    
+    
 */
 
 
