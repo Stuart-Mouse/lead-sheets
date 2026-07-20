@@ -91,7 +91,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             
             close_bracket_token := get_token(script);
             if close_bracket_token.type != .CLOSE_BRACKET {
-                set_parse_error(script, "Expected a closing bracket after break target identifier,but saw % token '%'.", close_bracket_token.type, close_bracket_token.text, loc = close_bracket_token.location);
+                set_parse_error(script, "Expected a closing bracket after break target identifier, but saw % token '%'.", close_bracket_token.type, close_bracket_token.text, loc = close_bracket_token.location);
                 return null;
             }
         }

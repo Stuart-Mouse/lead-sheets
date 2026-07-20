@@ -2104,3 +2104,32 @@ we could do a weird parsing hack to implicitly create then nodes after an if
 
 
 
+
+## Parsing with manual stack 
+
+Ryan Fleury now has me thinking that it woul dbe a good idea to refactor all my parsing code so that it uses an explicit, manual stack for the parser state, instead of using standard recursion.
+
+This would come with some benefits:
+- able to suspend/resume parsing
+- may allow implementing lsp-like features, such as smart auto-complete
+
+And some drawbacks:
+- user can no longer use simple drop-in replacements for parsing procedures
+    - unless we somehow instrument their code to try and make it asynchronous
+
+another solution would be to just do it the coroutine way
+so that way the code remains simple to write, but it can still be run asynchronously
+
+before attempting to rewrite the whole parser, I would like to first try to just implement some basic lsp functionality into the existing parser and see wha tthe pain points are.
+especially because that will entail making the parser work gracefully with incomplete input, at least for basic expressions
+
+## LSP features
+
+### auto-complete
+
+I would like to have a simple auto-complete for my debug console, and before I go implement a separate dialect of LS that makes that more simple, I want to try and make it work with the current syntax
+
+To start with, we will just presume that we aren't trying to fully recover after a lexer or parser error
+for example:
+
+
