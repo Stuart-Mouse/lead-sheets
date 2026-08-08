@@ -540,7 +540,8 @@ parse_statement_string :: (script: *Script, statement: string, expect_eof := tru
     node := parse_statement(script, expect_semicolon = false);
     
     if expect_eof && !expect_token_type(script, .EOF) {
-        log("%", get_token(script));
+        token := get_token(script);
+        set_parse_error(script, "Unexpected % token '%'.", token.type, token.text, loc = token.location);
         return null;
     }
     return node;

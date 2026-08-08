@@ -21,7 +21,6 @@ evaluate_script :: (script: *Script) -> bool {
 evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
     root := parse_statement_string(script, expr);
     if root == null {
-        log("root was null");
         return NULL_ANY, false;
     }
     
