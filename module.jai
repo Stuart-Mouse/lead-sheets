@@ -396,3 +396,20 @@ get_pool_allocator :: (pool: *Flat_Pool) -> Allocator {
 }
 
 
+
+#scope_module
+
+// For tracking allocations of nodes and such.
+// The idea is that this makes it easier for the user to provide their own allocator to certian things,
+// but they don't need to worry about knowing how to properly free all the data we allocate using their allocator.
+Allocation :: struct {
+    allocator:  Allocator;
+    memory:     *void;
+}
+
+list_all_allocations :: (allocations: [..] Allocation) {
+    log("Tracked % allocations:", allocations.count);
+    for allocations {
+        log("\t% allocated by %", it.memory, it.allocator.proc);
+    }
+}
