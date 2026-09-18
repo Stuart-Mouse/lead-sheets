@@ -1,4 +1,9 @@
 
+/*
+    TODO: 
+    - [ ] Add a menas to override the allocator with a user-provided one.
+    - [ ] Add "freed" nodes to a free list so that they can be reused.  
+*/
 Script :: struct {
     ast_root:               *Node_Block;
     flags:                  Flags;
@@ -318,6 +323,7 @@ register_common_types :: (script: *Script) {
 #load "stack.jai";
 
 #load "result.jai";
+#load "allocation_tracker.jai";
 
 
 #scope_module
