@@ -323,7 +323,6 @@ register_common_types :: (script: *Script) {
 #load "stack.jai";
 
 #load "result.jai";
-#load "allocation_tracker.jai";
 
 
 #scope_module
