@@ -18,7 +18,13 @@ evaluate_script :: (script: *Script) -> bool {
     return !has_error(script);
 }
 
-evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false) -> (Any, bool) {
+evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false, user_allocator := Allocator.{}) -> (Any, bool) {
+    prev_user_allocator := script.user_allocator;
+    defer script.user_allocator = prev_user_allocator;
+    if user_allocator.proc != null {
+        script.user_allocator = user_allocator;
+    }
+    
     root := parse_statement_string(script, expr);
     if root == null {
         return NULL_ANY, false;
@@ -77,8 +83,8 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
           until that issue is (hopefully, eventually) fixed, I will have to refactor this funciton to check each execute each individual node type in its own procedure.
 */
 evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
-    dprint("Evaluating % (%) @ %", node.node_type, node, get_location(node));
-    dprint_push_indent();
+    debug_print("Evaluating % (%) @ %", node.node_type, node, get_location(node));
+    debug_print_push_indent();
     
     assert(node.value_type != null);
     
@@ -153,7 +159,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
             assert(result.type == node.value_type, "%: % (%) claims to have value_type %, but it returned type %", get_location(node), node.node_type, node, as_type(node.value_type), as_type(result.type));
             
             if flags & .DISCARD_VALUE {
-                dprint("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
+                debug_print("Discarding unused result of % @ % of type %", node.node_type, script.stack.top, as_type(node.value_type));
                 return pop_any(*script.stack, node.value_type);
             }
         }
@@ -207,7 +213,7 @@ evaluate_literal :: (script: *Script, literal: *Node_Literal, provided_storage: 
 }
 
 evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
-    dprint("identifier name: %", get_name(script, identifier));
+    debug_print("identifier name: %", get_name(script, identifier));
     
     result: Any;
     if #complete identifier.identifier_type == {
@@ -227,7 +233,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
       case .EXTERNAL_VARIABLE;
         variable := *script.variables[identifier.index];
         value    := get_value(variable);
-        dprint("variable: %", variable.*);
+        debug_print("variable: %", variable.*);
         if variable.value_pointer == null {
             set_execution_error(script, "Unable to get value of external variable '%'.", variable.name, node = identifier);
             result = NULL_ANY;
@@ -250,12 +256,12 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
 
 evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operator, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if unary_operator.flags & .OVERLOAD {
-        dprint("Evaluating overloaded operator...");
+        debug_print("Evaluating overloaded operator...");
         return script.my_evaluate_node(script, unary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
     operator_info := get_operator_info(script, unary_operator);
-    dprint("Unary operator name: %, index: %, kind: %", unary_operator.token, unary_operator.operator_id, operator_info.lexical_type);
+    debug_print("Unary operator name: %, index: %, kind: %", unary_operator.token, unary_operator.operator_id, operator_info.lexical_type);
     
     result_value_pointer: *void;
     if operator_info.lexical_type != .ASSIGNMENT {
@@ -266,7 +272,7 @@ evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operato
     
     expression_value := evaluate_node_or_return(script, unary_operator.expression);
     
-    dprint("expression: %, result pointer: %", expression_value, result_value_pointer);
+    debug_print("expression: %, result pointer: %", expression_value, result_value_pointer);
     if !execute_builtin_operation(unary_operator.builtin_operation_id, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
     
     return Any.{ unary_operator.value_type, result_value_pointer };
@@ -274,13 +280,13 @@ evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operato
 
 evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Operator, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if binary_operator.flags & .OVERLOAD {
-        dprint("Evaluating overloaded operator...");
+        debug_print("Evaluating overloaded operator...");
         return script.my_evaluate_node(script, binary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
     // special case: operator = is always a simple memcpy
     if binary_operator.token == "=" {
-        dprint("Binary operator is simple assignment.");
+        debug_print("Binary operator is simple assignment.");
         assert(should_push_by_pointer(binary_operator.left));
         evaluate_node_or_return(script, binary_operator.left);
         value_pointer := pop_as(*script.stack, *void);
@@ -289,7 +295,7 @@ evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Oper
     }
     
     operator_info := get_operator_info(script, binary_operator);
-    dprint("Binary operator name: %, index: %, kind: %", binary_operator.token, binary_operator.operator_id, operator_info.lexical_type);
+    debug_print("Binary operator name: %, index: %, kind: %", binary_operator.token, binary_operator.operator_id, operator_info.lexical_type);
     
     result_value_pointer: *void;
     if operator_info.lexical_type != .ASSIGNMENT {
@@ -302,11 +308,11 @@ evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Oper
     right := evaluate_node_or_return(script, binary_operator.right);
     
     if binary_operator.flags & .SWAP_OPERANDS {
-        dprint("Swapping operands");
+        debug_print("Swapping operands");
         left, right = right, left;
     }
     
-    dprint("left: %, right: %, result pointer: %", left, right, result_value_pointer);
+    debug_print("left: %, right: %, result pointer: %", left, right, result_value_pointer);
     if !execute_builtin_operation(binary_operator.builtin_operation_id, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
     
     return Any.{ binary_operator.value_type, result_value_pointer };
@@ -317,11 +323,11 @@ evaluate_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Cal
     if !return_value_pointer  return NULL_ANY;
     defer_restore(*script.stack.top);
     
-    dprint("return_value_pointer: %", return_value_pointer);
+    debug_print("return_value_pointer: %", return_value_pointer);
     
     procedure_info := procedure_call.procedure_expression.value_type.(*Type_Info_Procedure);
     assert(procedure_info.type == .PROCEDURE);
-    dprint("procedure_info: %", as_type(procedure_info));
+    debug_print("procedure_info: %", as_type(procedure_info));
     
     procedure := evaluate_node_or_return(script, procedure_call.procedure_expression);
     
@@ -339,8 +345,8 @@ evaluate_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Cal
         arguments[it_index] = evaluate_node_or_return(script, it);
         
         if arguments[it_index].type.runtime_size > 8
-            then dprint("argument #%, % @ %",    it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer);
-            else dprint("argument #%, % @ %: %", it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer, arguments[it_index]);
+            then debug_print("argument #%, % @ %",    it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer);
+            else debug_print("argument #%, % @ %: %", it_index, as_type(arguments[it_index].type), arguments[it_index].value_pointer, arguments[it_index]);
     }
     
     result := Any.{ procedure_call.value_type, return_value_pointer };
@@ -391,7 +397,7 @@ evaluate_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *void = 
         assert(should_push_by_pointer(_cast.value));
         assert(!should_push_by_pointer(_cast));
         
-        dprint("Implicitly referencing: % -> %", as_type(_cast.value.value_type), as_type(_cast.value_type));
+        debug_print("Implicitly referencing: % -> %", as_type(_cast.value.value_type), as_type(_cast.value_type));
         
         src := evaluate_node_or_return(script, _cast.value);
         dst.value_pointer.(**void).* = src.value_pointer;
@@ -409,7 +415,7 @@ evaluate_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *void = 
         return NULL_ANY;
     }
     
-    dprint("Returning result of cast: %", dst);
+    debug_print("Returning result of cast: %", dst);
     return dst;
 }
 
@@ -450,7 +456,7 @@ evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null
         pointer_info := left_type.(*Type_Info_Pointer);
         assert(pointer_info.pointer_to.type == .STRUCT);
         
-        dprint("Implicitly dereferencing: % -> %", as_type(left_type), as_type(pointer_info.pointer_to));
+        debug_print("Implicitly dereferencing: % -> %", as_type(left_type), as_type(pointer_info.pointer_to));
         left_type = pointer_info.pointer_to;
         doing_implict_dereference = true;
         #through;
@@ -463,7 +469,7 @@ evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null
             return prepare_result(script, dot, member_any, provided_storage);
         }
         
-        dprint("%: LHS is pushed by value.", get_location(dot));
+        debug_print("%: LHS is pushed by value.", get_location(dot));
         
         // NOTE: We may later find that this case is problematic and results in stack corruption issues!
         //       So if something like that happens I hope I can identify it and remember to look here!
@@ -507,7 +513,7 @@ evaluate_subscript :: (script: *Script, subscript: *Node_Subscript, provided_sto
     index_any := pop_any(*script.stack, subscript.indexing_expression.value_type);
     base_any  := pop_any(*script.stack, subscript.base_expression.value_type, true);
     
-    ti_array := subscript.base_expression.value_type.(*Type_Info_Array);
+    array_info    := subscript.base_expression.value_type.(*Type_Info_Array);
     indexing_type := subscript.indexing_expression.value_type;
     
     index_as_s64: s64;
@@ -558,10 +564,10 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
         return prepare_result(script, declaration, member_value, provided_storage);
     }
     
-    dprint("declaration name: %", get_name(script, declaration));
+    debug_print("declaration name: %", get_name(script, declaration));
     
     value_pointer := get_value_pointer(script, declaration);
-    dprint("declaration value_pointer: %", value_pointer);
+    debug_print("declaration value_pointer: %", value_pointer);
     
     result := Any.{ declaration.value_type, value_pointer };
     
@@ -585,7 +591,7 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
     // if block.name && !(flags & .EXPLICIT_CALL)  return Any.{ block.value_type, result_storage };
     
     block.stack_pointer = push(*script.stack, null, block.stack_frame_size);
-    dprint("pushed % bytes to stack @ % for declarations in block", block.stack_frame_size, block.stack_pointer);
+    debug_print("pushed % bytes to stack @ % for declarations in block", block.stack_frame_size, block.stack_pointer);
     
     if !block.stack_pointer {
         set_execution_error(script, type = .STACK_OVERFLOW, node = block);
@@ -599,7 +605,7 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
         evaluate_node_or_return(script, it, null, .DISCARD_VALUE);
         
         if script.break_target != null {
-            dprint("breaking from block");
+            debug_print("breaking from block");
             if script.break_target == block {
                 script.break_target = null; 
             }
@@ -620,8 +626,8 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
 }
 
 evaluate_break :: (script: *Script, _break: *Node_Break, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
-    dprint("script.break_result_storage: %", script.break_result_storage);
-    dprint("_break.resolved_target: %", _break.resolved_target);
+    debug_print("script.break_result_storage: %", script.break_result_storage);
+    debug_print("_break.resolved_target: %", _break.resolved_target);
     script.break_target = _break.resolved_target;
     if _break.value_expression == null  return VOID_ANY;
     
@@ -633,13 +639,13 @@ evaluate_if_statement :: (script: *Script, if_statement: *Node_If_Statement, pro
     evaluate_node_or_return(script, if_statement.condition);
     
     condition := pop_any(*script.stack, if_statement.condition.value_type);
-    dprint("condition: % %", as_type(condition.type), condition);
+    debug_print("condition: % %", as_type(condition.type), condition);
     
     subcondition: Any;
     if if_statement.subcondition {
         evaluate_node_or_return(script, if_statement.subcondition);
         subcondition = pop_any(*script.stack, if_statement.subcondition.value_type);
-        dprint("subcondition: % %", as_type(condition.type), condition);
+        debug_print("subcondition: % %", as_type(condition.type), condition);
     }
     
     _, condition_as_bool := Convert.any_to(bool, ifx if_statement.subcondition then subcondition else condition);
@@ -681,7 +687,7 @@ evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_
         evaluate_node_or_return(script, while_loop.condition);
         
         condition := pop_any(*script.stack, while_loop.condition.value_type);
-        dprint("condition: % %", as_type(condition.type), condition);
+        debug_print("condition: % %", as_type(condition.type), condition);
         
         _, condition_as_bool := Convert.any_to(bool, condition);
         if !condition_as_bool  break loop;
@@ -689,7 +695,7 @@ evaluate_while_loop :: (script: *Script, while_loop: *Node_While_Loop, provided_
         evaluate_node_or_return(script, while_loop.block, null, .DISCARD_VALUE);
         
         if script.break_target != null {
-            dprint("breaking from while loop");
+            debug_print("breaking from while loop");
             if script.break_target == while_loop {
                 script.break_target = null;
             }
@@ -719,7 +725,7 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
             it_index += 1;
             
             if script.break_target != null {
-                dprint("breaking from for loop");
+                debug_print("breaking from for loop");
                 if script.break_target == for_loop {
                     script.break_target = null;
                 }
@@ -746,7 +752,7 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             
             if script.break_target != null {
-                dprint("breaking from for loop");
+                debug_print("breaking from for loop");
                 if script.break_target == for_loop {
                     script.break_target = null;
                 }
@@ -764,7 +770,7 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             
             if script.break_target != null {
-                dprint("breaking from for loop");
+                debug_print("breaking from for loop");
                 if script.break_target == for_loop {
                     script.break_target = null;
                 }
@@ -785,9 +791,9 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
         // assert(node.value_type.type != .ANY);
         
         #if DEBUG {
-            dprint("Returning result using provided storage @ %: ", provided_storage, newline = false);
-            if !is_aggregate(any.type)  dprint("%", any, newline = false);
-            dprint(" (%)", as_type(any.type));
+            debug_print("Returning result using provided storage @ %: ", provided_storage, newline = false);
+            if !is_aggregate(any.type)  debug_print("%", any, newline = false);
+            debug_print(" (%)", as_type(any.type));
         }
         
         if any.value_pointer 
@@ -801,9 +807,9 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
     if !ok  set_execution_error(script, "Ran out of space on stack!", node = node);
     
     #if DEBUG {
-        dprint("Returning result @ % using stack: ", result.value_pointer, newline = false);
-        if !is_aggregate(any.type)  dprint("%", any, newline = false);
-        dprint(" (%)", as_type(any.type));
+        debug_print("Returning result @ % using stack: ", result.value_pointer, newline = false);
+        if !is_aggregate(any.type)  debug_print("%", any, newline = false);
+        debug_print(" (%)", as_type(any.type));
     }
     
     return result;
@@ -813,13 +819,13 @@ prepare_result :: (script: *Script, node: *Node, any: Any, provided_storage: *vo
 get_result_storage :: (script: *Script, node: *Node, provided_storage: *void) -> *void {
     if provided_storage {
         assert(node.value_type != xx Any);
-        dprint("Got provided storage @ % for result of type: %", provided_storage, as_type(node.value_type));
+        debug_print("Got provided storage @ % for result of type: %", provided_storage, as_type(node.value_type));
         return provided_storage;
     }
     
     result := push(*script.stack, null, node.value_type.runtime_size);
     if result {
-        dprint("Got space on stack @ % for result of type: %", result, as_type(node.value_type));
+        debug_print("Got space on stack @ % for result of type: %", result, as_type(node.value_type));
     } else {
         set_execution_error(script, "Ran out of space on stack!", node = node);
     }

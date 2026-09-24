@@ -214,7 +214,7 @@ main :: () {
                     value, ok := LS.evaluate_statement(*script, str, store_global_declarations = true);
                     if !ok {
                         log("Error: Failed to evaluate statement.");
-                        log(LS.format_error(*script));
+                        log_error(*script);
                         LS.clear_error(*script);
                     } else {
                         result: string;

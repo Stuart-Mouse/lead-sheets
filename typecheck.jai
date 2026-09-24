@@ -35,11 +35,11 @@ typecheck_node :: (
 ) -> (
     value_type:     *Type_Info
 ) {
-    dprint("typechecking % (%) @ %", node.node_type, node, get_location(node));
-    // dprint("%", sprint_node(script, node));
-    dprint_push_indent();
-    dprint("expecting type: %", as_type(hint_type));
-    defer dprint("resulting value type: %", as_type(node.value_type));
+    debug_print("typechecking % (%) @ %", node.node_type, node, get_location(node));
+    // debug_print("%", sprint_node(script, node));
+    debug_print_push_indent();
+    debug_print("expecting type: %", as_type(hint_type));
+    defer debug_print("resulting value type: %", as_type(node.value_type));
     
     // if already typechecked, just return resolved type
     // this was not possible before, but will be now that multiple identifier nodes may reference same underlying procedure or variable node
@@ -190,7 +190,7 @@ make_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> *Node 
     _cast.implicit_type = type;
     _cast.value         = node;
     _cast.value_type    = type;
-    dprint("%: Info: created implicit cast from % to %", get_location(node), as_type(_cast.value.value_type), as_type(_cast.implicit_type));
+    debug_print("%: Info: created implicit cast from % to %", get_location(node), as_type(_cast.value.value_type), as_type(_cast.implicit_type));
     return _cast;
 }
 
@@ -236,7 +236,7 @@ try_implicit_cast :: (script: *Script, node: *Node, type: *Type_Info) -> (ok: bo
     if node.value_type == type  return true, null;
     
     if can_do_implicit_reference(script, node, type) {
-        dprint("Made implicit cast for implicit reference: %", as_type(type));
+        debug_print("Made implicit cast for implicit reference: %", as_type(type));
         if !set_as_lvalue(script, node)  return false, null;
         return true, make_implicit_cast(script, node, type);
     }
@@ -269,7 +269,7 @@ coerce_literal_type :: (literal: *Node_Literal, type: *Type_Info) -> bool {
         literal.value_type = type;
         return true;
     }
-    dprint("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
+    debug_print("%: Error: unable to coerce % literal of type '%' to '%'", get_location(literal), literal.literal_type, as_type(literal.value_type), as_type(type));
     return false;
 }
 
@@ -489,8 +489,8 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         literal.flags |= .IS_CONSTANT;
         
       case .STRUCT;
-        ti_struct := hint_type.(*Type_Info_Struct);
-        if ti_struct == null {
+        struct_info := hint_type.(*Type_Info_Struct);
+        if struct_info == null {
             set_typecheck_error(script, 
                 "Unable to typecheck struct literal without a type hint.", 
                 type = .MISSING_TYPE_HINT, 
@@ -498,18 +498,18 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             );
             return;
         }
-        if ti_struct.type != .STRUCT {
-            set_typecheck_error(script, "Type hint provided to struct literal is not a struct type. (was '%')", as_type(ti_struct), node = literal);
+        if struct_info.type != .STRUCT {
+            set_typecheck_error(script, "Type hint provided to struct literal is not a struct type. (was '%')", as_type(struct_info), node = literal);
             return;
         }
         
         all_members_are_constant := true;
         for literal.aggregate.expressions {
-            if it_index >= ti_struct.members.count {
+            if it_index >= struct_info.members.count {
                 set_typecheck_error(script, "Too many values provided in struct literal.", node = literal);
                 return;
             }
-            member := ti_struct.members[it_index];
+            member := struct_info.members[it_index];
             
             expr_ti := typecheck_node_or_return(script, it, hint_type = member.type); 
             if expr_ti != member.type {
@@ -524,12 +524,12 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
             literal.flags |= .IS_CONSTANT;
         }
         
-        literal.value_type = ti_struct;
+        literal.value_type = struct_info;
         
         // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
         if is_malleable(literal) {
-            literal.aggregate.value_pointer = Dynamic_New(literal.value_type,, get_pool_allocator(*script.pool));
-            dprint("allocated space for literal of type %, node %", literal.value_type, literal);
+            literal.aggregate.value_pointer = Dynamic_New(literal.value_type,, get_allocator(script));
+            debug_print("Allocated space for literal of type %, node %", literal.value_type, literal);
         }
     }
     
@@ -540,7 +540,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     // NOTE: prevent re-typechecking identifier which has already been resolved
     if identifier.identifier_type != .UNRESOLVED  return;
     
-    dprint("identifier name: %", identifier.name);
+    debug_print("identifier name: %", identifier.name);
     
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
@@ -549,7 +549,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
             return;
         }
         
-        dprint("found declaration: %", get_name(script, declaration));
+        debug_print("found declaration: %", get_name(script, declaration));
         
         identifier.identifier_type = .DECLARATION;
         identifier.declaration     = declaration;
@@ -620,11 +620,11 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
         
         // Otherwise, try to typecheck whichever one previously failed with the type hint of the other side.
         if left_type == null {
-            dprint("Info: Failed to typecheck left operand on first attempt, trying again with type hint: %", as_type(right_type));
+            debug_print("Info: Failed to typecheck left operand on first attempt, trying again with type hint: %", as_type(right_type));
             left_type  = typecheck_node_or_return(script, binary_operator.left,  check_flags, right_type);
         }
         if right_type == null {
-            dprint("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
+            debug_print("Info: Failed to typecheck right operand on first attempt, trying again with type hint: %", as_type(left_type));
             right_type = typecheck_node_or_return(script, binary_operator.right, check_flags, left_type);
         }
         
@@ -669,6 +669,8 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
         assert(false, "Invalid operator lexical type in typecheck_binary_operator: %", operator_info.lexical_type);
     }
     
+    // TODO: We should try to resolve the operation using the actual type first, and then do a second iteration using the underlying type only if we failed to find a match the first time through.
+    
     // TODO: We could still use some smarter type coercion here, probably. 
     //       Will have to see what specific cases come up later and try to fix those.
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
@@ -683,14 +685,14 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
         binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
-        dprint("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_id]);
+        debug_print("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_id]);
         
         if left_type.type == .ENUM && left_type == right_type {
-            if binary_operator.value_type != left_underlying_type {
-                set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(binary_operator.value_type), node = binary_operator);
-                return;
-            }
-            dprint("using left type as value type");
+            // if binary_operator.value_type != left_underlying_type {
+            //     set_typecheck_error(script, "We tried to coerce the enum type '%' to its underlying int type '%' for the purposes of making this binary operation work, but the return type of the resolved binary operator '%' does not match the underlying int type of the enum. So unfortunately we're gonna have to fail typechecking here...", as_type(left_type), as_type(left_underlying_type), as_type(binary_operator.value_type), node = binary_operator);
+            //     return;
+            // }
+            debug_print("using left type as value type");
             binary_operator.value_type = left_type;
         }
         return;
@@ -700,7 +702,7 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
     procedure_call := alloc_node(script, Node_Procedure_Call, scope = binary_operator.scope, loc = binary_operator.location);
     procedure_call.procedure_expression = make_identifier(script, binary_operator.token, loc = binary_operator.location);
     
-    procedure_call.arguments = array_copy((*Node).[ binary_operator.left, binary_operator.right ],, get_pool_allocator(*script.pool));
+    procedure_call.arguments = array_copy((*Node).[ binary_operator.left, binary_operator.right ],, get_allocator(script));
     
     binary_operator.overload_procedure    = procedure_call;
     binary_operator.flags                |= .OVERLOAD;
@@ -717,7 +719,7 @@ typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_
     
     operator_info := get_operator_info(script, unary_operator);
     if !is_unary(operator_info.lexical_type) {
-        assert(false, "Invalid operator lexical type in typecheck_binary_operator: %", operator_info.lexical_type);
+        assert(false, "Invalid operator lexical type in typecheck_unary_operator: %", operator_info.lexical_type);
     }
     
     expression_value_type := typecheck_node_or_return(script, unary_operator.expression, check_flags, hint_type);
@@ -737,7 +739,7 @@ typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_
     procedure_call := alloc_node(script, Node_Procedure_Call, scope = unary_operator.scope, loc = unary_operator.location);
     procedure_call.procedure_expression = make_identifier(script, unary_operator.token, loc = unary_operator.location);
     
-    procedure_call.arguments = array_copy((*Node).[unary_operator.expression],, get_pool_allocator(*script.pool));
+    procedure_call.arguments = array_copy((*Node).[unary_operator.expression],, get_allocator(script));
     
     unary_operator.overload_procedure    = procedure_call;
     unary_operator.flags                |= .OVERLOAD;
@@ -780,7 +782,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
             node          := node_ptr_ptr.*;
             expected_type := proc_info.argument_types[it];
             if node.value_type == null {
-                dprint("re-typechecking argument with hint_type %", as_type(expected_type));
+                debug_print("re-typechecking argument with hint_type %", as_type(expected_type));
                 type := typecheck_node_or_return(script, node, hint_type = expected_type);
                 if type != expected_type {
                     builder: String_Builder;
@@ -799,7 +801,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
                     print(*builder, "\tProcedure identifier: '%'\n", procedure_name);
                     print(*builder, "\tArgument expression: '%'\n", sprint_node(script, node,, temp));
                     print(*builder, "\tExpected type '%', got '%'\n", expected_type, node.value_type);
-                    copy_from_string(*script.error.message, builder_to_string(*builder,, temp));
+                    set_error_message(script, builder_to_string(*builder));
                     return;
                 }
                 if replacement  replace_node(node_ptr_ptr, replacement);
@@ -1118,8 +1120,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         return;
     }
     
-    dprint("explicit_type: %", explicit_type);
-    dprint("right_type: %", right_type);
+    debug_print("explicit_type: %", explicit_type);
+    debug_print("right_type: %", right_type);
     
     declaration.value_type = ifx explicit_type else right_type;
     
@@ -1136,14 +1138,14 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
                 if has_error(script)  return;
                 declaration.flags |= .HAS_BEEN_EVALUATED;
             } else {
-                declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
+                declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_allocator(script));
             }
         } else if script.flags & .ALWAYS_ALLOCATE_FOR_GLOBAL_DECLARATIONS {
-            declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_pool_allocator(*script.pool));
+            declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_allocator(script));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
-            dprint("declaration name: %", get_name(script, declaration));
-            dprint("declaration stack_offset: %", declaration.stack_offset);
+            debug_print("declaration name: %", get_name(script, declaration));
+            debug_print("declaration stack_offset: %", declaration.stack_offset);
         }
     }
 }
@@ -1263,7 +1265,7 @@ typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, ch
 typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if #complete for_loop.control_type == {
       case .RANGE;
-        dprint("typechecking range lower");
+        debug_print("typechecking range lower");
         lower_type := typecheck_node_or_return(script, for_loop.range.lower, hint_type = xx int);
         {
             ok, replacement := try_implicit_cast(script, for_loop.range.lower, xx int);
@@ -1274,7 +1276,7 @@ typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_fl
             if replacement  replace_node(*for_loop.range.lower, replacement);
         }
         
-        dprint("typechecking range upper");
+        debug_print("typechecking range upper");
         upper_type := typecheck_node_or_return(script, for_loop.range.upper, hint_type = lower_type);
         {
             ok, replacement := try_implicit_cast(script, for_loop.range.upper, xx int);

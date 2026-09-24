@@ -105,8 +105,8 @@ Error :: union {
 
 Error_Base :: struct {
     type:       Error_Type;
-    message:    Static_String(256);
-    location:   Source_Code_Location; // NOTE: This is the Jai location where the error struct itself was created, not the location in the script source.
+    message:    string;                 // TODO: this is actually really huge, so we should just make the error message string be heap allocated and make sure to manage it properly
+    location:   Source_Code_Location;   // NOTE: This is the Jai location where the error struct itself was created, not the location in the script source.
 }
 
 Lexer_Error :: struct {
@@ -215,7 +215,7 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
       case .GENERAL_ERROR;
     }
     
-    message := to_string(*error.message);
+    message := error.message;
     if message {
         append(builder, "\n");
         append(builder, message);
@@ -228,6 +228,11 @@ format_error :: (script: *Script, append_jai_location := true, append_script_loc
     return builder_to_string(*builder); 
 }
 
+log_error :: (script: *Script, append_jai_location := true, append_script_location := true) {
+    error_string := format_error(script, append_jai_location, append_script_location,, temp);
+    log("%", error_string);
+}
+
 
 // set_error :: (script: *Script, type: Error_Type, format: string, args: ..Any, loc := #caller_location) {
 //     script.error = .{ type = type, location = loc };
@@ -235,28 +240,31 @@ format_error :: (script: *Script, append_jai_location := true, append_script_loc
 
 set_general_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
     script.error.base = .{ type = .GENERAL_ERROR, location = loc };
-    copy_from_string(*script.error.message, tprint(format, ..args));
+    set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
 set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, loc := #caller_location) {
     // assert(type & .CLASS_MASK == .PARSE_ERROR);
     script.error.base = .{ type = .PARSE_ERROR, location = loc };
     script.error.parse.node = node;
-    copy_from_string(*script.error.message, tprint(format, ..args));
+    set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
 set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
     assert(type & .CLASS_MASK == .TYPECHECK_ERROR);
     script.error.base = .{ type = type, location = loc };
     script.error.typecheck.node = node;
-    copy_from_string(*script.error.message, tprint(format, ..args));
+    set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
 set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, loc := #caller_location) {
     assert(type & .CLASS_MASK == .EXECUTION_ERROR);
     script.error.base = .{ type = type, location = loc };
     script.error.execution.node = node;
-    copy_from_string(*script.error.message, tprint(format, ..args));
+    set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-
+set_error_message :: (script: *Script, message: string) {
+    if script.error.message then free(script.error.message);
+    script.error.message = message;
+}

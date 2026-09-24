@@ -2,6 +2,8 @@
 /*
     TODO: 
     - [ ] Add a menas to override the allocator with a user-provided one.
+        - But how to handle declarations?
+            
     - [ ] Add "freed" nodes to a free list so that they can be reused.  
 */
 Script :: struct {
@@ -62,6 +64,10 @@ Script :: struct {
     //     time_spent_in_procedure_calls: Apollo_Time;
     // }
     
+    // This can be set to override the allocator used to allocate nodes.
+    // The primary use case for this is in evaluating expressions whose nodes we only need temporarily.
+    user_allocator: Allocator;
+    
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
@@ -114,6 +120,11 @@ init_script :: (script: *Script, stack_size := 2048) {
 has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
 clear_error :: (script: *Script) { memzero(*script.error); }
 
+get_allocator :: (script: *Script) -> Allocator {
+    if script.user_allocator.proc then return script.user_allocator;
+    return get_pool_allocator(*script.pool);
+}
+
 
 
 Name_And_Type :: struct {
@@ -139,7 +150,7 @@ Walk_Nodes_Callback :: #type (script: *Script, node: *Node, data: *void) -> (boo
 walk_nodes :: (script: *Script, _node: **Node, callback: Walk_Nodes_Callback, data: *void) -> bool {
     node := _node.*;
     if node == null {
-        dprint("Warning: node was null in walk_nodes.");
+        debug_print("Warning: node was null in walk_nodes.");
         return true; // TODO: make false later probably...
     }
     
@@ -342,25 +353,25 @@ Convert :: #import "Convert";
     #import "dyncall";
 }
 
-#if DEBUG { #add_context dprint: struct { indent: int; skip_indent: bool; }; }
+#if DEBUG { #add_context debug_print_state: struct { indent: int; skip_indent: bool; }; }
 
-dprint :: (format_string: string, args: ..Any, newline := true) {
+debug_print :: (format_string: string, args: ..Any, newline := true) {
     #if DEBUG {
-        if !context.dprint.skip_indent {
-            for 1..context.dprint.indent  print("  ");
+        if !context.debug_print_state.skip_indent {
+            for 1..context.debug_print_state.indent  print("  ");
         }
         print(format_string, ..args);
         if newline {
             print("\n");
         }
-        context.dprint.skip_indent = !newline;
+        context.debug_print_state.skip_indent = !newline;
     }
 }
 
-dprint_push_indent :: () #expand {
+debug_print_push_indent :: () #expand {
     #if DEBUG {
-        context.dprint.indent += 1;
-        `defer context.dprint.indent -= 1;
+        context.debug_print_state.indent += 1;
+        `defer context.debug_print_state.indent -= 1;
     }
 }
 
@@ -412,3 +423,5 @@ list_all_allocations :: (allocations: [..] Allocation) {
         log("\t% allocated by %", it.memory, it.allocator.proc);
     }
 }
+
+

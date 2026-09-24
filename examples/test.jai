@@ -124,7 +124,7 @@ main :: () {
     source := read_entire_file(source_path);
     if !parse_source_file(*script, source, source_path) {
         print("failed to construct script from source!\n");
-        log(format_error(*script));
+        log_error(*script);
         return;
     }
     

@@ -153,25 +153,25 @@ ComboEnumDynamic :: (
     selectable_flags:   SelectableFlags = .None
 ) -> bool {
     if value.type.type != .ENUM  return false;
-    ti_enum := value.type.(*Type_Info_Enum);
+    enum_info := value.type.(*Type_Info_Enum);
     
     s64_value: s64;
     dynamic_int_cast(s64_value, value);
     s64_value_before := s64_value;
     
-    found, current_value_index := array_find(ti_enum.values, s64_value);
+    found, current_value_index := array_find(enum_info.values, s64_value);
     if !found then current_value_index = 0;
     
-    current_value_name  := ti_enum.names[current_value_index];
+    current_value_name  := enum_info.names[current_value_index];
     
     if BeginCombo(label, current_value_name.data, combo_flags) {
-        for name: ti_enum.names {
+        for name: enum_info.names {
             if Selectable(
                 label    = name.data, 
-                selected = s64_value == ti_enum.values[it_index], 
+                selected = s64_value == enum_info.values[it_index], 
                 flags    = selectable_flags
             ) {
-                s64_value = ti_enum.values[it_index];
+                s64_value = enum_info.values[it_index];
             }
         }
         EndCombo();
@@ -205,7 +205,7 @@ TreeNodeAny :: (
         if is_open {
             for Any_Array.from(value) {
                 TreeNodeAny(tprintc("[%]", it_index), member_any, flags);
-                member_any.value_pointer += ti_array.element_type.runtime_size;
+                member_any.value_pointer += array_info.element_type.runtime_size;
             }
             TreePop();
         }
@@ -270,9 +270,9 @@ TableTreeNodeAny :: (
         if !is_open  Text("%", value);
         type_column(value);
         if is_open {
-            ti_struct := value.type.(*Type_Info_Struct);
+            struct_info := value.type.(*Type_Info_Struct);
             last_member_offset := -1;
-            for ti_struct.members {
+            for struct_info.members {
                 if it.flags & .CONSTANT  continue;
                 if it.offset_in_bytes <= last_member_offset  continue;
                 last_member_offset = it.offset_in_bytes;
@@ -288,11 +288,11 @@ TableTreeNodeAny :: (
         if !is_open  TextDisabled("% elements", count);
         type_column(value);
         if is_open {
-            ti_array := value.type.(*Type_Info_Array);
-            member_any := Any.{ ti_array.element_type, data };
+            array_info := value.type.(*Type_Info_Array);
+            member_any := Any.{ array_info.element_type, data };
             for 0..count-1 {
                 TableTreeNodeAny(tprint("[%]\0", it), member_any, flags);
-                member_any.value_pointer += ti_array.element_type.runtime_size;
+                member_any.value_pointer += array_info.element_type.runtime_size;
             }
             TreePop();
         }
@@ -363,8 +363,8 @@ TableTreeNodeAny :: (
 //     #if value.type.type == {
 //       case .STRUCT;
 //         if TreeNodeEx(label, flags) {
-//             ti_struct := cast(*Type_Info_Struct) value.type;
-//             for ti_struct.members {
+//             struct_info := cast(*Type_Info_Struct) value.type;
+//             for struct_info.members {
 //                 if it.flags & .CONSTANT  continue;
 //                 TreeNodeAny(it.name.data, Any.{ it.type, cast(*u8) value.value_pointer + it.offset_in_bytes }, flags);
 //             }
@@ -373,24 +373,24 @@ TableTreeNodeAny :: (
         
 //       case .ARRAY;
 //         if TreeNodeEx(label, flags) {
-//             ti_array := cast(*Type_Info_Array) value.type;
+//             array_info := cast(*Type_Info_Array) value.type;
             
 //             data       : *void = ---;
 //             elem_count : int   = ---;
                     
-//             if ti_array.array_type == .FIXED {
+//             if array_info.array_type == .FIXED {
 //                 data       = value.value_pointer;
-//                 elem_count = ti_array.array_count;
+//                 elem_count = array_info.array_count;
 //             } else {
 //                 raw_array := cast(*Resizable_Array) value.value_pointer;
 //                 data       = raw_array.data;
 //                 elem_count = raw_array.count;
 //             }
             
-//             member_any := Any.{ ti_array.element_type, data };
+//             member_any := Any.{ array_info.element_type, data };
 //             for 0..elem_count-1 {
 //                 TreeNodeAny(tprint("%[%]\0", string.{c_style_strlen(label), label}, it).data, flags);
-//                 member_any.value_pointer = cast(*u8) member_any.value_pointer + ti_array.element_type.runtime_size;
+//                 member_any.value_pointer = cast(*u8) member_any.value_pointer + array_info.element_type.runtime_size;
 //             }
 //             TreePop();
 //         }

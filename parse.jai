@@ -12,7 +12,7 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     
     statements, ok := parse_statements(script,, temp);
     if !ok  return false;
-    script.ast_root.statements = array_copy(statements,, get_pool_allocator(*script.pool));
+    script.ast_root.statements = array_copy(statements,, get_allocator(script));
     
     assert(script.current_scope == script.ast_root);
     
@@ -48,7 +48,7 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
         get_token(script);
         statements, ok := parse_statements(script, .CLOSE_BRACE);
         if !ok  return false;
-        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
+        block.statements = array_copy(statements,, get_allocator(script));
         block.location = open_brace.location;
         block.trivia   = open_brace.trivia;
     } else {
@@ -59,7 +59,7 @@ parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_s
             }
             return false;
         }
-        block.statements = NewArray(1, *Node,, get_pool_allocator(*script.pool));
+        block.statements = NewArray(1, *Node,, get_allocator(script));
         block.statements[0] = statement;
         block.location = statement.location;
         block.flags |= .IMPLICIT;
@@ -73,14 +73,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
     token := peek_token(script);
     if token.type == {
       case .BREAK;
-        dprint("BREAK"); dprint_push_indent();
+        debug_print("BREAK"); debug_print_push_indent();
         break_token := get_token(script);
         _break := alloc_node(script, Node_Break, loc = break_token.location, trivia = break_token.trivia);
         
         open_bracket_token := peek_token(script);
         if open_bracket_token.type == .OPEN_BRACKET {
             get_token(script);
-            dprint("TARGET"); dprint_push_indent();
+            debug_print("TARGET"); debug_print_push_indent();
             
             _break.target_identifier = xx my_parse_expression(script, 0);
             if _break.target_identifier == null  return null;
@@ -96,7 +96,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             }
         }
         
-        dprint("EXPRESSION"); dprint_push_indent();
+        debug_print("EXPRESSION"); debug_print_push_indent();
         
         if !expect_token_type(script, .SEMICOLON) {
             _break.value_expression = my_parse_expression(script, 0);
@@ -112,7 +112,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return _break;
         
       case .IF; 
-        dprint("IF (STATEMENT)"); dprint_push_indent();
+        debug_print("IF (STATEMENT)"); debug_print_push_indent();
         if_token := get_token(script);
         if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
         
@@ -122,7 +122,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         open_bracket_token := peek_token(script);
         if open_bracket_token.type == .OPEN_BRACKET {
             get_token(script);
-            dprint("SUBCONDITION"); dprint_push_indent();
+            debug_print("SUBCONDITION"); debug_print_push_indent();
             
             // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
             //       this will give the subcondition access to identifiers that are declared in the main condition
@@ -139,7 +139,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             }
         }
         
-        dprint("CONDITION"); dprint_push_indent();
+        debug_print("CONDITION"); debug_print_push_indent();
         if_statement.condition = parse_statement(script, false);
         if if_statement.condition == null  return null;
         
@@ -163,14 +163,14 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             #through;
             
           case;
-            dprint("THEN BLOCK"); dprint_push_indent();
+            debug_print("THEN BLOCK"); debug_print_push_indent();
             if !parse_block_or_statement(script, if_statement.then_block, false)  return null; 
         }
         
         token = peek_token(script);
         if token.type == .ELSE {
             get_token(script);
-            dprint("ELSE BLOCK"); dprint_push_indent();
+            debug_print("ELSE BLOCK"); debug_print_push_indent();
             
             if if_statement.else_block == null {
                 if_statement.else_block = alloc_node(script, Node_Block);
@@ -183,29 +183,29 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         return if_statement;
         
       case .WHILE;
-        dprint("WHILE LOOP"); dprint_push_indent();
+        debug_print("WHILE LOOP"); debug_print_push_indent();
         while_token := get_token(script);
         while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
         
         while_loop.block = alloc_node(script, Node_Block);
         while_loop.block.owner = while_loop;
         
-        dprint("CONDITION");
+        debug_print("CONDITION");
         while_loop.condition = my_parse_expression(script, 0);
         if while_loop.condition == null  return null;
         
-        dprint("STATEMENT");
+        debug_print("STATEMENT");
         if !parse_block_or_statement(script, while_loop.block, expect_semicolon)  return null;
         while_loop.block.owner = while_loop;
             
         return while_loop;
         
       case .FOR;
-        dprint("FOR LOOP"); dprint_push_indent();
+        debug_print("FOR LOOP"); debug_print_push_indent();
         for_token := get_token(script);
         for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
         
-        dprint("CONTROL EXPRESSION");
+        debug_print("CONTROL EXPRESSION");
         
         // NOTE: A preceding comma indicates that we are defining list of elements to iterate, but we may only have one element. 
         //       This is sort of a hack, but it's useful for now since I don't have array literals in the language yet.
@@ -249,45 +249,45 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         if !preceding_comma && exprs.count == 1 {
             if expect_token_type(script, .SPREAD) {
-                dprint("CONTROL TYPE IS RANGE");
+                debug_print("CONTROL TYPE IS RANGE");
                 for_loop.control_type = .RANGE;
                 for_loop.range.lower  = exprs[0];
                 for_loop.range.upper  = my_parse_expression(script, 0);
                 if !for_loop.range.upper  return null;
             } else {
-                dprint("CONTROL TYPE IS ARRAY");
+                debug_print("CONTROL TYPE IS ARRAY");
                 for_loop.control_type = .ARRAY;
                 for_loop.array_expression = exprs[0];
             }
         } else {
-            dprint("CONTROL TYPE IS LIST");
-            for_loop.list = array_copy(exprs,, get_pool_allocator(*script.pool));
+            debug_print("CONTROL TYPE IS LIST");
+            for_loop.list = array_copy(exprs,, get_allocator(script));
             for_loop.control_type = .LIST;
         }
         
         for_loop.block = alloc_node(script, Node_Block);
         for_loop.block.owner = for_loop;
         
-        dprint("STATEMENT");
+        debug_print("STATEMENT");
         if !parse_block_or_statement(script, for_loop.block, expect_semicolon)  return null;
         
         return for_loop;
     }
     
-    dprint("EXPRESSION");
+    debug_print("EXPRESSION");
     
     expression := my_parse_expression(script, 0);
     if expression == null  return null;
     
     if expect_token_type(script, .COLON) {
-        dprint("DECLARATION"); dprint_push_indent();
+        debug_print("DECLARATION"); debug_print_push_indent();
         
         declaration := alloc_node(script, Node_Declaration, loc = expression.location);
         declaration.left = expression.(*Node_Identifier);
         
         next_token := peek_token(script);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
-            dprint("WITH EXPLICIT TYPE");
+            debug_print("WITH EXPLICIT TYPE");
             declaration.type_expression = my_parse_expression(script, 999); // @Hack 
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
@@ -311,7 +311,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         if do_assignment {
-            dprint("WITH ASSIGNMENT");
+            debug_print("WITH ASSIGNMENT");
             declaration.init_expression = my_parse_expression(script, 0);
             if declaration.init_expression == null  return null;
             if is_macro_declaration then declaration.flags |= .STATIC;
@@ -353,12 +353,12 @@ check_for_semicolon :: (script: *Script, expression: *Node, expect_semicolon := 
 
 
 parse_leaf :: (using script: *Script) -> *Node {
-    dprint_push_indent();
+    debug_print_push_indent();
     token := get_token(script);
     
     is_operator, operator_index := get_prefix_operator(script, token);
     if is_operator {
-        dprint("PREFIX OPERATOR (%)", token.text);
+        debug_print("PREFIX OPERATOR (%)", token.text);
         precedence := get_operator_info(script, operator_index).precedence;
         left := my_parse_expression(script, precedence);
         if left == null  return null;
@@ -367,11 +367,11 @@ parse_leaf :: (using script: *Script) -> *Node {
     
     if token.type == {
       case .IFX; 
-        dprint("IF (EXPRESSION)"); dprint_push_indent();
+        debug_print("IF (EXPRESSION)"); debug_print_push_indent();
         if_token := token;
         if_expression := alloc_node(script, Node_If_Expression, loc = if_token.location, trivia = if_token.trivia);
         
-        dprint("CONDITION"); dprint_push_indent();
+        debug_print("CONDITION"); debug_print_push_indent();
         if_expression.condition = parse_expression(script, 0);
         if if_expression.condition == null  return null;
         
@@ -384,7 +384,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             #through;
             
           case;
-            dprint("THEN EXPRESSION"); dprint_push_indent();
+            debug_print("THEN EXPRESSION"); debug_print_push_indent();
             if_expression.then_expression = my_parse_expression(script, 0);
             if if_expression.then_expression == null  return null;
         }
@@ -392,7 +392,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         token = peek_token(script);
         if token.type == .ELSE {
             get_token(script);
-            dprint("ELSE EXPRESSION"); dprint_push_indent();
+            debug_print("ELSE EXPRESSION"); debug_print_push_indent();
             if_expression.else_expression = my_parse_expression(script, 0);
             if if_expression.else_expression == null  return null;
         }
@@ -400,7 +400,7 @@ parse_leaf :: (using script: *Script) -> *Node {
         return if_expression;
         
       case .DOT;
-        dprint("UNARY DOT");
+        debug_print("UNARY DOT");
         token_after_dot := get_token(script);
         if token_after_dot.type == .OPEN_BRACE {
             struct_contents, ok := parse_contents_of_struct_literal(script);
@@ -417,14 +417,14 @@ parse_leaf :: (using script: *Script) -> *Node {
         else set_parse_error(script, "Unexpected % token '%' after unary dot.", token_after_dot.type, token_after_dot.text, loc = token_after_dot.location);
         
       case .OPEN_BRACE;
-        dprint("BLOCK"); dprint_push_indent();
+        debug_print("BLOCK"); debug_print_push_indent();
         open_brace := token;
         block := alloc_node(script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
         current_scope = block; 
         
         statements, ok := parse_statements(script, .CLOSE_BRACE);
         if !ok  return null;
-        block.statements = array_copy(statements,, get_pool_allocator(*script.pool));
+        block.statements = array_copy(statements,, get_allocator(script));
         
         current_scope = block.scope; 
         return block;
@@ -444,29 +444,29 @@ parse_leaf :: (using script: *Script) -> *Node {
         return expression;
         
       case .TRUE;
-        dprint("TRUE");
+        debug_print("TRUE");
         literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
         literal.literal_type = .BOOLEAN;
         literal.number       = to_any_number(true);
         return literal;
         
       case .FALSE;
-        dprint("FALSE");
+        debug_print("FALSE");
         literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
         literal.literal_type = .BOOLEAN;
         literal.number       = to_any_number(false);
         return literal;
         
       case .NUMBER;
-        dprint("NUMBER (%)", token.text);
+        debug_print("NUMBER (%)", token.text);
         return make_number_literal(script, token);
         
       case .STRING;
-        dprint("STRING (\"%\")", token.text);
+        debug_print("STRING (\"%\")", token.text);
         return make_string_literal(script, token);
         
       case .DIRECTIVE;
-        dprint("DIRECTIVE"); dprint_push_indent();
+        debug_print("DIRECTIVE"); debug_print_push_indent();
         directive := alloc_node(script, Node_Directive, loc = token.location, trivia = token.trivia);
         directive.name = token.text;
         
@@ -485,7 +485,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             if !expect_token_type(script, .CLOSE_PAREN) {
                 expressions := parse_comma_separated_expressions(script,, temp);
                 if !expressions  return null;
-                directive.arguments = array_copy(expressions,, get_pool_allocator(*script.pool));
+                directive.arguments = array_copy(expressions,, get_allocator(script));
                 
                 close_paren_token := get_token(script);
                 if close_paren_token.type != .CLOSE_PAREN {
@@ -507,7 +507,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             name_token  := token;
             colon_token := get_token(script);
             
-            dprint("NAMED BLOCK (%)", name_token.text); dprint_push_indent();
+            debug_print("NAMED BLOCK (%)", name_token.text); debug_print_push_indent();
             
             block := my_parse_leaf(script).(*Node_Block);
             if block == null  return null;
@@ -520,7 +520,7 @@ parse_leaf :: (using script: *Script) -> *Node {
             return block;
         }
         
-        dprint("IDENTIFIER (%)", token.text);
+        debug_print("IDENTIFIER (%)", token.text);
         return make_identifier(script, token);
     }
     
@@ -556,10 +556,10 @@ parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -
     
     // we have to reinit lexer for every expression
     // TODO: set the lexer source location based on dom node?
-    init_lexer(*script.lexer, expr);
-    expression := my_parse_expression(script, 0);
+    init_lexer(script, expr);
+    expression := script.my_parse_expression(script, 0);
     
-    if expect_eof && !expect_token_type(*script.lexer, .EOF)  return null;
+    if expect_eof && !expect_token_type(script, .EOF)  return null;
     return expression;
 }
 
@@ -615,7 +615,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     if token.type == {
       case .OPEN_PAREN;
         get_token(script);
-        dprint("PROCEDURE ARGUMENTS LIST");
+        debug_print("PROCEDURE ARGUMENTS LIST");
         arg_exprs, ok := parse_procedure_arguments(script);
         if !ok  return null;
         return make_procedure_call(script, token, left, arg_exprs);
@@ -623,12 +623,12 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         
       case .DOT;
         dot_token := get_token(script);
-        dprint("BINARY DOT");
+        debug_print("BINARY DOT");
         
         token_after_dot := get_token(script);
         if token_after_dot.type == {
           case .OPEN_PAREN;
-            dprint("CAST");
+            debug_print("CAST");
             type_expr := my_parse_expression(script, 0);
             close_paren := get_token(script);
             if close_paren.type != .CLOSE_PAREN {
@@ -671,7 +671,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         
       case .OPEN_BRACKET;
         open_bracket_token := get_token(script);
-        dprint("ARRAY SUBSCRIPT");
+        debug_print("ARRAY SUBSCRIPT");
         
         indexing_expr := my_parse_expression(script, 0);
         if indexing_expr == null  return null;
@@ -687,7 +687,7 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
         _operator := get_operator_info(script, operator_index);
         if _operator.precedence <= min_prec  return left;
         
-        dprint("BINARY OPERATOR: %", _operator.token);
+        debug_print("BINARY OPERATOR: %", _operator.token);
         
         operator_token := get_token(script);
         right := my_parse_expression(script, _operator.precedence);
@@ -715,7 +715,7 @@ parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := T
         return .[], false;
     }
     
-    return array_copy(expressions,, get_pool_allocator(*script.pool)), true;
+    return array_copy(expressions,, get_allocator(script)), true;
 }
 
 parse_procedure_arguments :: (using script: *Script, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool) {
@@ -730,5 +730,5 @@ parse_procedure_arguments :: (using script: *Script, scope_end_token := Token_Ty
         return .[], false;
     }
     
-    return array_copy(expressions,, get_pool_allocator(*script.pool)), true;
+    return array_copy(expressions,, get_allocator(script)), true;
 }

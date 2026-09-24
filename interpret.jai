@@ -119,7 +119,7 @@
 //                 return;
 //             }
 //             if struct_info.type != .STRUCT {
-//                 set_typecheck_error(script, "Type hint provided to struct literal is not a struct type. (was '%')", as_type(ti_struct), node = literal);
+//                 set_typecheck_error(script, "Type hint provided to struct literal is not a struct type. (was '%')", as_type(struct_info), node = literal);
 //                 return;
 //             }
 //             if literal.aggr.expressions.count >= struct_info.members.count {

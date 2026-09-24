@@ -129,14 +129,14 @@ print_node :: (
             print_to_builder(builder, "%", to_any(*literal.number));
             
           case .STRUCT;
-            ti_struct := literal.value_type.(*Type_Info_Struct);
+            struct_info := literal.value_type.(*Type_Info_Struct);
             append(builder, ".{");
             
             // NOTE: we only want to serialize a struct using its current value if it is a malleable literal
             if node.value_type && (node.flags & .IS_MALLEABLE) {
                 // ignoring #place members. Wish there were a better way to do this.
                 last_member_offset := -1;
-                for ti_struct.members {
+                for struct_info.members {
                     if it.flags & .CONSTANT  continue;
                     if it.offset_in_bytes < last_member_offset  break;
                     

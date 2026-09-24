@@ -433,7 +433,7 @@ alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node_Block = null, loc
 #modify {
     return is_subclass_of(Node_Type.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
-    node := New(Node_Type,, get_pool_allocator(*script.pool));
+    node := New(Node_Type,, get_allocator(script));
     node.node_type = Node_Type;
     node.scope     = ifx scope else script.current_scope;
     node.location  = loc;
@@ -542,11 +542,11 @@ make_operator :: (script: *Script, source_token: Token, operator_id: int, left: 
         if base_operator.node_type == {
           case Node_Unary_Operator;
             unary_operator := base_operator.(*Node_Unary_Operator);
-            directive.arguments = array_copy((*Node).[unary_operator.expression],, get_pool_allocator(*script.pool));
+            directive.arguments = array_copy((*Node).[unary_operator.expression],, get_allocator(script));
             
           case Node_Binary_Operator;
             binary_operator := base_operator.(*Node_Binary_Operator);
-            directive.arguments = array_copy((*Node).[binary_operator.left, binary_operator.right],, get_pool_allocator(*script.pool));
+            directive.arguments = array_copy((*Node).[binary_operator.left, binary_operator.right],, get_allocator(script));
         }
         
         if !evaluate_directive(script, directive, .PARSE) {
