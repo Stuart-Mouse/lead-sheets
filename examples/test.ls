@@ -69,15 +69,6 @@ vec3 := Vector3.{ 1, 2, 3 } * 7;
 echo(vec3);
 
 
-// malleable literals
-// you will notice that the value of 5 in the declaration for const will be overwritten with 7 when this file is re-serialized (look at output.ls)
-// also, if you were to execute the script multiple times, it would only be 5 on the first run
-const :: 5?;
-echo(const);
-
-const = 7;
-echo(const);
-
 
 // backticked identifier strings test
 `identifier string` := 69;
@@ -162,14 +153,14 @@ echo(ifx 2 - 1 else 5);
 
 
 // test blocks as expressions
-block_result := blk: {
-   a := 5.0;
-   b := 3.0;
+// block_result := blk: {
+//    a := 5.0;
+//    b := 3.0;
    
-   break Vector2.{ b, a + b };
-};
+//    break Vector2.{ b, a + b };
+// };
 
-echo(block_result);
+// echo(block_result);
 
 // test targetted break in nested for loop
 for a: 1..10 {

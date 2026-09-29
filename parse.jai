@@ -4,15 +4,13 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     
     init_lexer(script, source, location = .{ file_path, 1, 1 });
     
-    // TODO: this really should not be a check 
-    if script.ast_root == null {
-        script.ast_root = alloc_node(script, Node_Block);
-    }
-    script.current_scope = script.ast_root;
+    root_block := alloc_node(script, Node_Block);
+    script.ast_root      = root_block;
+    script.current_scope = root_block;
     
     statements, ok := parse_statements(script,, temp);
     if !ok  return false;
-    script.ast_root.statements = array_copy(statements,, get_allocator(script));
+    root_block.statements = array_copy(statements,, get_allocator(script));
     
     assert(script.current_scope == script.ast_root);
     
@@ -116,6 +114,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         if_token := get_token(script);
         if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
         
+        current_scope = if_statement;  
+        defer current_scope = if_statement.scope;
+        
         if_statement.then_block = alloc_node(script, Node_Block);
         if_statement.then_block.owner = if_statement;
         
@@ -127,7 +128,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
             //       this will give the subcondition access to identifiers that are declared in the main condition
             current_scope = if_statement.then_block;  
-            defer current_scope = if_statement.scope;
+            defer current_scope = if_statement;
             
             if_statement.subcondition = my_parse_expression(script, 0);
             if if_statement.subcondition == null  return null;
@@ -187,6 +188,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         while_token := get_token(script);
         while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
         
+        current_scope = while_loop;  
+        defer current_scope = while_loop.scope;
+        
         while_loop.block = alloc_node(script, Node_Block);
         while_loop.block.owner = while_loop;
         
@@ -204,6 +208,9 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         debug_print("FOR LOOP"); debug_print_push_indent();
         for_token := get_token(script);
         for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
+        
+        current_scope = for_loop;  
+        defer current_scope = for_loop.scope;
         
         debug_print("CONTROL EXPRESSION");
         

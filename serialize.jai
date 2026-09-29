@@ -46,13 +46,22 @@ print_script :: (
     builder:        *String_Builder
 ) -> bool {
     push_print_style();
-    for ast_root.statements {
-        print_node_or_return(script, it, builder, 0);
-        if !should_skip_placing_semicolon(it) {
-            append(builder, ";");
-        } 
-        // if it_index != ast_root.statements.count-1 then append(builder, "\n");
+    
+    // We have this special case to omit the braces around the root block.
+    // But perhaps we should find a better way to handle this...
+    if ast_root.node_type == Node_Block {
+        block := ast_root.(*Node_Block);
+        for block.statements {
+            print_node_or_return(script, it, builder, 0);
+            if !should_skip_placing_semicolon(it) {
+                append(builder, ";");
+            } 
+            // if it_index != ast_root.statements.count-1 then append(builder, "\n");
+        }
+        return true;
     }
+    
+    print_node_or_return(script, ast_root, builder, 0);
     return true;
 }
 

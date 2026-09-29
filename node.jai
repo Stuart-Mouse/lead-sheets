@@ -1,8 +1,25 @@
+/*
+    Notes on design of AST Nodes and user-extensibility:
+    
+    One of the desing goals of Lead Sheets is to make it relatively easy for the user to modify or extend the language in a variety of ways.
+    
+    Instead of using a superclass/subclass setup for to create interfaces to certain types of nodes,
+    (where a pointer to a function table needs to be attached to each instances of a node)
+    interface procedures are often placed directly on the script struct itself.
+    
+    This has a few benefits:
+        - nodes stay slimmer because they don't need to individually hold procedure pointers or pointers to vtables
+        - we can override the behaviour of existing nodes without needing to modify their internal data structure or content
+        - the user can 
+    
+    If the user wants to add some marginal functionality on top of some interface, or add handling for new types, tey an just write a single procedure that handles those types in a switch statement,
+    and then call back into the default procedure for the default node types.
+*/
 
 Node :: struct {
     node_type:              Type;
     value_type:             *Type_Info;
-    scope:                  *Node_Block;
+    scope:                  *Node;
     flags:                  Flags;
     
     // TODO: consider keeping all source tokens, store pointer to token on node
@@ -69,7 +86,7 @@ should_push_by_pointer :: (node: *Node) -> bool {
 // TODO: introduce various block types so that we can use block for struct literals and the like. 
 Node_Block :: struct {
     using #as node_base:    Node;
-    owner:                  *Node;
+    #overlay(scope) owner:  *Node;
     name:                   string;
     statements:             [] *Node;
     
@@ -77,21 +94,11 @@ Node_Block :: struct {
     stack_pointer:          *void;    // offset from stack frame
 }
 
-
-/*
-// May end up using some vtable to implement some basic interface for scopes.
-// This does not seem ideal
-Node_Scope_Interface :: struct {
-    get_storage_in_scope:       (script: *Script, scope: *Node, size: int, static := false);
-    get_storage_base_pointer:   (script: *Script, scope: *Node);
-    get_declarations:           (script: *Script, scope: *Node);
-}
-
-Node_Scope :: struct {
-    using #as node_base:    Node;
-    using scope_interface:  Node_Scope_Interface;
-}
-*/
+// Node_Namespace :: struct {
+//     using #as node_base:    Node;
+//     name:                   string;
+//     declarations:           [..] *Node;
+// }
 
 /*
     This does 2 things:
@@ -100,36 +107,15 @@ Node_Scope :: struct {
         2. increments the local block's stack size
             honestly not sure what purpose this stack size serves for non-frame blocks atm
 */
-get_stack_space_in_block :: (script: *Script, requested_size: int, block: *Node_Block) -> stack_offset: int {
+get_stack_space_in_block :: (script: *Script, block: *Node_Block, requested_size: int) -> stack_offset: u64 {
     offset := block.stack_frame_size;
     
     // pad to 8 byte alignment
     size := (requested_size + 7) & ~7;
     block.stack_frame_size += size;
     
-    return offset;
+    return offset.(u64);
 }
-
-// NOTE: caller is not responsible for freeing the returned array view
-// TODO: will eventually need to be overloadable from script or somehow interfaced
-get_additional_declarations_from_owner :: (block: *Node_Block) -> [] *Node_Declaration {
-    if block.owner {
-        if block.owner.node_type == {
-          case Node_For_Loop;
-            for_loop := block.owner.(*Node_For_Loop);
-            return for_loop.declarations;
-            
-          case Node_If_Statement;
-            if_statement := block.owner.(*Node_If_Statement);
-            if if_statement.condition.node_type == Node_Declaration {
-                array := (*Node_Declaration).[xx if_statement.condition];
-                return array_copy(array);
-            }
-        }
-    }
-    return .[];
-}
-
 
 Node_Cast :: struct {
     using #as base:     Node;
@@ -150,6 +136,8 @@ Node_Cast :: struct {
         this indireciton means that we can change the identifier more dynamically now while the code is still in AST
         but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
 */
+
+// TODO: Delete this referrent stuff. If we do implement something like this, we should put the interface on the Script, not on individual nodes.
 
 // Referent_Type :: struct {
 //     get_name:   (*Script, *Referent) -> bool, string;
@@ -240,15 +228,13 @@ compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifie
 }
 
 
-
+// TODO: We may want to find some way of attaching a named block to a declaration so that it can be resolved in the same way.
+//       This will be necessary in order to prevent name conflicts between declarations and named blocks.
 
 Node_Declaration :: struct {
     using #as node_base:    Node;
     left:                   *Node;
-    union {
-        value_pointer:      *void;
-        stack_offset:       int;
-    }
+    value_locator:          u64;
     type_expression:        *Node;
     init_expression:        *Node;
 }
@@ -258,9 +244,10 @@ get_value_pointer :: (script: *Script, declaration: *Node_Declaration) -> *void 
         return null;
     }
     if declaration.flags & .STATIC {
-        return declaration.value_pointer;
+        return declaration.value_locator.(*void);
     }
-    return declaration.scope.stack_pointer + declaration.stack_offset;
+    base_pointer := script.get_storage_base_pointer_for_scope(script, declaration.scope);
+    return base_pointer + declaration.value_locator;
 }
 
 get_name :: (script: *Script, declaration: *Node_Declaration) -> string {
@@ -436,7 +423,7 @@ Node_Break :: struct {
 }
 
 
-alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node_Block = null, loc := #caller_location, trivia := "") -> *Node_Type
+alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *Node_Type
 #modify {
     return is_subclass_of(Node_Type.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {

@@ -90,26 +90,15 @@ typecheck_script :: (script: *Script) -> bool {
     return true;
 }
 
-// TODO: will need changes if/when we allow temporal shadowing
-resolve_declaration_by_identifier :: (script: *Script, identifier: string, from: *Node) -> *Node_Declaration {
-    scope := ifx from.node_type == Node_Block then from.(*Node_Block) else from.scope;
-    
+resolve_declaration_by_name :: (script: *Script, scope: *Node, name: string) -> *Node_Declaration {
     while scope {
-        if scope.node_type == {
-          case Node_Block;
-            declaration := find_declaration_in_block(script, xx scope, identifier);
-            if declaration  return declaration;
-            
-            owner_declarations := get_additional_declarations_from_owner(scope);
-            for owner_declarations {
-                if get_name(script, it) == identifier  return it;
-            }
-        }
+        result := script.resolve_declaration_in_scope(script, scope, name);
+        if result != null  return result;
         scope = scope.scope;
     }
     
     for script.global_declarations {
-        if get_name(script, it) == identifier {
+        if get_name(script, it) == name {
             return it;
         }
     }
@@ -117,7 +106,87 @@ resolve_declaration_by_identifier :: (script: *Script, identifier: string, from:
     return null;
 }
 
-find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string) -> *Node_Declaration {
+default_get_storage_in_scope :: (script: *Script, scope: *Node, size: int) -> bool, u64 {
+    success := false;
+    result: u64;
+    
+    if scope.node_type == {
+      case Node_Block;
+        success = true;
+        result  = get_stack_space_in_block(script, xx scope, size);
+        
+      case Node_For_Loop; #through;
+      case Node_If_Statement;
+        success, result = script.get_storage_in_scope(script, scope.scope, size);
+    }
+    return success, result;
+}
+
+default_get_storage_base_pointer_for_scope :: (script: *Script, scope: *Node) -> *void {
+    result := null;
+    if scope.node_type == {
+      case Node_Block;
+        result = scope.(*Node_Block).stack_pointer;
+        
+      case Node_For_Loop; #through;
+      case Node_If_Statement;
+        result = script.get_storage_base_pointer_for_scope(script, scope.scope);
+    }
+    return result;
+}
+
+default_resolve_declaration_in_scope :: (script: *Script, scope: *Node, name: string) -> *Node_Declaration {
+    if scope.node_type == {
+      case Node_Block;
+        block := scope.(*Node_Block);
+        for block.statements {
+            if it.node_type == Node_Declaration {
+                declaration := it.(*Node_Declaration);
+                if get_name(script, declaration) == name {
+                    return xx it;
+                }
+            }
+        }
+        
+      case Node_For_Loop;
+        for_loop := scope.(*Node_For_Loop);
+        for declaration: for_loop.declarations {
+            if get_name(script, declaration) == name {
+                return declaration;
+            }
+        }
+        
+      case Node_If_Statement;
+        if_statement := scope.(*Node_If_Statement);
+        if if_statement.condition.node_type == Node_Declaration {
+            declaration := if_statement.condition.(*Node_Declaration);
+            if get_name(script, declaration) == name {
+                return declaration;
+            }
+        }
+    }
+    return null;
+}
+
+default_get_declarations_in_scope :: (script: *Script, scope: *Node) -> [] *Node_Declaration {
+    if scope.node_type == {
+      case Node_Block;
+        block := scope.(*Node_Block);
+        
+        declarations: [..] *Node_Declaration;
+        
+        for block.statements {
+            if it.node_type == Node_Declaration {
+                array_add(*declarations, xx it);
+            }
+        }
+        
+        return declarations;
+    }
+    return .[];
+}
+
+resolve_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: string) -> *Node_Declaration {
     for block.statements {
         if it.node_type == Node_Declaration {
             if get_name(script, it.(*Node_Declaration)) == identifier {
@@ -488,7 +557,7 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     
     debug_print("identifier name: %", identifier.name);
     
-    declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
+    declaration := resolve_declaration_by_name(script, identifier.scope, identifier.name);
     if declaration {
         // TODO: Maybe we need a more robust way of checking the relative ordering of a declaration and its use?
         //       This seems to be reliable, but maybe it will get finnicky once we start doing weird stuff with live blocks.
@@ -1057,7 +1126,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         identifier := declaration.left.(*Node_Identifier);
         assert(identifier.identifier_type == .UNRESOLVED);
         
-        other_declaration := resolve_declaration_by_identifier(script, identifier.name, declaration.scope);
+        other_declaration := resolve_declaration_by_name(script, declaration.scope, identifier.name);
         if other_declaration != null && declaration != other_declaration {
             set_typecheck_error(script, "Redeclaration of identifier '%'.", identifier.name, node = declaration);
             return;
@@ -1080,15 +1149,15 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         // NOTE: currently we do nothing here because we need neither a value pointer or stack space
         //       and we don't want to do the standard .STATIC case, since for a virtual member we handle static assignment differently
     } else {
-        if script.flags & .ALWAYS_ALLOCATE_STATIC_STORAGE_FOR_DECLARATIONS {
-            declaration.flags |= .STATIC;
-        }
         if declaration.flags & .STATIC {
-            declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_allocator(script));
+            declaration.value_locator = alloc(declaration.value_type.runtime_size,, get_allocator(script)).(u64);
         } else {
-            declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);
-            debug_print("declaration name: %", get_name(script, declaration));
-            debug_print("declaration stack_offset: %", declaration.stack_offset);
+            ok, value_locator := script.get_storage_in_scope(script, declaration.scope, declaration.value_type.runtime_size);
+            if !ok {
+                set_typecheck_error(script, "Unable to get storage for declaration '%' in scope of type '%'.", get_name(script, declaration), declaration.scope.node_type, node = declaration);
+                return;
+            }
+            declaration.value_locator = value_locator;
         }
     }
 }
@@ -1173,25 +1242,28 @@ typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := T
     }
 }
 
-get_break_target :: (script: *Script, target_name: string, block: *Node_Block) -> *Node {
-    while block {
-        defer block = block.scope;
+get_break_target :: (script: *Script, target_name: string, scope: *Node) -> *Node {
+    while scope {
+        defer scope = scope.scope;
         
-        if block.owner {
-            if block.owner.node_type == {
-              case Node_For_Loop;
-                for_loop := block.owner.(*Node_For_Loop);
-                loop_iterator_name := ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
-                if target_name == "" || (loop_iterator_name && target_name == loop_iterator_name)  return for_loop;
-                
-              case Node_While_Loop;
-                while_loop := block.owner.(*Node_While_Loop);
-                // TODO: named while loops
-                if target_name == ""  return while_loop;
+        if scope.node_type == {
+          case Node_Block;
+            block := scope.(*Node_Block);
+            if block.owner {
+                if block.owner.node_type == {
+                  case Node_For_Loop;
+                    for_loop := block.owner.(*Node_For_Loop);
+                    loop_iterator_name := ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
+                    if target_name == "" || (loop_iterator_name && target_name == loop_iterator_name)  return for_loop;
+                    
+                  case Node_While_Loop;
+                    while_loop := block.owner.(*Node_While_Loop);
+                    // TODO: named while loops
+                    if target_name == ""  return while_loop;
+                }
             }
+            if block.name && (target_name == "" || target_name == block.name)  return block;
         }
-        
-        if block.name && (target_name == "" || target_name == block.name)  return block;
     }
     
     return null;

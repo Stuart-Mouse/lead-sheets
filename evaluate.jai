@@ -716,12 +716,12 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
         
         // these will be accessed by iterator and iterator_index nodes during iteration
         it_index: int;
-        for_loop.it_decl.value_pointer       = array_data;
-        for_loop.it_index_decl.value_pointer = *it_index;
+        for_loop.it_decl.value_locator       = array_data.(u64);
+        for_loop.it_index_decl.value_locator = (*it_index).(u64);
         
         while it_index < array_count {
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
-            for_loop.it_decl.value_pointer += array_info.element_type.runtime_size;
+            for_loop.it_decl.value_locator += xx array_info.element_type.runtime_size;
             it_index += 1;
             
             if script.break_target != null {
@@ -748,7 +748,7 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
         lower_as_s64 := any_isa(lower, int).*;
         
         for lower_as_s64..upper_as_s64 {
-            for_loop.it_decl.value_pointer = *it;
+            for_loop.it_decl.value_locator = (*it).(u64);
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             
             if script.break_target != null {
@@ -762,11 +762,11 @@ evaluate_for_loop :: (script: *Script, for_loop: *Node_For_Loop, provided_storag
         
       case .LIST;
         _it_index: int;
-        for_loop.it_index_decl.value_pointer = *_it_index;
+        for_loop.it_index_decl.value_locator = (*_it_index).(u64);
         for for_loop.list {
             _it_index = it_index;
             evaluate_node_or_return(script, it);
-            for_loop.it_decl.value_pointer = pop_any(*script.stack, for_loop.it_decl.value_type, true).value_pointer;
+            for_loop.it_decl.value_locator = pop_any(*script.stack, for_loop.it_decl.value_type, true).value_pointer.(u64);
             evaluate_node_or_return(script, for_loop.block, null, .DISCARD_VALUE);
             
             if script.break_target != null {

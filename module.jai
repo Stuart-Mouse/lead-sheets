@@ -8,7 +8,7 @@
     - [ ] Add "freed" nodes to a free list so that they can be reused.  
 */
 Script :: struct {
-    ast_root:               *Node_Block;
+    lexer:                  Lexer;
     flags:                  Flags;
     
     variables:              [..] External_Variable;
@@ -20,6 +20,8 @@ Script :: struct {
     // added for the sake of convenience and use in repl
     global_declarations:    [..] *Node_Declaration;
     
+    using interface_procedures: Script_Interface_Procedures;
+    
     pool:                   Flat_Pool;
     error:                  Error;
     stack:                  Stack;
@@ -28,15 +30,36 @@ Script :: struct {
         dyncall_vm:         *DCCallVM;
     }
     
-    lexer:                  Lexer;
-    
-    
-    current_scope:          *Node_Block;
+    ast_root:               *Node;
+    current_scope:          *Node;
     
     // if this is set while evaluating a block, we need to keep breaking until we hit this target
     break_target:           *Node;
     break_result_storage:   *void;
     
+    
+    
+    // timing_info: struct {
+    //     internal: Apollo_Time; // time spent in lead sheets procedures, not in user callbacks
+    //     time_spent_in_procedure_calls: Apollo_Time;
+    // }
+    
+    // This can be set to override the allocator used to allocate nodes.
+    // The primary use case for this is in evaluating expressions whose nodes we only need temporarily.
+    user_allocator: Allocator;
+    
+    Flags :: enum_flags {
+        INITIALIZED;
+        PARSED;
+        TYPECHECKED;
+        
+        // TODO: This is also a dumb hack, introduced for the sake of LSD not having to deal with builtin assignment operators.
+        DISABLE_DEFAULT_OPERATOR_EQUALS;
+    }
+}
+
+Script_Interface_Procedures :: struct {
+    // fallback: *Script_Interface_Procedures;
     
     // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
     my_parse_expression := parse_expression;
@@ -54,36 +77,20 @@ Script :: struct {
     resolve_builtin_operation          := default_resolve_builtin_operation;
     execute_builtin_operation          := default_execute_builtin_operation;
     
+    get_storage_in_scope               := default_get_storage_in_scope;
+    get_storage_base_pointer_for_scope := default_get_storage_base_pointer_for_scope;
+    resolve_declaration_in_scope       := default_resolve_declaration_in_scope;
+    get_declarations_in_scope          := default_get_declarations_in_scope;
+    
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
-    get_virtual_member:             (*Script, Any, string) -> bool, Any;
-    get_virtual_member_user_data:   *void;
+    get_virtual_member:                 (*Script, Any, string) -> bool, Any;
+    get_virtual_member_user_data:       *void;
     
     declare_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any, bool;
     declare_virtual_member_user_data:   *void;
-    
-    // timing_info: struct {
-    //     internal: Apollo_Time; // time spent in lead sheets procedures, not in user callbacks
-    //     time_spent_in_procedure_calls: Apollo_Time;
-    // }
-    
-    // This can be set to override the allocator used to allocate nodes.
-    // The primary use case for this is in evaluating expressions whose nodes we only need temporarily.
-    user_allocator: Allocator;
-    
-    Flags :: enum_flags {
-        INITIALIZED;
-        PARSED;
-        TYPECHECKED;
-        
-        // TODO: this is basically a hack to make use of a script as a debug console work 
-        //       we need a better long term solution that manages storage for declarations more intelligently
-        //       one solution may be to use a multi-stack model for storing declarations in open blocks
-        ALWAYS_ALLOCATE_STATIC_STORAGE_FOR_DECLARATIONS;
-        
-        // TODO: This is also a dumb hack, introduced for the sake of LSD not having to deal with builtin assignment operators.
-        DISABLE_DEFAULT_OPERATOR_EQUALS;
-    }
 }
+
+DEFAULT_SCRIPT_INTERFACE_PROCEDURES :: Script_Interface_Procedures.{};
 
 deinit_script :: (using script: *Script) {
     array_reset(*variables);

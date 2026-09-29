@@ -2254,3 +2254,9 @@ and if we are not longer wanting to treat normal blocks as data structures, does
 
 
 
+I just refactored how scopes work in preparation to be able to add dynamic namespaces or blocks that we can resolve declaration through.
+    so far it seems to be working, but that is not a very rigorous metric
+    it does appear that blocks as expressions are not working though. we get an error for invalid stack use on the declaration of block_result in test.ls
+    I am also a bit unsure about whether it is correct for us to use the scope in which a for loop resides as the storage scope for the iterator declarations
+        this also seems to be working fine, but we may find that there is some weird adverse case like there was long ago when I implemented that stuff in the first place
+        
