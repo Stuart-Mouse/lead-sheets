@@ -81,8 +81,6 @@
 //       //   no idea what to do for directives here yet...
         
 //       case Node_Literal;
-//         assert(!is_malleable(literal));
-        
 //         if #complete literal.literal_type == {
 //           case .ANY;
 //             if hint_type && hint_type != literal.any.type {

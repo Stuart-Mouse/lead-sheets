@@ -2133,3 +2133,124 @@ To start with, we will just presume that we aren't trying to fully recover after
 for example:
 
 
+
+
+# Combining LS and LSD into one thing
+
+In addition to all the other ideas I have floating around in m head for this language, 
+I find myself wanting more and more to eventually combine the declarative nature of LSD with the more procedural style of LS
+
+This is partly difficult for syntax reasons, because one naturally wants the syntax of a primarily data / declarative format like LSD to be more minimal than a full procedural language
+
+Can we distinguish the various block types in a way that makes sense?
+
+In LSD, we have no procedural blocks at all (in theory, ignoring the fact that users are not restricted from calling into procedures with side effects).
+Instead we have two types of data blocks, structs and arrays 
+these are fundamentally the same and I have actually been wanting to reove the distinction between the two for a while now.
+we can relatively trivially tell a struct literal from an arrya literal by the fact that the array literal contains only expressions and no assignment statements
+(basically, whether the aggreagte contains any equal signs to delimit keys/values)
+
+In LS, we only have one type of block per se, which are procedural blocks
+but then we also have struct literals which are essentially data blocks with the restriction that the only statements they may contain are assignments to the data members of the struct
+but the thing about procedural blocks is that one can think of them as structs containing the declarations within the block
+and the procedural code within the block that does anything other than set the values of those declarations are just side effects that we invoke upon evaluating the value of the struct literal
+
+Because of the use of `[]` for indexing, and becauase of this strange conceptual similarity between standard code blocks and struct literals, 
+we would like to just use {} for both procedural blocks and struct / array literals
+in theory, we could differentiate struct literals from blocks by whether there are multiple semicolon-delimited statements or only comma-separated assignment expressions
+This may not be the most clear syntactic difference though, and perhaps that could lead to some ambiguity in certain situations. 
+If it ends up actually being a problem then perhaps we should just require a dot before all data scopes.
+the other benefit of requiring a dot on data scopes is that it makes it very clear at parse time what kind of block we are dealing with, and we can catch and report errors earlier (since we would not need to wait until typechecking)
+
+but then we still have ot solve the issue of what syntax ot use to bind a name to a block
+right now, thaat just like like `name: { ... }`, but if we actually allowed blocks in the type slot of a declartaion, this would not work
+so maybe we just don't allow blocks there, I guess, though that could be interesting
+
+I think the idea ultimately is going to be that, whether a block of code is procedural or declarative is not a matter of the kind of block per se, but of how it is evaluated.
+So we could evaluate the same block either procedurally or declaratively.
+We do also check the order of evaluation during typechecking, so we will need to know how a block will be evaluated in order to typecheck it properly.
+
+
+
+another problem we have in combining LS and LSD is that LSD has some special operators to access data in a directory-like manner 
+    this *could* be done in a procedural context, but there are a lot more problems because the blocks are not statically allocated, they are pushed and popped from the stack dynamically
+    if we try to access something in a parent block, that's no problem, but reaching into sibling blocks cannot be done
+    again, this could be reduced to a matter of how one is executing the block, but its a problem nonetheless
+    we will also certainly need to replace the special operators with simple directives if we want to have any chance of combining the two languages
+    we can't allow these kinds of directory-like references to reach across boundaries between procedural and declarative blocks, probably?
+
+another thing,
+    control flow constructs do not really make sense in a declarative context
+    we also cannot access blocks that are used as expressions if they are not named
+        unless we allow accessing statements within a block by index, which could get a bit too wild for me
+    
+
+
+As a more practical matter, there's also the problem of how to handle allocations in LSD if we combine it further with LS.
+I suppose for any struct literal we already store a value pointer, which can be our data binding in the context of LSD.
+but we don't have any means to do data bindings for arbitrary expressions in the same way as we do for Node_Field
+we also can't store additional field node stuff on a basic assignment statement because that's not even a declaration, just a binary operator
+
+Another problem that we will have if we try to make data scopes work in the way I am thinking is that we will not be able to write struct literals where we reference a variable from an outer scope which has the same name as a member of the struct
+this is something I do all the time in Jai, so it's quite likely that this would be a big annoyance in my scheme without some method to get around the issue.
+I suppose the obvious solution is to have a really simple operator to access the previous parent's scope, but what operator to use for that...
+I kind of like the idea of being able to use ^ as a way of referencing an enclosing scope, but perhaps it is weird to overload a binary operator with scoping semantics
+Perhaps my best option will be to use either # or @ to act as the "parent scope" qualifier.
+    Using # has the drawback of overloading the syntax used for directives
+        this overloading would not introduce any real confusion or syntax ambiguity,
+        but the two features using the same token is maybe a bit odd since they don't have anything to do with one another.
+    Alternatively, using @ could work out nicely if we expanded the role of @ to act as some sort of scope-indexing expression more generally, 
+    for instance, in place of the existing `[]` indexing on continue and break statements
+        This removes the ability to use @ for notes in the future, which is a feature we probably want to have
+            Though perhaps we can just use some `#"note"` syntax for notes.
+        If we did this, we would also want to re-evaluate the if subexpression syntax, since we are no longer doing indexing on control statements with `[]`
+        Also need to consider this syntax in conjunction with the idea for tuple-indexing with the @ symbol.
+    The third option is to use `?` as the main scope operator
+        This would obviously require removing malleable literals, but those are already on the chopping block anyways, so that's no big concern.
+        Do we really want to camp a whole token just for this situtational scope stuff though?
+
+I think I will just use the `#` token to begin with, because it is already in use and should work fine for this purpose.
+Then once the feature is actually working and I play around with it for a bit, I can evaluate what to use for the final syntax.
+
+But of course there is yet more to consider.
+We not only care to access neighboring data scopes, but we want to be able to access the entire document using something like a path string, and this path should match the lexical structure of the file, not the AST structure
+If we do allow this, it makes much more sense to use the @ syntax than it does to use #
+
+
+
+
+
+# Code blocks as a directory structure
+
+I am a bit overloaded on thinking abou tthis stuff at the moment, so perhaps the best thing to do is just to work on other aspects of the language 
+that may move it slowly in the proper direction and lead to a bit more clarity.
+
+Firstly, it would be nice to refactor blocks so that we can treat them as a live structure, and integrate this into the console with some useful directives for traversing the AST like a directory structure
+this is something I wanted to do anyways, so perhaps now is the time to try that out for real.
+
+## TODO
+
+- [ ] append new statements/declarations to a block while it is still "open"
+    - [ ] allow blocks to use linked list of statements instead of an array
+    - [ ] make sure that use of nonconstant expressions in the type slot of a declaration works properly
+        - It should be fune because we will only use the identifier name to resolve the backing type, and then our identifier node will point to that instead.
+        - not to mention, our declaration will get its value_type set when we resolve the type, so we won't rely on checking the type expression after the initial typechecking of the declaration
+
+## Notes
+
+The main thing we are concerned about retaining when using "live blocks" are declarations and other nested *named* blocks
+throwaway evaluations should not get appended into the block as statements by default, but maybe we want some way to do that purposefuly?
+    We could go ahead and append these statements so that the user can use up/down keys in the console to navigate them as prior commands
+    but perhaps it is better to just leave that as a function of the console rather than polluting the AST.
+    because we would also need to store the last evaluated value for each expression/statement, or whatever else that statement printed to console.
+we will also want to allow redeclarations within a block, and these should be able to change the type of a given declaration.
+    This only really works if we *don't* retain statements other than declarations and blocks
+    
+Now that I think about it more, it really makes more sense if we just use an entirely different structure than a standard code block for doing this directory-like stuff.
+    Because it seems that we will not ever want to actually execute these directory blocks like normal blocks, nor will we want to put normal statements in them.
+    So if we instead make them a separate structure, we will need to add a bunch of alternate typechecking logic so that we can resolve identifiers from the directory scope we are in
+
+and if we are not longer wanting to treat normal blocks as data structures, does that mean we are wasting time trying to marry the procedural and declarative natures of LS/LSD?
+
+
+

@@ -128,41 +128,6 @@ find_declaration_in_block :: (script: *Script, block: *Node_Block, identifier: s
     return null;
 }
 
-find_iterator_declaration :: (script: *Script, for_loop: *Node_For_Loop, identifier: string) -> *Node_Declaration {
-    if for_loop.it_decl && get_name(script, for_loop.it_decl) == identifier {
-        return for_loop.it_decl;
-    }
-    if for_loop.it_index_decl && get_name(script, for_loop.it_index_decl) == identifier {
-        return for_loop.it_index_decl;
-    }
-    return null;
-}
-
-
-// If some expression is fundamentally just a literal, this procedure will give you that terminal literal node.
-// This procedure primarily exists so that we have a consistent way to check if some expresison can be user as a malleable literal.
-get_terminal_literal :: (node: *Node) -> *Node_Literal {
-    if node.node_type == {
-      case Node_Literal;
-        return xx node;
-        
-      case Node_Dot;
-        dot := node.(*Node_Dot);
-        if dot.right.node_type == {
-          case Node_Literal;
-            return xx dot.right;
-            
-          case Node_Identifier;
-            identifier := dot.right.(*Node_Identifier);
-            if identifier.identifier_type == {
-              case .LITERAL;
-                return identifier.literal;
-            }
-        }
-    }
-    return null;
-}
-
 
 
 /*
@@ -304,11 +269,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
     
     if node.node_type == {
       case Node_Literal;
-        literal := node.(*Node_Literal);
-        if (literal.flags & .IS_MALLEABLE) || literal.literal_type == .ANY {
-            return true;
-        }
-        if need_lvalue then set_typecheck_error(script, "A literal cannot be used as an lvalue, unless it is marked as being malleable with `?`.", node = node);
+        if need_lvalue then set_typecheck_error(script, "A literal cannot be used as an lvalue.", node = node);
         return false;
         
       case Node_Identifier;
@@ -345,15 +306,6 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
             return script.my_is_valid_lvalue(script, identifier.literal, need_lvalue, set_as_lvalue);
             
           case .DECLARATION;
-            // TODO: update this logic for the new semantics around constant declarations and macros
-            // if (identifier.declaration.flags & .IS_CONSTANT) 
-            // && !declaration_is_malleable_literal(identifier.declaration) {
-            //     return false, "Error: Attempting to use an identifier as an lvalue which refers to a constant declaration which is not malleable.";
-            // }
-            // if identifier.declaration.flags & .CANNOT_BE_USED_AS_LVALUE {
-            //     if need_lvalue then set_typecheck_error(script, "The declaration '%' cannot be used as an lvalue.", get_name(script, identifier.declaration), node = node);
-            //     return false;
-            // }
             return true;
         }
         
@@ -525,12 +477,6 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
         }
         
         literal.value_type = struct_info;
-        
-        // TODO: we should not always allocate for a literal aggr. Only need to do this if the literal is marked with ?
-        if is_malleable(literal) {
-            literal.aggregate.value_pointer = Dynamic_New(literal.value_type,, get_allocator(script));
-            debug_print("Allocated space for literal of type %, node %", literal.value_type, literal);
-        }
     }
     
     assert(literal.value_type != null);
@@ -544,6 +490,8 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     
     declaration := resolve_declaration_by_identifier(script, identifier.name, identifier.scope);
     if declaration {
+        // TODO: Maybe we need a more robust way of checking the relative ordering of a declaration and its use?
+        //       This seems to be reliable, but maybe it will get finnicky once we start doing weird stuff with live blocks.
         if declaration.value_type == null {
             set_typecheck_error(script, "Identifier '%' used before its declaration.", identifier.name, node = identifier);
             return;
@@ -636,33 +584,35 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
         right_type = typecheck_node_or_return(script, binary_operator.right, check_flags, left_type);
         
         // special case: operator = is always a simple memcpy
-        if binary_operator.token == "=" {
-            if left_type != right_type {
-                if left_type.type == .ANY {
-                    // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
-                    if binary_operator.left.node_type == Node_Dot {
-                        dot := binary_operator.left.(*Node_Dot);
-                        if dot.flags & .IS_ARROW {
-                            // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
-                            //       however, there's no dynamic type assertion being done in that case, which is not really safe.
-                            //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
-                            ok, replacement := try_implicit_cast(script, binary_operator.left, right_type); 
-                            if !ok  return;
-                            if replacement  replace_node(*binary_operator.left, replacement);
-                            if !set_as_lvalue(script, binary_operator.left)  return;
+        if !(script.flags & .DISABLE_DEFAULT_OPERATOR_EQUALS) {
+            if binary_operator.token == "=" {
+                if left_type != right_type {
+                    if left_type.type == .ANY {
+                        // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
+                        if binary_operator.left.node_type == Node_Dot {
+                            dot := binary_operator.left.(*Node_Dot);
+                            if dot.flags & .IS_ARROW {
+                                // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
+                                //       however, there's no dynamic type assertion being done in that case, which is not really safe.
+                                //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
+                                ok, replacement := try_implicit_cast(script, binary_operator.left, right_type); 
+                                if !ok  return;
+                                if replacement  replace_node(*binary_operator.left, replacement);
+                                if !set_as_lvalue(script, binary_operator.left)  return;
+                            }
                         }
+                    } else {
+                        ok, replacement := try_implicit_cast(script, binary_operator.right, left_type); 
+                        if !ok  return;
+                        if replacement  replace_node(*binary_operator.right, replacement);
                     }
-                } else {
-                    ok, replacement := try_implicit_cast(script, binary_operator.right, left_type); 
-                    if !ok  return;
-                    if replacement  replace_node(*binary_operator.right, replacement);
+                    
+                    // NOTE: this assertion enforces that the LHS Any case is wrapped in a cast
+                    assert(binary_operator.left.value_type == binary_operator.right.value_type);
                 }
-                
-                // NOTE: this assertion enforces that the LHS Any case is wrapped in a cast
-                assert(binary_operator.left.value_type == binary_operator.right.value_type);
+                binary_operator.value_type = xx void;
+                return;
             }
-            binary_operator.value_type = xx void;
-            return;
         }
         
       case;
@@ -676,7 +626,7 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
     left\_underlying_type := ifx left\_type && left\_type.type == .ENUM then left\_type.(*Type_Info_Enum).internal_type.(*Type_Info) else left\_type;
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
-    builtin_operation_id, swap_arguments := resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
+    builtin_operation_id, swap_arguments := script.resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
     if builtin_operation_id >= 0 {
         binary_operator.builtin_operation_id = builtin_operation_id;
         
@@ -728,7 +678,7 @@ typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_
         then expression_value_type.(*Type_Info_Enum).internal_type.(*Type_Info) 
         else expression_value_type;
     
-    builtin_operation_id, swap_args := resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
+    builtin_operation_id := script.resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
     if builtin_operation_id >= 0 {
         unary_operator.builtin_operation_id = builtin_operation_id;
         unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
@@ -1130,17 +1080,10 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
         // NOTE: currently we do nothing here because we need neither a value pointer or stack space
         //       and we don't want to do the standard .STATIC case, since for a virtual member we handle static assignment differently
     } else {
+        if script.flags & .ALWAYS_ALLOCATE_STATIC_STORAGE_FOR_DECLARATIONS {
+            declaration.flags |= .STATIC;
+        }
         if declaration.flags & .STATIC {
-            literal := get_terminal_literal(declaration.init_expression);
-            if literal && is_malleable(literal) {
-                declaration.value_pointer = get_literal_value_as_any(literal).value_pointer;
-                my_evaluate_node(script, declaration.init_expression, null, .DISCARD_VALUE);
-                if has_error(script)  return;
-                declaration.flags |= .HAS_BEEN_EVALUATED;
-            } else {
-                declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_allocator(script));
-            }
-        } else if script.flags & .ALWAYS_ALLOCATE_FOR_GLOBAL_DECLARATIONS {
             declaration.value_pointer = Dynamic_New(declaration.value_type, initialized = false,, get_allocator(script));
         } else {
             declaration.stack_offset = get_stack_space_in_block(script, declaration.value_type.runtime_size, declaration.scope);

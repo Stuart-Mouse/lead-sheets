@@ -1,8 +1,9 @@
 
 /*
     TODO: 
-    - [ ] Add a menas to override the allocator with a user-provided one.
+    - [X] Add a menas to override the allocator with a user-provided one.
         - But how to handle declarations?
+            - This turns out to not really matter since we can just not save the declarations.
             
     - [ ] Add "freed" nodes to a free list so that they can be reused.  
 */
@@ -50,7 +51,8 @@ Script :: struct {
     my_print_node       := print_node;
     
     resolve_identifier_in_global_scope := default_resolve_identifier_in_global_scope;
-    
+    resolve_builtin_operation          := default_resolve_builtin_operation;
+    execute_builtin_operation          := default_execute_builtin_operation;
     
     // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
     get_virtual_member:             (*Script, Any, string) -> bool, Any;
@@ -76,7 +78,10 @@ Script :: struct {
         // TODO: this is basically a hack to make use of a script as a debug console work 
         //       we need a better long term solution that manages storage for declarations more intelligently
         //       one solution may be to use a multi-stack model for storing declarations in open blocks
-        ALWAYS_ALLOCATE_FOR_GLOBAL_DECLARATIONS;
+        ALWAYS_ALLOCATE_STATIC_STORAGE_FOR_DECLARATIONS;
+        
+        // TODO: This is also a dumb hack, introduced for the sake of LSD not having to deal with builtin assignment operators.
+        DISABLE_DEFAULT_OPERATOR_EQUALS;
     }
 }
 

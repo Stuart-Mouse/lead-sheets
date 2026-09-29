@@ -266,7 +266,7 @@ Builtin_Operation_ID :: int;
 
 // TODO: we should probably adapt some of the same ideas from the improved procedure overload resolution and adapt that to binary operators
 //       for example, if we know the type of one side of the operation, but not the other, then perhaps we can use the side we do know to intelligently hint a type for the other side?
-resolve_builtin_operation :: (
+default_resolve_builtin_operation :: (
     identifier:     string, 
     type:           Operator_Info.Lexical_Type, 
     left_type:      *Type_Info, 
@@ -302,7 +302,7 @@ resolve_builtin_operation :: (
     return -1, false;
 }
 
-execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, result: *void) -> bool {
+default_execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, result: *void) -> bool {
     // generate switch case for all builtin operations
     #insert -> string {
         builder: String_Builder;

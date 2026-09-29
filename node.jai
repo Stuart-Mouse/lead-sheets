@@ -17,7 +17,6 @@ Node :: struct {
         // lexical flags
         PARENTHESIZED;          // explicitly, textually
         IS_ARROW;               // denotes that a Node_Dot is actually an arrow (TODO: remove, make separate node type)
-        IS_MALLEABLE;
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
         
         STATIC;
@@ -71,12 +70,28 @@ should_push_by_pointer :: (node: *Node) -> bool {
 Node_Block :: struct {
     using #as node_base:    Node;
     owner:                  *Node;
+    name:                   string;
     statements:             [] *Node;
     
-    name:                   string;
     stack_frame_size:       int;
     stack_pointer:          *void;    // offset from stack frame
 }
+
+
+/*
+// May end up using some vtable to implement some basic interface for scopes.
+// This does not seem ideal
+Node_Scope_Interface :: struct {
+    get_storage_in_scope:       (script: *Script, scope: *Node, size: int, static := false);
+    get_storage_base_pointer:   (script: *Script, scope: *Node);
+    get_declarations:           (script: *Script, scope: *Node);
+}
+
+Node_Scope :: struct {
+    using #as node_base:    Node;
+    using scope_interface:  Node_Scope_Interface;
+}
+*/
 
 /*
     This does 2 things:
@@ -290,7 +305,7 @@ Node_Literal :: struct {
         number:  Any_Number;
         text:    string;
         aggregate: struct {
-            value_pointer:      *void;      // will only be used if literal is constant or malleable
+            value_pointer:      *void;      // will only be used if literal has static storage
             expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting assignment statements
         }
         any: Any;
@@ -312,14 +327,6 @@ get_literal_value_as_any :: (literal: *Node_Literal) -> Any {
       case .ANY;     return literal.any;
     }
     unreachable();
-}
-
-can_be_malleable :: (literal: *Node_Literal) -> bool {
-    return !(literal.flags & .IS_CONSTANT).(bool);
-}
-
-is_malleable :: (literal: *Node_Literal) -> bool {
-    return (literal.flags & .IS_MALLEABLE).(bool);
 }
 
 

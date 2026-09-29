@@ -169,7 +169,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
 
 evaluate_literal :: (script: *Script, literal: *Node_Literal, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if should_push_by_pointer(literal) {
-        assert(literal.flags & .IS_MALLEABLE == .IS_MALLEABLE || literal.literal_type == .ANY);
+        assert(literal.literal_type == .ANY);
     }
     
     result: Any;
@@ -273,7 +273,7 @@ evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operato
     expression_value := evaluate_node_or_return(script, unary_operator.expression);
     
     debug_print("expression: %, result pointer: %", expression_value, result_value_pointer);
-    if !execute_builtin_operation(unary_operator.builtin_operation_id, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
+    if !script.execute_builtin_operation(unary_operator.builtin_operation_id, expression_value.value_pointer, null, result_value_pointer)  return NULL_ANY;
     
     return Any.{ unary_operator.value_type, result_value_pointer };
 }
@@ -313,7 +313,7 @@ evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Oper
     }
     
     debug_print("left: %, right: %, result pointer: %", left, right, result_value_pointer);
-    if !execute_builtin_operation(binary_operator.builtin_operation_id, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
+    if !script.execute_builtin_operation(binary_operator.builtin_operation_id, left.value_pointer, right.value_pointer, result_value_pointer)  return NULL_ANY;
     
     return Any.{ binary_operator.value_type, result_value_pointer };
 }

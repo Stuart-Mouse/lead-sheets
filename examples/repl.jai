@@ -233,7 +233,6 @@ main :: () {
                 imgui.TableSetupColumn("Name",  .NoHide);
                 imgui.TableSetupColumn("Value", .NoHide);
                 imgui.TableSetupColumn("Type",  .NoHide);
-                // TODO: maybe flags to show if constant / malleable?
                 imgui.TableHeadersRow();
                 
                 for script.global_declarations {

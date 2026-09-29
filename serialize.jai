@@ -132,34 +132,12 @@ print_node :: (
             struct_info := literal.value_type.(*Type_Info_Struct);
             append(builder, ".{");
             
-            // NOTE: we only want to serialize a struct using its current value if it is a malleable literal
-            if node.value_type && (node.flags & .IS_MALLEABLE) {
-                // ignoring #place members. Wish there were a better way to do this.
-                last_member_offset := -1;
-                for struct_info.members {
-                    if it.flags & .CONSTANT  continue;
-                    if it.offset_in_bytes < last_member_offset  break;
-                    
-                    if last_member_offset != -1  append(builder, ",");
-                    last_member_offset = it.offset_in_bytes;
-                    
-                    if it_index < literal.aggregate.expressions.count {
-                        append_trivia(builder, literal.aggregate.expressions[it_index]);
-                    }
-                    print_to_builder(builder, "%", Any.{ it.type, literal.aggregate.value_pointer + it.offset_in_bytes });
-                }
-            } else {
-                for literal.aggregate.expressions {
-                    print_node_or_return(script, it, builder, indent);
-                    if it_index != literal.aggregate.expressions.count-1  append(builder, ",");
-                }
+            for literal.aggregate.expressions {
+                print_node_or_return(script, it, builder, indent);
+                if it_index != literal.aggregate.expressions.count-1  append(builder, ",");
             }
             
             append(builder, " }");   
-        }
-        
-        if literal.flags & .IS_MALLEABLE {
-            append(builder, "?");
         }
         
         return true;

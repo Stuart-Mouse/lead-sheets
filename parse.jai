@@ -288,7 +288,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         next_token := peek_token(script);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
             debug_print("WITH EXPLICIT TYPE");
-            declaration.type_expression = my_parse_expression(script, 999); // @Hack 
+            declaration.type_expression = my_parse_expression(script, 999); // @Hack: This prevents us from parsing the `=` expected after the type expression.
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
                 set_parse_error(script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = expression.location);
@@ -582,7 +582,7 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
 parse_comma_separated_expressions :: (using script: *Script) -> [] *Node {
     expressions: [..] *Node;
     while true {
-        expr := my_parse_expression(script, 0);
+        expr := script.my_parse_expression(script, 0);
         if expr == null {
             array_reset(*expressions);
             return .[];
@@ -596,19 +596,6 @@ parse_comma_separated_expressions :: (using script: *Script) -> [] *Node {
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
 parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     token := peek_token(script);
-    
-    if token.type == .QUESTION_MARK {
-        question_mark := get_token(script);
-        
-        literal := get_terminal_literal(left);
-        if !literal || !can_be_malleable(literal) {
-            set_parse_error(script, "%: a `?` can only be used directly after a constant literal.", format_location(question_mark.location));
-            return null;
-        }
-        literal.flags |= .IS_MALLEABLE;
-        
-        token = peek_token(script);
-    }
     
     // In addition to normal binary operators, we have a few binary-operator-like constructs that have essentially infinite operator precedence.
     // These are open parenthesis for procedure calls, dot for struct member access and cast, and open bracket for array indexing.
@@ -699,15 +686,34 @@ parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
     return left;
 }
 
-
+// TODO: eventually, we will just want to call parse_block and then we can check if the contents of the block are valid for a struct literal during typechecking
 parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := Token_Type.CLOSE_BRACE) -> ([] *Node, bool) {
     if expect_token_type(script, scope_end_token)  return .[], true;
     
     expressions := parse_comma_separated_expressions(script,, temp);
     if !expressions  return .[], false;
     
-    // TODO: if first expression is an assignment operation, then we should parse all struct literal inner expressions as such
-    //       we will then also need to flag the struct literal as being by-name intialized for evaluation and serialization purposes
+    expression_is_binary_assignment :: (node: *Node) -> bool {
+        return node.node_type == Node_Binary_Operator && node.(*Node_Binary_Operator).token == "=";
+    }
+    
+    using_assignment_syntax := expression_is_binary_assignment(expressions[0]);
+    if using_assignment_syntax {
+        for expressions {
+            if !expression_is_binary_assignment(it) {
+                set_parse_error(script, "Expected an assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
+                return .[], false;
+            }
+        }
+    } else {
+        // TODO: More thorough checks could be done here to make sure that the expressions in the struct literal are not binary assignments with +=, -=, etc.
+        for expressions {
+            if expression_is_binary_assignment(it) {
+                set_parse_error(script, "Unexpected assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
+                return .[], false;
+            }
+        }
+    }
     
     scope_end := get_token(script);
     if scope_end.type != scope_end_token {
