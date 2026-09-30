@@ -97,10 +97,15 @@ resolve_declaration_by_name :: (script: *Script, scope: *Node, name: string) -> 
         scope = scope.scope;
     }
     
+    // TODO: remove this and let user manage their own global declarations
     for script.global_declarations {
         if get_name(script, it) == name {
             return it;
         }
+    }
+    
+    if script.resolve_global_declaration {
+        return script.resolve_global_declaration(script, name);
     }
     
     return null;
@@ -111,9 +116,14 @@ default_get_storage_in_scope :: (script: *Script, scope: *Node, size: int) -> bo
     result: u64;
     
     if scope.node_type == {
-      case Node_Block;
+      case Node_Dynamic_Block;
+        block := scope.(*Node_Dynamic_Block);
+        result  = alloc(size,, block.storage_allocator).(u64);
         success = true;
+        
+      case Node_Block;
         result  = get_stack_space_in_block(script, xx scope, size);
+        success = true;
         
       case Node_For_Loop; #through;
       case Node_If_Statement;
@@ -125,6 +135,9 @@ default_get_storage_in_scope :: (script: *Script, scope: *Node, size: int) -> bo
 default_get_storage_base_pointer_for_scope :: (script: *Script, scope: *Node) -> *void {
     result := null;
     if scope.node_type == {
+      case Node_Dynamic_Block;
+        result = null;
+        
       case Node_Block;
         result = scope.(*Node_Block).stack_pointer;
         
@@ -137,13 +150,24 @@ default_get_storage_base_pointer_for_scope :: (script: *Script, scope: *Node) ->
 
 default_resolve_declaration_in_scope :: (script: *Script, scope: *Node, name: string) -> *Node_Declaration {
     if scope.node_type == {
+      case Node_Dynamic_Block;
+        block := scope.(*Node_Block);
+        for block.statements {
+            if it.node_type == Node_Declaration {
+                declaration := it.(*Node_Declaration);
+                if get_name(script, declaration) == name {
+                    return declaration;
+                }
+            }
+        }
+        
       case Node_Block;
         block := scope.(*Node_Block);
         for block.statements {
             if it.node_type == Node_Declaration {
                 declaration := it.(*Node_Declaration);
                 if get_name(script, declaration) == name {
-                    return xx it;
+                    return declaration;
                 }
             }
         }

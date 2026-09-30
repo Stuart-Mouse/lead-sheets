@@ -211,14 +211,14 @@ main :: () {
                     // NOTE: string must be copied here because LS uses view onto source file...
                     //       we should probably have some flag that make LS copy the strings it needs from tokens into its pool!
                     str = copy_string(str);
-                    value, ok := LS.evaluate_statement(*script, str, store_global_declarations = true);
+                    ok, result := LS.evaluate_statement(*script, str, store_global_declarations = true);
                     if !ok {
                         log("Error: Failed to evaluate statement.");
                         log_error(*script);
                         LS.clear_error(*script);
                     } else {
                         result: string;
-                        if value.value_pointer then result = sprint("%", value);
+                        if result.value_pointer then result = sprint("%", result);
                         array_add(*prev_commands, .{ str, result });
                         array_reset_keeping_memory(*input_buffer);
                     }

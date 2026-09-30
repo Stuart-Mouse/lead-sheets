@@ -17,6 +17,7 @@ Script :: struct {
     type_table:             [..] Name_And_Type;
     operator_table:         [..] Operator_Info;
     
+    // TODO: remove this and instead let user manage these, access through overriding interface_procedures.
     // added for the sake of convenience and use in repl
     global_declarations:    [..] *Node_Declaration;
     
@@ -38,7 +39,6 @@ Script :: struct {
     break_result_storage:   *void;
     
     
-    
     // timing_info: struct {
     //     internal: Apollo_Time; // time spent in lead sheets procedures, not in user callbacks
     //     time_spent_in_procedure_calls: Apollo_Time;
@@ -46,7 +46,8 @@ Script :: struct {
     
     // This can be set to override the allocator used to allocate nodes.
     // The primary use case for this is in evaluating expressions whose nodes we only need temporarily.
-    user_allocator: Allocator;
+    user_allocator:         Allocator;
+    user_data:              *void;
     
     Flags :: enum_flags {
         INITIALIZED;
@@ -73,21 +74,19 @@ Script_Interface_Procedures :: struct {
     
     my_print_node       := print_node;
     
-    resolve_identifier_in_global_scope := default_resolve_identifier_in_global_scope;
-    resolve_builtin_operation          := default_resolve_builtin_operation;
-    execute_builtin_operation          := default_execute_builtin_operation;
+    resolve_identifier_in_global_scope  := default_resolve_identifier_in_global_scope;
+    resolve_builtin_operation           := default_resolve_builtin_operation;
+    execute_builtin_operation           := default_execute_builtin_operation;
     
-    get_storage_in_scope               := default_get_storage_in_scope;
-    get_storage_base_pointer_for_scope := default_get_storage_base_pointer_for_scope;
-    resolve_declaration_in_scope       := default_resolve_declaration_in_scope;
-    get_declarations_in_scope          := default_get_declarations_in_scope;
+    get_storage_in_scope                := default_get_storage_in_scope;
+    get_storage_base_pointer_for_scope  := default_get_storage_base_pointer_for_scope;
+    resolve_declaration_in_scope        := default_resolve_declaration_in_scope;
+    get_declarations_in_scope           := default_get_declarations_in_scope;
     
-    // NOTE: get_virtual_member gets passed the script, so implicitly they're also getting the get_virtual_member_user_data pointer
+    resolve_global_declaration:         (*Script, string) -> *Node_Declaration;
+    
     get_virtual_member:                 (*Script, Any, string) -> bool, Any;
-    get_virtual_member_user_data:       *void;
-    
     declare_virtual_member:             (*Script, Any, string, *Type_Info) -> bool, Any, bool;
-    declare_virtual_member_user_data:   *void;
 }
 
 DEFAULT_SCRIPT_INTERFACE_PROCEDURES :: Script_Interface_Procedures.{};

@@ -74,6 +74,8 @@ default_operator_table :: Operator_Info.[
     .{ .ASSIGNMENT, "=",  1, "" },
     .{ .ASSIGNMENT, "+=", 1, "" },
     .{ .ASSIGNMENT, "-=", 1, "" },
+    .{ .ASSIGNMENT, "*=", 1, "" },
+    .{ .ASSIGNMENT, "/=", 1, "" },
     .{ .ASSIGNMENT, "|=", 1, "" },
     .{ .ASSIGNMENT, "&=", 1, "" },
     .{ .ASSIGNMENT, "^=", 1, "" },
@@ -190,6 +192,8 @@ Builtin_Operation_ID :: int;
     
     .{ .ASSIGNMENT, "+=", %1, %1, void, false },
     .{ .ASSIGNMENT, "-=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "*=", %1, %1, void, false },
+    .{ .ASSIGNMENT, "/=", %1, %1, void, false },
     .{ .ASSIGNMENT, "|=", %1, %1, void, false },
     .{ .ASSIGNMENT, "&=", %1, %1, void, false },
     .{ .ASSIGNMENT, "^=", %1, %1, void, false },
@@ -251,6 +255,8 @@ Builtin_Operation_ID :: int;
         
         .{ .ASSIGNMENT, "+=", float, float, void, false },
         .{ .ASSIGNMENT, "-=", float, float, void, false },
+        .{ .ASSIGNMENT, "*=", float, float, void, false },
+        .{ .ASSIGNMENT, "/=", float, float, void, false },
         
         .{ .ASSIGNMENT, "+=", Vector2, Vector2, void, false },
         .{ .ASSIGNMENT, "-=", Vector2, Vector2, void, false },

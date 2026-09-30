@@ -94,11 +94,13 @@ Node_Block :: struct {
     stack_pointer:          *void;    // offset from stack frame
 }
 
-// Node_Namespace :: struct {
-//     using #as node_base:    Node;
-//     name:                   string;
-//     declarations:           [..] *Node;
-// }
+// TODO: Maybe replace this with Node_Namespace or something like that
+Node_Dynamic_Block :: struct {
+    using #as node_base:    Node;
+    name:                   string;
+    statements:             [..] *Node;
+    storage_allocator:      Allocator;
+}
 
 /*
     This does 2 things:

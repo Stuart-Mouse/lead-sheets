@@ -18,7 +18,7 @@ evaluate_script :: (script: *Script) -> bool {
     return !has_error(script);
 }
 
-evaluate_statement :: (script: *Script, expr: string, store_global_declarations := false, user_allocator := Allocator.{}) -> (Any, bool) {
+evaluate_statement :: (script: *Script, expr: string, user_allocator := Allocator.{}) -> (bool, Any, *Node) {
     prev_user_allocator := script.user_allocator;
     defer script.user_allocator = prev_user_allocator;
     if user_allocator.proc != null {
@@ -26,22 +26,20 @@ evaluate_statement :: (script: *Script, expr: string, store_global_declarations 
     }
     
     root := parse_statement_string(script, expr);
-    if root == null {
-        return NULL_ANY, false;
+    if has_error(script) {
+        return false, NULL_ANY, null;
     }
     
-    if !typecheck_node(script, root, .IS_STATEMENT_ROOT)  return NULL_ANY, false;
+    if !typecheck_node(script, root, .IS_STATEMENT_ROOT) { 
+        return false, NULL_ANY, null;
+    }
     
     result := script.my_evaluate_node(script, root, flags = .DISCARD_VALUE);
-    if has_error(script)  return NULL_ANY, false;
-    
-    if store_global_declarations {
-        if root.node_type == Node_Declaration {
-            array_add(*script.global_declarations, xx root);
-        }
+    if has_error(script) {
+        return false, NULL_ANY, null;
     }
     
-    return result, true;
+    return true, result, root;
 }
 
 Evaluation_Flags :: enum_flags {
