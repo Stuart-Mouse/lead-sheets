@@ -508,7 +508,7 @@ make_operator :: (script: *Script, source_token: Token, operator_id: int, left: 
         binary_operator.left        = left;
         binary_operator.right       = right;
         
-        if operator_info.lexical_type == .ASSIGNMENT then binary_operator.flags |= .MUST_BE_STATEMENT_ROOT;
+        // if operator_info.lexical_type == .ASSIGNMENT then binary_operator.flags |= .MUST_BE_STATEMENT_ROOT;
         
         base_operator = binary_operator;
         

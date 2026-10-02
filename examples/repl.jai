@@ -16,6 +16,8 @@ input_buffer: [..] u8;
 prev_commands:          [..] struct { statement: string; result: string; }; 
 prev_commands_index:    int;
 
+global_declarations_block:  *LS.Node_Dynamic_Block;
+
 main :: () {
     UA :: #import "Unmapping_Allocator";
     context.allocator = UA.get_unmapping_allocator();
@@ -64,6 +66,24 @@ main :: () {
     
     LS.init_script(*script);
     defer LS.deinit_script(*script);
+    
+    script.user_data = global_declarations_block;
+    
+    global_declarations_block = LS.alloc_node(script, LS.Node_Dynamic_Block);
+    global_declarations_block.statements.allocator = context.allocator;
+    
+    script.resolve_global_declaration = (script: *LS.Script, name: string) -> *LS.Node_Declaration {
+        global_declarations_block := script.user_data.(*LS.Node_Dynamic_Block);
+        for global_declarations_block.statements {
+            if it.node_type == LS.Node_Declaration {
+                declaration := it.(*LS.Node_Declaration);
+                if LS.get_name(script, declaration) == name {
+                    return declaration;
+                }
+            }
+        }
+        return null;
+    };
     
     LS.register_common_types(*script);
     LS.register_type(*script, "Vector2", type_info(Vector2));
@@ -211,7 +231,7 @@ main :: () {
                     // NOTE: string must be copied here because LS uses view onto source file...
                     //       we should probably have some flag that make LS copy the strings it needs from tokens into its pool!
                     str = copy_string(str);
-                    ok, result := LS.evaluate_statement(*script, str, store_global_declarations = true);
+                    ok, result := LS.evaluate_statement(*script, str, scope = global_declarations_block);
                     if !ok {
                         log("Error: Failed to evaluate statement.");
                         log_error(*script);

@@ -18,11 +18,17 @@ evaluate_script :: (script: *Script) -> bool {
     return !has_error(script);
 }
 
-evaluate_statement :: (script: *Script, expr: string, user_allocator := Allocator.{}) -> (bool, Any, *Node) {
+evaluate_statement :: (script: *Script, expr: string, scope: *Node = null, user_allocator := temp) -> (bool, Any, *Node) {
     prev_user_allocator := script.user_allocator;
     defer script.user_allocator = prev_user_allocator;
     if user_allocator.proc != null {
         script.user_allocator = user_allocator;
+    }
+    
+    prev_current_scope := script.current_scope;
+    defer script.current_scope = prev_current_scope;
+    if scope != null {
+        script.current_scope = scope;
     }
     
     root := parse_statement_string(script, expr);
