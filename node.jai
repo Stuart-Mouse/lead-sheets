@@ -33,7 +33,6 @@ Node :: struct {
     Flags :: enum_flags { 
         // lexical flags
         PARENTHESIZED;          // explicitly, textually
-        IS_ARROW;               // denotes that a Node_Dot is actually an arrow (TODO: remove, make separate node type)
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
         
         STATIC;
@@ -375,6 +374,11 @@ Node_Subscript :: struct {
     indexing_expression:    *Node;
 }
 
+Node_Arrow :: struct {
+    using #as node_base:        Node;
+    left, right:                *Node;
+}
+
 
 
 // ===== Flow Control Statements =====
@@ -577,9 +581,10 @@ make_dot :: (script: *Script, source_token: Token, left: *Node, right: *Node) ->
     return node;
 }
 
-make_arrow :: inline (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Dot {
-    node := make_dot(script, source_token, left, right);
-    node.flags |= .IS_ARROW;
+make_arrow :: inline (script: *Script, source_token: Token, left: *Node, right: *Node) -> *Node_Arrow {
+    node := alloc_node(script, Node_Arrow, loc = source_token.location, trivia = source_token.trivia);
+    node.left  = left;
+    node.right = right;
     return node;
 }
 

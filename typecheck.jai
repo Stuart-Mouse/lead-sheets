@@ -63,6 +63,7 @@ typecheck_node :: (
       case Node_Procedure_Call;    typecheck_procedure_call  (script, xx node, check_flags, hint_type);
       case Node_Cast;              typecheck_cast            (script, xx node, check_flags, hint_type);
       case Node_Dot;               typecheck_dot             (script, xx node, check_flags, hint_type);
+      case Node_Arrow;             typecheck_arrow           (script, xx node, check_flags, hint_type);
       case Node_Subscript;         typecheck_subscript       (script, xx node, check_flags, hint_type);
       case Node_Declaration;       typecheck_declaration     (script, xx node, check_flags, hint_type);
       case Node_Block;             typecheck_block           (script, xx node, check_flags, hint_type);
@@ -402,12 +403,12 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
             return true;
         }
         
+      case Node_Arrow;
+        arrow := node.(*Node_Arrow);
+        return script.my_is_valid_lvalue(script, arrow.left, need_lvalue, set_as_lvalue);
+        
       case Node_Dot;
         dot := node.(*Node_Dot);
-        // TODO: make sure that this covers all our cases properly
-        if dot.flags & .IS_ARROW {
-            return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue);
-        }
         if dot.left.value_type.type == .STRUCT {
             return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue)
                 && script.my_is_valid_lvalue(script, dot.right, need_lvalue);
@@ -681,18 +682,16 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
             if binary_operator.token == "=" {
                 if left_type != right_type {
                     if left_type.type == .ANY {
-                        // TODO: maybe this is a bit too hacky to reach in to the dot node like this?
-                        if binary_operator.left.node_type == Node_Dot {
-                            dot := binary_operator.left.(*Node_Dot);
-                            if dot.flags & .IS_ARROW {
-                                // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
-                                //       however, there's no dynamic type assertion being done in that case, which is not really safe.
-                                //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
-                                ok, replacement := try_implicit_cast(script, binary_operator.left, right_type); 
-                                if !ok  return;
-                                if replacement  replace_node(*binary_operator.left, replacement);
-                                if !set_as_lvalue(script, binary_operator.left)  return;
-                            }
+                        // TODO: maybe this is a bit too hacky to reach in to the arrow node like this?
+                        if binary_operator.left.node_type == Node_Arrow {
+                            arrow := binary_operator.left.(*Node_Arrow);
+                            // TODO: Technically, everything still works in evaluation even if we don't insert the implicit cast here,
+                            //       however, there's no dynamic type assertion being done in that case, which is not really safe.
+                            //       So for now we will still require this cast, until (if) we get around to doing dynamic interpretation stuff.
+                            ok, replacement := try_implicit_cast(script, binary_operator.left, right_type); 
+                            if !ok  return;
+                            if replacement  replace_node(*binary_operator.left, replacement);
+                            if !set_as_lvalue(script, binary_operator.left)  return;
                         }
                     } else {
                         ok, replacement := try_implicit_cast(script, binary_operator.right, left_type); 
@@ -922,20 +921,20 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
     }
 }
 
-typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    if dot.flags & .IS_ARROW {
-        typecheck_node_or_return(script, dot.left);
-        if !set_as_lvalue(script, dot.left)  return;
-        
-        if dot.right.node_type != Node_Identifier {
-            set_typecheck_error(script, "Right side of arrow must be an identifier.", node = dot.right);
-            return;
-        }
-        
-        dot.value_type = xx Any;
+// TODO: Later on we will want to implement some logic to optimize arrows by assigning a set type if there is a coresponding virtual declaration in the same scope with the same owning identifier.
+typecheck_arrow :: (using script: *Script, arrow: *Node_Arrow, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    typecheck_node_or_return(script, arrow.left);
+    if !set_as_lvalue(script, arrow.left)  return;
+    
+    if arrow.right.node_type != Node_Identifier {
+        set_typecheck_error(script, "Right side of arrow must be an identifier.", node = arrow.right);
         return;
     }
     
+    arrow.value_type = xx Any;
+}
+
+typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: dot.left may be null for unary dot enums and struct literals with no explicit type.
     // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below, where we will try to use hint_type to resolve the struct literal or enum value name.
     left_type: *Type_Info;
@@ -1155,7 +1154,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             set_typecheck_error(script, "Redeclaration of identifier '%'.", identifier.name, node = declaration);
             return;
         }
-    } else if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
+    } else if declaration.left.node_type == Node_Arrow {
         dot := declaration.left.(*Node_Dot);
         typecheck_node_or_return(script, dot);
     } else {
@@ -1169,8 +1168,8 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     declaration.value_type = ifx explicit_type else right_type;
     
     // set value pointer or stack offset
-    if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
-        // NOTE: currently we do nothing here because we need neither a value pointer or stack space
+    if declaration.left.node_type == Node_Arrow {
+        // NOTE: currently we do nothing here because we need neither a value pointer nor stack space
         //       and we don't want to do the standard .STATIC case, since for a virtual member we handle static assignment differently
     } else {
         if declaration.flags & .STATIC {

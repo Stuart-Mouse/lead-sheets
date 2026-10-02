@@ -2260,3 +2260,70 @@ I just refactored how scopes work in preparation to be able to add dynamic names
     I am also a bit unsure about whether it is correct for us to use the scope in which a for loop resides as the storage scope for the iterator declarations
         this also seems to be working fine, but we may find that there is some weird adverse case like there was long ago when I implemented that stuff in the first place
         
+
+
+
+
+
+## Dynamic AST Modifications
+
+Now that I am doing more stuff that modifies the AST after it has been initially typechecked, I really need to nail down a proper model for how to handle modifications that would result in a need to re-typecheck code that was already previously typechecked.
+As a simple case, we allow identifiers to be renamed when not currently parsing or typechecking some piece of AST.
+    This works because once we typecheck an identifier for the first time, we stop pointing to the original string data for the identifier and instead just store a pointer to what was resolved.
+    At this stage, we no longer have to worry about changes to the backing name of the identifier, because the reference is fixed as of the initial typecheck.
+    On a subsequent typecheck, we need only ensure that the type of the referenced value has not changed. 
+    (Currently, it is not possible to change the type of external variables and procedures once declared, but we will soon be able to change the types of declarations, at least within certain types of scopes.)
+    If a declaration changes type, then we need to re-typecheck every single expresison that references this declaration, which may affect other declarations as well.
+The addition of new declarations will also need to kick off a new pass of typechecking within the affected scope and subscopes, because it may shadow a declaration from an outer scope.
+Also, when a declaration changes its name, although this does not necessarily require that we re-typecheck any expressions that reference this declaration, we do want to check for name conflicts and shadowing between declarations, because if we were to re-serialize the script, we need to ensure that all identifiers would resolve to the same declarations on a fresh parse.
+Although, perhaps at least for internal declarations, we will want to force a re-typecheck when a new declaration shadows a declaration from an outer scope.
+
+When any kind of change occurs that would require re-typechecking occurs, we should just flag the directly affected node accordingly and also flag the script itself as requiring re-typechecking
+Then before we allow the user to execute the script again, they will be required to re-typecheck.
+We will probably want to implement some logic to only re-typecheck those scopes which are actually affected.
+But as a first pass at implementing this sort of thing, it should suffice to just re-typecheck the entire script any time the AST is modified.
+
+
+Practical precursor steps:
+- [ ] separate parsed state and typechecked state on nodes
+    - should have some means of flagging nodes that need to be re-typechecked.
+
+
+
+The issue of error reporting:
+When reporting errors to the user, you obviously want to be able to give them file and line information about where the error occurred so that they can go fix it.
+But when you have an AST that you are actively modifying, you can no longer really reference the same underlying text data, because identifiers may have changed, or the error may be with a statement that was not in the original text.
+So, perhaps the answer for live AST stuff is to simply dump the original source text entirely after the initial parse, and only use the nodes form thereon.
+The main issue with this is that this will obviously require that we implement our own editor a la Dion, which will not be a trivial task...
+
+The issue of directives:
+Directives pose quite an issue for live AST applications, because they can affect parsing state, and they are often one-way transformations of text or code nodes.
+Perhaps it would be possible to implement some kind of means for the user to create bi-directional directives, but this could get really messy and error prone.
+It's also quite likely that certain directives would not play nice with one another.
+This issue of directives will also be relevant if I use directives for meaningful language features, such as static declarations
+
+
+
+## Random Thoughts
+
+add a #new directive or keyword that acts as an interface to create an instance of some type using a user-defined allocator. 
+    This would also work better if we created a proper handle type that scripts can treat semantically like a pointer, but adds that cushion of an interface to allow user management
+
+### Visual AST Editor
+
+May require having different modes e.g. vim
+- navigation mode to move around the ast by nodes or "lexemes"
+    - we probably don't want the default mode of navigation to be moving by characters, since this would be both harder to implement, and less useful to the user
+- insertion mode to begin typing free-form text, for example, to write identifiers and literals 
+- we will also want to have freeform text editing for comments
+    - comments could be attached to basically any node via trivia pointer, althoguh there would be a few places where once could not place comments *quite* as freely as one can in plain text
+    
+Commenting out code
+    We could pretty easily allow commenting out code simply by flagging nodes as "disabled", which could be done with a single keypress
+    This would be semantically more akin to a #if than commenting out code, because it would not necessarily affect that actual structure of the AST, only what is evaluated.
+
+Would be nice to implement code alignment when neighboring statements have similar semantic structures
+the most simple case would be aligning declarations or assignments
+
+
+

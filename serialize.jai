@@ -249,6 +249,14 @@ print_node :: (
         return true;
         
         
+      case Node_Arrow;
+        arrow := node.(*Node_Arrow);
+        if arrow.left  print_node_or_return(script, arrow.left, builder, indent);
+        append(builder, "->");
+        print_node_or_return(script, arrow.right, builder, indent);
+        return true;
+        
+        
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
         print_node_or_return(script, subscript.base_expression, builder, indent);

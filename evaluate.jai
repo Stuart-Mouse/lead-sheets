@@ -127,6 +127,9 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_Dot;
         result = evaluate_dot(script, xx node, provided_storage, flags);
         
+      case Node_Arrow;
+        result = evaluate_arrow(script, xx node, provided_storage, flags);
+        
       case Node_Subscript;
         result = evaluate_subscript(script, xx node, provided_storage, flags);
         
@@ -423,28 +426,28 @@ evaluate_cast :: (script: *Script, _cast: *Node_Cast, provided_storage: *void = 
     return dst;
 }
 
-evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
-    if dot.flags & .IS_ARROW {
-        if script.get_virtual_member == null {
-            set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = dot);
-            return false;
-        }
-        
-        evaluate_node_or_return(script, dot.left);
-        assert(should_push_by_pointer(dot.left));
-        owner := pop_any(*script.stack, dot.left.value_type, true);
-        
-        member_identifier := dot.right.(*Node_Identifier);
-        assert(member_identifier.identifier_type == .UNRESOLVED);
-        
-        ok, member_value := script.get_virtual_member(script, owner, member_identifier.name);
-        if !ok {
-            set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = dot);
-            return false;
-        }
-        return prepare_result(script, dot, member_value, provided_storage);
+evaluate_arrow :: (script: *Script, arrow: *Node_Arrow, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
+    if script.get_virtual_member == null {
+        set_execution_error(script, "Script's get_virtual_member procedure was not provided by user!", node = arrow);
+        return false;
     }
     
+    evaluate_node_or_return(script, arrow.left);
+    assert(should_push_by_pointer(arrow.left));
+    owner := pop_any(*script.stack, arrow.left.value_type, true);
+    
+    member_identifier := arrow.right.(*Node_Identifier);
+    assert(member_identifier.identifier_type == .UNRESOLVED);
+    
+    ok, member_value := script.get_virtual_member(script, owner, member_identifier.name);
+    if !ok {
+        set_execution_error(script, "get_virtual_member failed with owning type: %", as_type(owner.type), node = arrow);
+        return false;
+    }
+    return prepare_result(script, arrow, member_value, provided_storage);
+}
+
+evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if dot.left == null {
         assert(dot.value_type.type == .ENUM || dot.value_type.type == .STRUCT);
         return script.my_evaluate_node(script, dot.right, provided_storage = provided_storage);
@@ -537,7 +540,7 @@ evaluate_subscript :: (script: *Script, subscript: *Node_Subscript, provided_sto
 
 evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     // virtual member delaration
-    if declaration.left.node_type == Node_Dot && (declaration.left.flags & .IS_ARROW) {
+    if declaration.left.node_type == Node_Arrow {
         if script.declare_virtual_member == null {
             set_execution_error(script, "Script's declare_virtual_member procedure was not provided by user!", node = declaration);
             return false;
