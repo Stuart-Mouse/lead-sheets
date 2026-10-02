@@ -617,7 +617,7 @@ evaluate_block :: (script: *Script, block: *Node_Block, provided_storage: *void 
                 script.break_target = null; 
             }
             if script.break_target == block 
-            || script.break_target == block.owner {
+            || script.break_target == block.scope {
                 // This is a bit of a hack, but because we interrupt the usual control flow with a break 
                 // and store the result directly to the target block, we need to manually set the stack pointer
                 // back to where it is supposed to be so that our stack usage checks remain happy.

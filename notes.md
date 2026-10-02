@@ -2295,6 +2295,11 @@ When reporting errors to the user, you obviously want to be able to give them fi
 But when you have an AST that you are actively modifying, you can no longer really reference the same underlying text data, because identifiers may have changed, or the error may be with a statement that was not in the original text.
 So, perhaps the answer for live AST stuff is to simply dump the original source text entirely after the initial parse, and only use the nodes form thereon.
 The main issue with this is that this will obviously require that we implement our own editor a la Dion, which will not be a trivial task...
+Location information will also look different in a live ast editor, probably more like a simple ID or pointer value for the target node 
+    ... with additional information about specialization when dealing with polymorphic functions or generated code.
+But of course, if we write the whole AST out to file as text, we would lose our node ids, so we would need to have an alternate representation for location info that could be used in that context.
+    This would probably be something like a path string using scope names and statement indices
+for dealing with polymorphic code or generated code, a live ast-based editor could be way better, because the editor could present the generated code or specialization and all of its dependencies directly, rather than relying on user inference
 
 The issue of directives:
 Directives pose quite an issue for live AST applications, because they can affect parsing state, and they are often one-way transformations of text or code nodes.
@@ -2324,6 +2329,32 @@ Commenting out code
 
 Would be nice to implement code alignment when neighboring statements have similar semantic structures
 the most simple case would be aligning declarations or assignments
+
+
+
+
+
+
+# Lexer Refactor and Node Location Information
+
+I wanto remove the source location and trivia members from nodes and instead use a system where we retain all tokens during parsing and just link nodes back to tokens via indices into the token buffer.
+But there are a few problems we will have to tackle...
+
+## Directives
+
+Because directives can affect parsing, this creates a problem for scanning multiple tokens ahead.
+We will have to implement logic to pause the lexer when it hits a directive, and wait until that token is consumed before it scans ahead again.
+
+## Storing Tokens
+
+We currently use a little ring buffer for tokens, but since we are now going to store these tokens now anyways, we may as well just use a linear growing array of tokens.
+Or perhaps, we should use a separate pool for allocating tokens, but in either case we want them to all be sequential in memory so that we can directly index to a desired token.
+Storing all tokens like this also means that we can do an arbitrary amount of lookahead or rollback on the token stream.
+
+## Trivia Tokens
+
+I think we should start emitting trivia (comments, basically) as their own tokens and just leave them in the token stream.
+We can know that trivia ought to be attached to a particular token simply by the fact that the trivia tokens directly precede some other token in the token stream.
 
 
 

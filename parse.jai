@@ -118,7 +118,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         defer current_scope = if_statement.scope;
         
         if_statement.then_block = alloc_node(script, Node_Block);
-        if_statement.then_block.owner = if_statement;
+        if_statement.then_block.scope = if_statement;
         
         open_bracket_token := peek_token(script);
         if open_bracket_token.type == .OPEN_BRACKET {
@@ -175,7 +175,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             
             if if_statement.else_block == null {
                 if_statement.else_block = alloc_node(script, Node_Block);
-                if_statement.else_block.owner = if_statement;
+                if_statement.else_block.scope = if_statement;
             }
             
             if !parse_block_or_statement(script, if_statement.else_block, false)  return null; 
@@ -192,7 +192,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         defer current_scope = while_loop.scope;
         
         while_loop.block = alloc_node(script, Node_Block);
-        while_loop.block.owner = while_loop;
+        while_loop.block.scope = while_loop;
         
         debug_print("CONDITION");
         while_loop.condition = my_parse_expression(script, 0);
@@ -200,7 +200,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
         debug_print("STATEMENT");
         if !parse_block_or_statement(script, while_loop.block, expect_semicolon)  return null;
-        while_loop.block.owner = while_loop;
+        while_loop.block.scope = while_loop;
             
         return while_loop;
         
@@ -273,7 +273,7 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         }
         
         for_loop.block = alloc_node(script, Node_Block);
-        for_loop.block.owner = for_loop;
+        for_loop.block.scope = for_loop;
         
         debug_print("STATEMENT");
         if !parse_block_or_statement(script, for_loop.block, expect_semicolon)  return null;

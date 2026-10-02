@@ -1272,15 +1272,15 @@ get_break_target :: (script: *Script, target_name: string, scope: *Node) -> *Nod
         if scope.node_type == {
           case Node_Block;
             block := scope.(*Node_Block);
-            if block.owner {
-                if block.owner.node_type == {
+            if block.scope {
+                if block.scope.node_type == {
                   case Node_For_Loop;
-                    for_loop := block.owner.(*Node_For_Loop);
+                    for_loop := block.scope.(*Node_For_Loop);
                     loop_iterator_name := ifx for_loop.it_decl then get_name(script, for_loop.it_decl);
                     if target_name == "" || (loop_iterator_name && target_name == loop_iterator_name)  return for_loop;
                     
                   case Node_While_Loop;
-                    while_loop := block.owner.(*Node_While_Loop);
+                    while_loop := block.scope.(*Node_While_Loop);
                     // TODO: named while loops
                     if target_name == ""  return while_loop;
                 }

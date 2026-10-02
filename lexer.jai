@@ -99,7 +99,6 @@ Token_Type :: enum {
     BREAK;
 }
 
-
 Token :: struct {
     type:       Token_Type;
     text:       string;

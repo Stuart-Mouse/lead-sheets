@@ -85,7 +85,6 @@ should_push_by_pointer :: (node: *Node) -> bool {
 // TODO: introduce various block types so that we can use block for struct literals and the like. 
 Node_Block :: struct {
     using #as node_base:    Node;
-    #overlay(scope) owner:  *Node;
     name:                   string;
     statements:             [] *Node;
     
