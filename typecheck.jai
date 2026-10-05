@@ -98,13 +98,6 @@ resolve_declaration_by_name :: (script: *Script, scope: *Node, name: string) -> 
         scope = scope.scope;
     }
     
-    // TODO: remove this and let user manage their own global declarations
-    for script.global_declarations {
-        if get_name(script, it) == name {
-            return it;
-        }
-    }
-    
     if script.resolve_global_declaration {
         return script.resolve_global_declaration(script, name);
     }

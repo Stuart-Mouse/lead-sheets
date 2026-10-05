@@ -84,8 +84,8 @@ Node_Block :: struct {
     name:                   string;
     statements:             [] *Node;
     
-    stack_frame_size:       int;
     stack_pointer:          *void;    // offset from stack frame
+    stack_frame_size:       u32;
 }
 
 // TODO: Maybe replace this with Node_Namespace or something like that
@@ -108,9 +108,9 @@ get_stack_space_in_block :: (script: *Script, block: *Node_Block, requested_size
     
     // pad to 8 byte alignment
     size := (requested_size + 7) & ~7;
-    block.stack_frame_size += size;
+    block.stack_frame_size += xx size;
     
-    return offset.(u64);
+    return offset;
 }
 
 Node_Cast :: struct {

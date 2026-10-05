@@ -247,23 +247,23 @@ main :: () {
         }
         imgui.End();
         
-        if imgui.Begin("Declarations") {
-            table_flags := imgui.TableFlags.BordersV | .BordersOuterH | .RowBg;
-            if imgui.BeginTable("###Declarations", 3, table_flags) {
-                imgui.TableSetupColumn("Name",  .NoHide);
-                imgui.TableSetupColumn("Value", .NoHide);
-                imgui.TableSetupColumn("Type",  .NoHide);
-                imgui.TableHeadersRow();
+        // if imgui.Begin("Declarations") {
+        //     table_flags := imgui.TableFlags.BordersV | .BordersOuterH | .RowBg;
+        //     if imgui.BeginTable("###Declarations", 3, table_flags) {
+        //         imgui.TableSetupColumn("Name",  .NoHide);
+        //         imgui.TableSetupColumn("Value", .NoHide);
+        //         imgui.TableSetupColumn("Type",  .NoHide);
+        //         imgui.TableHeadersRow();
                 
-                for script.global_declarations {
-                    decl_value := Any.{ it.value_type, it.value_pointer };
-                    TableTreeNodeAny(it.name, decl_value);
-                }
+        //         // for script.global_declarations {
+        //         //     decl_value := Any.{ it.value_type, it.value_pointer };
+        //         //     TableTreeNodeAny(it.name, decl_value);
+        //         // }
                 
-                imgui.EndTable();
-            }
-        }
-        imgui.End();
+        //         imgui.EndTable();
+        //     }
+        // }
+        // imgui.End();
         
         if imgui.Begin("External Variables") {
             table_flags := imgui.TableFlags.BordersV | .BordersOuterH | .RowBg;

@@ -8,17 +8,11 @@
     - [ ] Add "freed" nodes to a free list so that they can be reused.  
 */
 Script :: struct {
-    flags:                  Flags;
-    
     variables:              [..] External_Variable;
     procedures:             [..] External_Procedure;
     directives:             [..] Directive;
     type_table:             [..] Name_And_Type;
     operator_table:         [..] Operator_Info;
-    
-    // TODO: remove this and instead let user manage these, access through overriding interface_procedures.
-    // added for the sake of convenience and use in repl
-    global_declarations:    [..] *Node_Declaration;
     
     using interface_procedures: Script_Interface_Procedures;
     
@@ -37,17 +31,13 @@ Script :: struct {
     break_target:           *Node;
     break_result_storage:   *void;
     
-    
-    // timing_info: struct {
-    //     internal: Apollo_Time; // time spent in lead sheets procedures, not in user callbacks
-    //     time_spent_in_procedure_calls: Apollo_Time;
-    // }
-    
     // This can be set to override the allocator used to allocate nodes.
     // The primary use case for this is in evaluating expressions whose nodes we only need temporarily.
     user_allocator:         Allocator;
     user_data:              *void;
     
+    flags:                  Flags;
+
     Flags :: enum_flags {
         INITIALIZED;
         PARSED;
@@ -96,7 +86,6 @@ deinit_script :: (using script: *Script) {
     array_reset(*directives);
     array_reset(*type_table);
     array_reset(*operator_table);
-    array_reset(*global_declarations);
     fini(*pool);
     #if USING_DYNCALL {
         if script.dyncall_vm {
