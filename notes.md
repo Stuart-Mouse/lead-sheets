@@ -2327,6 +2327,10 @@ Commenting out code
     We could pretty easily allow commenting out code simply by flagging nodes as "disabled", which could be done with a single keypress
     This would be semantically more akin to a #if than commenting out code, because it would not necessarily affect that actual structure of the AST, only what is evaluated.
 
+Visualizing implicit conversions
+    We could render small annotations on operators where they require an implicit conversion
+    this is very easy to track and display when working with AST directly
+
 Would be nice to implement code alignment when neighboring statements have similar semantic structures
 the most simple case would be aligning declarations or assignments
 
@@ -2351,10 +2355,84 @@ We currently use a little ring buffer for tokens, but since we are now going to 
 Or perhaps, we should use a separate pool for allocating tokens, but in either case we want them to all be sequential in memory so that we can directly index to a desired token.
 Storing all tokens like this also means that we can do an arbitrary amount of lookahead or rollback on the token stream.
 
+Another problem: If we store the token buffer/stream on the lexer, then when we deinit/free the lexer any node that point at a token will be left holding invalid references.
+Perhaps if we just stipulate that the lexer should not be deinit'd until after the initial typecheck, then that is sufficient, though in that case we will also want to ensure that we remove or replace all references to source file tokens with some other kind of lexeme thing.
+Also, we probably want to hold on to source location information at runtime so that we can report that information in error logs.
+I suppose we can just have some flag that will determine whether we should preserve all source text and source tokens after the initial parse/typecheck, or whether to dump them.
+
 ## Trivia Tokens
 
 I think we should start emitting trivia (comments, basically) as their own tokens and just leave them in the token stream.
 We can know that trivia ought to be attached to a particular token simply by the fact that the trivia tokens directly precede some other token in the token stream.
 
+## Inferring Location from Token's position in stream
 
+In order to save some space on tokens storing locaiton information, we could emit separate tokens whose sole purpose is to denote a line break.
+Then we need only store the column/character position on each individual token, and can scan back through the token stream until we hit a line break token which will contain the line number.
+
+## Stop passing script to lexer procs
+
+I think this will basically just entail moving the operator table onto the lexer instead of the script itself
+if there are other things we need from the overall script context, then maybe we should just store a pointer to the script on the lexer itself
+
+
+another thing: use new scanner
+
+consider not storing lexer instance on script, but storing script on lexer instead
+    this makes more sense in a lot of ways, since we have to reinitialize the lexer every time we want to parse a new string or file
+    This will require that we pass the lexer to all of the parse_X procedures instead of the script itself, though, which is quite a change.
+        this is extra odd because those parse_x procedures are all defined as procedure pointers on the script, so there's now an additional indirection required just to get the procedure pointer we need.
+
+
+because of the need to push tokens into the token buffer which are not in themselves semanitcally meaningful, 
+we can't do the standard get/peek semantics in our new lexer.
+instead, we will need to have our lexer work a bit more like the new scanner, in that we can move a cursor forwards and backwards over our buffer
+the main difference here is that the buffer is not alreay filled, but we have to grow it and lex more tokens as we go
+
+But before I go even further, perhaps I need to think more about how eactly I want the higher-level lexemes to work,
+because this will actually determine whether we really need to store all tokens in a buffer, or just certain ones.
+
+
+we don't actually have any tokens for which we need to preserve the text of the token itself beyond parsing/typechecking
+The two main things we want to preserve from the text are the location info and comments/whitespace/formatting
+location info is relatively trivial and we can just store that on the node directly like we have been
+I would kind of like to move location info off of nodes though, because we really don't need this info on every node and we can completely dump the source info once we are past the initial typecheck
+
+For now I will suppose that we actually dont care much about whitespace and formatting, since I am now trying to move towards a direct ast editting paradigm
+so the remaining piece is comments
+since we need to attach comments directly to the ast, this limits the number of places where comments can validly be used
+
+for many different types of structural tokens such as parentheses, braces, brackets, commas, semicolons, dots, etc,
+    we don't realy need to store the tokens for these past parsing because the structure is implicitly preserved in the very shape of the generated ast 
+    and these tokens actually make up a substantial amount of the total number of tokens
+
+We also don't really need to hold on to operator tokens because we will have those strings in the operator table
+
+for identfiers we can just refer to the name on the declaration once resolved
+
+string literals we obviously do need to hold onto though, but we can just copy those into a pool
+
+
+
+
+Stuff to do after going back to working branch:
+
+use new scanner
+
+move lexer out of script, store script pointer on lexer
+rewrite parse procs to take lexer instead of script
+set error struct on lexer when lexer encounters error rather than returning an error token
+    this will allow use to format the error string, should clean up return value handling
+    must still propogate the error back to script (mayber just set the error on the script rather than the lexer?)
+
+add keyword token type, then disambiguate on token text
+    also use for true/false
+
+put serial number on nodes
+make node flags a u32
+
+store more compact source info on nodes, use source range rather than location
+store trivia in a more compact manner as well
+
+then figure out how to handle comments better so that we can attach them to AST directly (and in the future, edit them)
 
