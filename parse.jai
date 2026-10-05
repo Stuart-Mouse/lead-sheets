@@ -2,13 +2,14 @@
 parse_source_file :: (script: *Script, source: string, file_path := "") -> bool {
     if !(script.flags & .INITIALIZED)  return false;
     
-    init_lexer(script, source, location = .{ file_path, 1, 1 });
+    lexer: Lexer;
+    init_lexer(*lexer, script, source, location = .{ file_path, 1, 1 });
     
     root_block := alloc_node(script, Node_Block);
     script.ast_root      = root_block;
     script.current_scope = root_block;
     
-    statements, ok := parse_statements(script,, temp);
+    statements, ok := parse_statements(*lexer,, temp);
     if !ok  return false;
     root_block.statements = array_copy(statements,, get_allocator(script));
     
@@ -21,12 +22,12 @@ parse_source_file :: (script: *Script, source: string, file_path := "") -> bool 
     return true;
 }
 
-parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF) -> ([] *Node, bool) {
+parse_statements :: (lexer: *Lexer, break_token_type: Token_Type = .EOF) -> ([] *Node, bool) {
     statements: [..] *Node;
     while true {
-        if expect_token_type(script, break_token_type) break;
-        if expect_token_type(script, .EOF) break;
-        stmt := parse_statement(script);
+        if expect_token_type(lexer, break_token_type) break;
+        if expect_token_type(lexer, .EOF) break;
+        stmt := parse_statement(lexer);
         if stmt == null {
             array_reset(*statements);
             return .[], false;
@@ -38,71 +39,71 @@ parse_statements :: (using script: *Script, break_token_type: Token_Type = .EOF)
 
 // TODO: probably remove this as part of doing blocks as expressions
 // used in if/for/while, where we need to wrap single statements in a block implicitly.
-parse_block_or_statement :: (using script: *Script, block: *Node_Block, expect_semicolon := true) -> bool {
-    current_scope = block; 
+parse_block_or_statement :: (lexer: *Lexer, block: *Node_Block, expect_semicolon := true) -> bool {
+    lexer.script.current_scope = block; 
+    defer lexer.script.current_scope = block.scope; 
     
-    open_brace := peek_token(script);
+    open_brace := peek_token(lexer);
     if open_brace.type == .OPEN_BRACE {
-        get_token(script);
-        statements, ok := parse_statements(script, .CLOSE_BRACE);
+        get_token(lexer);
+        statements, ok := parse_statements(lexer, .CLOSE_BRACE);
         if !ok  return false;
-        block.statements = array_copy(statements,, get_allocator(script));
+        block.statements = array_copy(statements,, get_allocator(lexer.script));
         block.location = open_brace.location;
         block.trivia   = open_brace.trivia;
     } else {
-        statement := parse_statement(script, expect_semicolon);
+        statement := parse_statement(lexer, expect_semicolon);
         if statement == null {
-            if !has_error(script) {
-                set_parse_error(script, "Expected a statement.", loc = lexer.location);
+            if !has_error(lexer.script) {
+                set_parse_error(lexer.script, "Expected a statement.", loc = lexer.location);
             }
             return false;
         }
-        block.statements = NewArray(1, *Node,, get_allocator(script));
+        block.statements = NewArray(1, *Node,, get_allocator(lexer.script));
         block.statements[0] = statement;
         block.location = statement.location;
         block.flags |= .IMPLICIT;
     }
     
-    current_scope = block.scope; 
     return true;
 }
 
-parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
-    token := peek_token(script);
+parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
+    token := peek_token(lexer);
     if token.type == {
       case .BREAK;
         debug_print("BREAK"); debug_print_push_indent();
-        break_token := get_token(script);
-        _break := alloc_node(script, Node_Break, loc = break_token.location, trivia = break_token.trivia);
+        break_token := get_token(lexer);
+        _break := alloc_node(lexer.script, Node_Break, loc = break_token.location, trivia = break_token.trivia);
         
-        open_bracket_token := peek_token(script);
+        open_bracket_token := peek_token(lexer);
         if open_bracket_token.type == .OPEN_BRACKET {
-            get_token(script);
+            get_token(lexer);
             debug_print("TARGET"); debug_print_push_indent();
             
-            _break.target_identifier = xx my_parse_expression(script, 0);
+            _break.target_identifier = xx lexer.script.my_parse_expression(lexer, 0);
             if _break.target_identifier == null  return null;
             if _break.target_identifier.node_type != Node_Identifier {
-                set_parse_error(script, "Expected an identifier for break target.", loc = _break.target_identifier.location);
+                set_parse_error(lexer.script, "Expected an identifier for break target.", loc = _break.target_identifier.location);
                 return null;
             }
             
-            close_bracket_token := get_token(script);
+            close_bracket_token := get_token(lexer);
             if close_bracket_token.type != .CLOSE_BRACKET {
-                set_parse_error(script, "Expected a closing bracket after break target identifier, but saw % token '%'.", close_bracket_token.type, close_bracket_token.text, loc = close_bracket_token.location);
+                set_parse_error(lexer.script, "Expected a closing bracket after break target identifier, but saw % token '%'.", close_bracket_token.type, close_bracket_token.text, loc = close_bracket_token.location);
                 return null;
             }
         }
         
         debug_print("EXPRESSION"); debug_print_push_indent();
         
-        if !expect_token_type(script, .SEMICOLON) {
-            _break.value_expression = my_parse_expression(script, 0);
+        if !expect_token_type(lexer, .SEMICOLON) {
+            _break.value_expression = lexer.script.my_parse_expression(lexer, 0);
             if _break.value_expression == null  return null;
             
-            if !check_for_semicolon(script, _break.value_expression, expect_semicolon) {
-                token = peek_token(script);
-                set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = script.lexer.location);
+            if !check_for_semicolon(lexer, _break.value_expression, expect_semicolon) {
+                token = peek_token(lexer);
+                set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = lexer.location);
                 return null;
             }
         }
@@ -111,155 +112,155 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         
       case .IF; 
         debug_print("IF (STATEMENT)"); debug_print_push_indent();
-        if_token := get_token(script);
-        if_statement := alloc_node(script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
+        if_token := get_token(lexer);
+        if_statement := alloc_node(lexer.script, Node_If_Statement, loc = if_token.location, trivia = if_token.trivia);
         
-        current_scope = if_statement;  
-        defer current_scope = if_statement.scope;
+        lexer.script.current_scope = if_statement;  
+        defer lexer.script.current_scope = if_statement.scope;
         
-        if_statement.then_block = alloc_node(script, Node_Block);
+        if_statement.then_block = alloc_node(lexer.script, Node_Block);
         if_statement.then_block.scope = if_statement;
         
-        open_bracket_token := peek_token(script);
+        open_bracket_token := peek_token(lexer);
         if open_bracket_token.type == .OPEN_BRACKET {
-            get_token(script);
+            get_token(lexer);
             debug_print("SUBCONDITION"); debug_print_push_indent();
             
             // NOTE: the subcondition is considered to be inside the block's scope for the purposes of identifier resolution
             //       this will give the subcondition access to identifiers that are declared in the main condition
-            current_scope = if_statement.then_block;  
-            defer current_scope = if_statement;
+            lexer.script.current_scope = if_statement.then_block;  
+            defer lexer.script.current_scope = if_statement;
             
-            if_statement.subcondition = my_parse_expression(script, 0);
+            if_statement.subcondition = lexer.script.my_parse_expression(lexer, 0);
             if if_statement.subcondition == null  return null;
             
-            close_bracket_token := get_token(script);
+            close_bracket_token := get_token(lexer);
             if close_bracket_token.type != .CLOSE_BRACKET {
-                set_parse_error(script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
+                set_parse_error(lexer.script, "Expected a closing bracket for if statement subcondition.", loc = close_bracket_token.location);
                 return null;
             }
         }
         
         debug_print("CONDITION"); debug_print_push_indent();
-        if_statement.condition = parse_statement(script, false);
+        if_statement.condition = parse_statement(lexer, false);
         if if_statement.condition == null  return null;
         
         // For now, we have to restrict use of these statement-level constructs in the condition explicitly.
         if if_statement.condition.node_type == {
           case Node_If_Statement;
-            set_parse_error(script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            set_parse_error(lexer.script, "Another if statement cannot be used in an if statement condition.", loc = if_statement.condition.location);
             return null;
           case Node_While_Loop;
-            set_parse_error(script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            set_parse_error(lexer.script, "A while loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
             return null;
           case Node_For_Loop;
-            set_parse_error(script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
+            set_parse_error(lexer.script, "A for loop cannot be used in an if statement condition.", loc = if_statement.condition.location);
             return null;
         }
         
-        token = peek_token(script);
+        token = peek_token(lexer);
         if token.type == {
           case .THEN;
-            get_token(script);
+            get_token(lexer);
             #through;
             
           case;
             debug_print("THEN BLOCK"); debug_print_push_indent();
-            if !parse_block_or_statement(script, if_statement.then_block, false)  return null; 
+            if !parse_block_or_statement(lexer, if_statement.then_block, false)  return null; 
         }
         
-        token = peek_token(script);
+        token = peek_token(lexer);
         if token.type == .ELSE {
-            get_token(script);
+            get_token(lexer);
             debug_print("ELSE BLOCK"); debug_print_push_indent();
             
             if if_statement.else_block == null {
-                if_statement.else_block = alloc_node(script, Node_Block);
+                if_statement.else_block = alloc_node(lexer.script, Node_Block);
                 if_statement.else_block.scope = if_statement;
             }
             
-            if !parse_block_or_statement(script, if_statement.else_block, false)  return null; 
+            if !parse_block_or_statement(lexer, if_statement.else_block, false)  return null; 
         }
         
         return if_statement;
         
       case .WHILE;
         debug_print("WHILE LOOP"); debug_print_push_indent();
-        while_token := get_token(script);
-        while_loop := alloc_node(script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
+        while_token := get_token(lexer);
+        while_loop := alloc_node(lexer.script, Node_While_Loop, loc = while_token.location, trivia = while_token.trivia);
         
-        current_scope = while_loop;  
-        defer current_scope = while_loop.scope;
+        lexer.script.current_scope = while_loop;  
+        defer lexer.script.current_scope = while_loop.scope;
         
-        while_loop.block = alloc_node(script, Node_Block);
+        while_loop.block = alloc_node(lexer.script, Node_Block);
         while_loop.block.scope = while_loop;
         
         debug_print("CONDITION");
-        while_loop.condition = my_parse_expression(script, 0);
+        while_loop.condition = lexer.script.my_parse_expression(lexer, 0);
         if while_loop.condition == null  return null;
         
         debug_print("STATEMENT");
-        if !parse_block_or_statement(script, while_loop.block, expect_semicolon)  return null;
+        if !parse_block_or_statement(lexer, while_loop.block, expect_semicolon)  return null;
         while_loop.block.scope = while_loop;
             
         return while_loop;
         
       case .FOR;
         debug_print("FOR LOOP"); debug_print_push_indent();
-        for_token := get_token(script);
-        for_loop := alloc_node(script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
+        for_token := get_token(lexer);
+        for_loop := alloc_node(lexer.script, Node_For_Loop, loc = for_token.location, trivia = for_token.trivia);
         
-        current_scope = for_loop;  
-        defer current_scope = for_loop.scope;
+        lexer.script.current_scope = for_loop;  
+        defer lexer.script.current_scope = for_loop.scope;
         
         debug_print("CONTROL EXPRESSION");
         
         // NOTE: A preceding comma indicates that we are defining list of elements to iterate, but we may only have one element. 
         //       This is sort of a hack, but it's useful for now since I don't have array literals in the language yet.
-        preceding_comma := expect_token_type(script, .COMMA);
-        exprs := parse_comma_separated_expressions(script,, temp);
+        preceding_comma := expect_token_type(lexer, .COMMA);
+        exprs := parse_comma_separated_expressions(lexer,, temp);
         if !exprs  return null;
         
         if !preceding_comma {
-            if expect_token_type(script, .COLON) {
+            if expect_token_type(lexer, .COLON) {
                 if exprs.count == {
                   case 2;
                     identifier := exprs[1].(*Node_Identifier);
                     if identifier.node_type != Node_Identifier {
-                        set_parse_error(script, "Expected an identifier for declaration of `it`.", node = identifier);
+                        set_parse_error(lexer.script, "Expected an identifier for declaration of `it`.", node = identifier);
                         return null;
                     }
-                    for_loop.it_index_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                    for_loop.it_index_decl = alloc_node(lexer.script, Node_Declaration, loc = identifier.location);
                     for_loop.it_index_decl.left = identifier;
                     #through;
                     
                   case 1;
                     identifier := exprs[0].(*Node_Identifier);
                     if identifier.node_type != Node_Identifier {
-                        set_parse_error(script, "Expected an identifier for declaration of `it_index`.", node = identifier);
+                        set_parse_error(lexer.script, "Expected an identifier for declaration of `it_index`.", node = identifier);
                         return null;
                     }
-                    for_loop.it_decl = alloc_node(script, Node_Declaration, loc = identifier.location);
+                    for_loop.it_decl = alloc_node(lexer.script, Node_Declaration, loc = identifier.location);
                     for_loop.it_decl.left = identifier;
                     
                   case;
-                    set_parse_error(script, "Unexpected expressions in iterator declaration slot.", node = exprs[0]);
+                    set_parse_error(lexer.script, "Unexpected expressions in iterator declaration slot.", node = exprs[0]);
                     return null;
                 }
                 
                 // parse expressions again for right side of colon
-                preceding_comma = expect_token_type(script, .COMMA);
-                exprs = parse_comma_separated_expressions(script,, temp);
+                preceding_comma = expect_token_type(lexer, .COMMA);
+                exprs = parse_comma_separated_expressions(lexer,, temp);
                 if !exprs  return null;
             }
         }
         
         if !preceding_comma && exprs.count == 1 {
-            if expect_token_type(script, .SPREAD) {
+            if expect_token_type(lexer, .SPREAD) {
                 debug_print("CONTROL TYPE IS RANGE");
                 for_loop.control_type = .RANGE;
                 for_loop.range.lower  = exprs[0];
-                for_loop.range.upper  = my_parse_expression(script, 0);
+                for_loop.range.upper  = lexer.script.my_parse_expression(lexer, 0);
                 if !for_loop.range.upper  return null;
             } else {
                 debug_print("CONTROL TYPE IS ARRAY");
@@ -268,37 +269,37 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
             }
         } else {
             debug_print("CONTROL TYPE IS LIST");
-            for_loop.list = array_copy(exprs,, get_allocator(script));
+            for_loop.list = array_copy(exprs,, get_allocator(lexer.script));
             for_loop.control_type = .LIST;
         }
         
-        for_loop.block = alloc_node(script, Node_Block);
+        for_loop.block = alloc_node(lexer.script, Node_Block);
         for_loop.block.scope = for_loop;
         
         debug_print("STATEMENT");
-        if !parse_block_or_statement(script, for_loop.block, expect_semicolon)  return null;
+        if !parse_block_or_statement(lexer, for_loop.block, expect_semicolon)  return null;
         
         return for_loop;
     }
     
     debug_print("EXPRESSION");
     
-    expression := my_parse_expression(script, 0);
+    expression := lexer.script.my_parse_expression(lexer, 0);
     if expression == null  return null;
     
-    if expect_token_type(script, .COLON) {
+    if expect_token_type(lexer, .COLON) {
         debug_print("DECLARATION"); debug_print_push_indent();
         
-        declaration := alloc_node(script, Node_Declaration, loc = expression.location);
+        declaration := alloc_node(lexer.script, Node_Declaration, loc = expression.location);
         declaration.left = expression.(*Node_Identifier);
         
-        next_token := peek_token(script);
+        next_token := peek_token(lexer);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
             debug_print("WITH EXPLICIT TYPE");
-            declaration.type_expression = my_parse_expression(script, 999); // @Hack: This prevents us from parsing the `=` expected after the type expression.
+            declaration.type_expression = lexer.script.my_parse_expression(lexer, 999); // @Hack: This prevents us from parsing the `=` expected after the type expression.
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
-                set_parse_error(script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = expression.location);
+                set_parse_error(lexer.script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = expression.location);
                 return null;
             }
         }
@@ -306,20 +307,20 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         do_assignment := false;
         is_macro_declaration := false;
         
-        next_token = peek_token(script);
+        next_token = peek_token(lexer);
         if is_operator(next_token, "=") {
-            get_token(script);
+            get_token(lexer);
             do_assignment = true;
         }
         else if next_token.type == .COLON {
-            get_token(script);
+            get_token(lexer);
             do_assignment = true;
             is_macro_declaration = true;
         }
         
         if do_assignment {
             debug_print("WITH ASSIGNMENT");
-            declaration.init_expression = my_parse_expression(script, 0);
+            declaration.init_expression = lexer.script.my_parse_expression(lexer, 0);
             if declaration.init_expression == null  return null;
             if is_macro_declaration then declaration.flags |= .STATIC;
         }
@@ -327,20 +328,20 @@ parse_statement :: (using script: *Script, expect_semicolon := true) -> *Node {
         expression = declaration;
     }
     
-    if !check_for_semicolon(script, expression, expect_semicolon) {
-        token = peek_token(script);
-        set_parse_error(script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = script.lexer.location);
+    if !check_for_semicolon(lexer, expression, expect_semicolon) {
+        token = peek_token(lexer);
+        set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = lexer.location);
         return null;
     }
     
     return expression;
 }
 
-check_for_semicolon :: (script: *Script, expression: *Node, expect_semicolon := true) -> bool {
+check_for_semicolon :: (lexer: *Lexer, expression: *Node, expect_semicolon := true) -> bool {
     // Check for semicolon
-    token := peek_token(script);
+    token := peek_token(lexer);
     
-    if token.type == .SEMICOLON { get_token(script); return true; }
+    if token.type == .SEMICOLON { get_token(lexer); return true; }
     
     // We generally require semicolons to delimit statements, 
     // but since blocks are now treated as expressions, 
@@ -359,48 +360,48 @@ check_for_semicolon :: (script: *Script, expression: *Node, expect_semicolon := 
 }
 
 
-parse_leaf :: (using script: *Script) -> *Node {
+parse_leaf :: (lexer: *Lexer) -> *Node {
     debug_print_push_indent();
-    token := get_token(script);
+    token := get_token(lexer);
     
-    is_operator, operator_index := get_prefix_operator(script, token);
+    is_operator, operator_index := get_prefix_operator(lexer.script, token);
     if is_operator {
         debug_print("PREFIX OPERATOR (%)", token.text);
-        precedence := get_operator_info(script, operator_index).precedence;
-        left := my_parse_expression(script, precedence);
+        precedence := get_operator_info(lexer.script, operator_index).precedence;
+        left := lexer.script.my_parse_expression(lexer, precedence);
         if left == null  return null;
-        return make_operator(script, token, operator_index, left, null);
+        return make_operator(lexer.script, token, operator_index, left, null);
     }
     
     if token.type == {
       case .IFX; 
         debug_print("IF (EXPRESSION)"); debug_print_push_indent();
         if_token := token;
-        if_expression := alloc_node(script, Node_If_Expression, loc = if_token.location, trivia = if_token.trivia);
+        if_expression := alloc_node(lexer.script, Node_If_Expression, loc = if_token.location, trivia = if_token.trivia);
         
         debug_print("CONDITION"); debug_print_push_indent();
-        if_expression.condition = parse_expression(script, 0);
+        if_expression.condition = parse_expression(lexer, 0);
         if if_expression.condition == null  return null;
         
-        token = peek_token(script);
+        token = peek_token(lexer);
         if token.type == {
           case .ELSE; // no op
             
           case .THEN;
-            get_token(script);
+            get_token(lexer);
             #through;
             
           case;
             debug_print("THEN EXPRESSION"); debug_print_push_indent();
-            if_expression.then_expression = my_parse_expression(script, 0);
+            if_expression.then_expression = lexer.script.my_parse_expression(lexer, 0);
             if if_expression.then_expression == null  return null;
         }
         
-        token = peek_token(script);
+        token = peek_token(lexer);
         if token.type == .ELSE {
-            get_token(script);
+            get_token(lexer);
             debug_print("ELSE EXPRESSION"); debug_print_push_indent();
-            if_expression.else_expression = my_parse_expression(script, 0);
+            if_expression.else_expression = lexer.script.my_parse_expression(lexer, 0);
             if if_expression.else_expression == null  return null;
         }
         
@@ -408,115 +409,115 @@ parse_leaf :: (using script: *Script) -> *Node {
         
       case .DOT;
         debug_print("UNARY DOT");
-        token_after_dot := get_token(script);
+        token_after_dot := get_token(lexer);
         if token_after_dot.type == .OPEN_BRACE {
-            struct_contents, ok := parse_contents_of_struct_literal(script);
+            struct_contents, ok := parse_contents_of_struct_literal(lexer);
             if !ok  return null;
-            literal := make_struct_literal(script, token_after_dot, struct_contents);
-            return make_dot(script, token, null, literal);
+            literal := make_struct_literal(lexer.script, token_after_dot, struct_contents);
+            return make_dot(lexer.script, token, null, literal);
         }
         else if token_after_dot.type == .IDENTIFIER {
             // For now we will make a dot node since there's already logic there for everything we gotta do to resolve the identifier
             // an alternative method here would be to flag the identifier as implicitly namespaced or something
-            identifier := make_identifier(script, token_after_dot);
-            return make_dot(script, token, null, identifier);
+            identifier := make_identifier(lexer.script, token_after_dot);
+            return make_dot(lexer.script, token, null, identifier);
         }
-        else set_parse_error(script, "Unexpected % token '%' after unary dot.", token_after_dot.type, token_after_dot.text, loc = token_after_dot.location);
+        else set_parse_error(lexer.script, "Unexpected % token '%' after unary dot.", token_after_dot.type, token_after_dot.text, loc = token_after_dot.location);
         
       case .OPEN_BRACE;
         debug_print("BLOCK"); debug_print_push_indent();
         open_brace := token;
-        block := alloc_node(script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
-        current_scope = block; 
+        block := alloc_node(lexer.script, Node_Block, loc = open_brace.location, trivia = open_brace.trivia);
+        lexer.script.current_scope = block; 
         
-        statements, ok := parse_statements(script, .CLOSE_BRACE);
+        statements, ok := parse_statements(lexer, .CLOSE_BRACE);
         if !ok  return null;
-        block.statements = array_copy(statements,, get_allocator(script));
+        block.statements = array_copy(statements,, get_allocator(lexer.script));
         
-        current_scope = block.scope; 
+        lexer.script.current_scope = block.scope; 
         return block;
         
       case .OPEN_PAREN;
         open_paren_location := token.location;
         
-        expression := my_parse_expression(script, 0);
+        expression := lexer.script.my_parse_expression(lexer, 0);
         if expression == null  return null;
         expression.flags |= .PARENTHESIZED;
         
-        close_paren_token := get_token(script);
+        close_paren_token := get_token(lexer);
         if close_paren_token.type != .CLOSE_PAREN {
-            set_parse_error(script, "Expected a closing paren for open paren at %.", open_paren_location, loc = close_paren_token.location);
+            set_parse_error(lexer.script, "Expected a closing paren for open paren at %.", open_paren_location, loc = close_paren_token.location);
             return null;
         }
         return expression;
         
       case .TRUE;
         debug_print("TRUE");
-        literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
+        literal := alloc_node(lexer.script, Node_Literal, loc = token.location, trivia = token.trivia);
         literal.literal_type = .BOOLEAN;
         literal.number       = to_any_number(true);
         return literal;
         
       case .FALSE;
         debug_print("FALSE");
-        literal := alloc_node(script, Node_Literal, loc = token.location, trivia = token.trivia);
+        literal := alloc_node(lexer.script, Node_Literal, loc = token.location, trivia = token.trivia);
         literal.literal_type = .BOOLEAN;
         literal.number       = to_any_number(false);
         return literal;
         
       case .NUMBER;
         debug_print("NUMBER (%)", token.text);
-        return make_number_literal(script, token);
+        return make_number_literal(lexer.script, token);
         
       case .STRING;
         debug_print("STRING (\"%\")", token.text);
-        return make_string_literal(script, token);
+        return make_string_literal(lexer.script, token);
         
       case .DIRECTIVE;
         debug_print("DIRECTIVE"); debug_print_push_indent();
-        directive := alloc_node(script, Node_Directive, loc = token.location, trivia = token.trivia);
+        directive := alloc_node(lexer.script, Node_Directive, loc = token.location, trivia = token.trivia);
         directive.name = token.text;
         
         directive.directive_index = -1;
-        for script.directives {
+        for lexer.script.directives {
             if it.name == directive.name {
                 directive.directive_index = it_index;
             }
         }
         if directive.directive_index == -1 {
-            set_parse_error(script, "Unable to resolve directive '%'\n", directive.name, loc = directive.location);
+            set_parse_error(lexer.script, "Unable to resolve directive '%'\n", directive.name, loc = directive.location);
             return null;
         }
         
-        if expect_token_type(script, .OPEN_PAREN) {
-            if !expect_token_type(script, .CLOSE_PAREN) {
-                expressions := parse_comma_separated_expressions(script,, temp);
+        if expect_token_type(lexer, .OPEN_PAREN) {
+            if !expect_token_type(lexer, .CLOSE_PAREN) {
+                expressions := parse_comma_separated_expressions(lexer,, temp);
                 if !expressions  return null;
-                directive.arguments = array_copy(expressions,, get_allocator(script));
+                directive.arguments = array_copy(expressions,, get_allocator(lexer.script));
                 
-                close_paren_token := get_token(script);
+                close_paren_token := get_token(lexer);
                 if close_paren_token.type != .CLOSE_PAREN {
-                    set_parse_error(script, "Expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.text, loc = close_paren_token.location);
+                    set_parse_error(lexer.script, "Expected a closing paren after arguments of directive. Instead we saw %\n", close_paren_token.text, loc = close_paren_token.location);
                     return null;
                 }
             }
         }
         
-        if !evaluate_directive(script, directive, .PARSE) {
-            set_parse_error(script, "Failed while trying to execute a directive during parsing.", loc = token.location);
+        if !evaluate_directive(lexer.script, directive, .PARSE) {
+            set_parse_error(lexer.script, "Failed while trying to execute a directive during parsing.", loc = token.location);
             return null;
         }
         return directive;
         
       case .IDENTIFIER;
-        if peek_token(script, 0).type == .COLON 
-        && peek_token(script, 1).type == .OPEN_BRACE {
+        if peek_token(lexer, 0).type == .COLON 
+        && peek_token(lexer, 1).type == .OPEN_BRACE {
             name_token  := token;
-            colon_token := get_token(script);
+            colon_token := get_token(lexer);
             
             debug_print("NAMED BLOCK (%)", name_token.text); debug_print_push_indent();
             
-            block := my_parse_leaf(script).(*Node_Block);
+            block := lexer.script.my_parse_leaf(lexer).(*Node_Block);
             if block == null  return null;
             assert(block.node_type == Node_Block);
             
@@ -528,26 +529,22 @@ parse_leaf :: (using script: *Script) -> *Node {
         }
         
         debug_print("IDENTIFIER (%)", token.text);
-        return make_identifier(script, token);
+        return make_identifier(lexer.script, token);
     }
     
-    set_parse_error(script, "Unexpected token encountered in parse_leaf: '%'", token.text, loc = token.location);
+    set_parse_error(lexer.script, "Unexpected token encountered in parse_leaf: '%'", token.text, loc = token.location);
     return null;
 }
 
 // will parse a single string as a statement, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
 parse_statement_string :: (script: *Script, statement: string, expect_eof := true) -> *Node {
-    // just in case, we will backup current lexer and just attach a temporary one to the script
-    prev_lexer := script.lexer;
-    defer script.lexer = prev_lexer;
+    lexer: Lexer;
+    init_lexer(*lexer, script, statement);
+    node := parse_statement(*lexer, expect_semicolon = false);
     
-    // we have to reinit lexer for every statement
-    init_lexer(script, statement);
-    node := parse_statement(script, expect_semicolon = false);
-    
-    if expect_eof && !expect_token_type(script, .EOF) {
-        token := get_token(script);
+    if expect_eof && !expect_token_type(*lexer, .EOF) {
+        token := get_token(*lexer);
         set_parse_error(script, "Unexpected % token '%'.", token.type, token.text, loc = token.location);
         return null;
     }
@@ -557,27 +554,22 @@ parse_statement_string :: (script: *Script, statement: string, expect_eof := tru
 // will parse a single string as an expression, checking that we end on EOF token
 // this is useful for use cases where we are just using the script as a context for evaluating 
 parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -> *Node {
-    // just in case, we will backup current lexer and just attach a temporary one to the script
-    prev_lexer := script.lexer;
-    defer script.lexer = prev_lexer;
+    lexer: Lexer;
+    init_lexer(*lexer, script, expr);
+    expression := script.my_parse_expression(*lexer, 0);
     
-    // we have to reinit lexer for every expression
-    // TODO: set the lexer source location based on dom node?
-    init_lexer(script, expr);
-    expression := script.my_parse_expression(script, 0);
-    
-    if expect_eof && !expect_token_type(script, .EOF)  return null;
+    if expect_eof && !expect_token_type(*lexer, .EOF)  return null;
     return expression;
 }
 
-parse_expression :: (using script: *Script, min_prec: int) -> *Node {
-    left := my_parse_leaf(script);
+parse_expression :: (lexer: *Lexer, min_prec: int) -> *Node {
+    left := lexer.script.my_parse_leaf(lexer);
     if left == null  return null;
     
     // going iteratively, precedence can only decrease
     while true {
         // but going only recursively, precedence will only increase
-        node := my_parse_binary(script, left, min_prec);
+        node := lexer.script.my_parse_binary(lexer, left, min_prec);
         if node == null  return null;
         if node == left  break;
         left = node;
@@ -586,118 +578,118 @@ parse_expression :: (using script: *Script, min_prec: int) -> *Node {
     return left;
 }
 
-parse_comma_separated_expressions :: (using script: *Script) -> [] *Node {
+parse_comma_separated_expressions :: (lexer: *Lexer) -> [] *Node {
     expressions: [..] *Node;
     while true {
-        expr := script.my_parse_expression(script, 0);
+        expr := lexer.script.my_parse_expression(lexer, 0);
         if expr == null {
             array_reset(*expressions);
             return .[];
         }
         array_add(*expressions, expr);
-        if !expect_token_type(script, .COMMA)  break;
+        if !expect_token_type(lexer, .COMMA)  break;
     }
     return expressions;
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_binary :: (using script: *Script, left: *Node, min_prec: int) -> *Node {
-    token := peek_token(script);
+parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
+    token := peek_token(lexer);
     
     // In addition to normal binary operators, we have a few binary-operator-like constructs that have essentially infinite operator precedence.
     // These are open parenthesis for procedure calls, dot for struct member access and cast, and open bracket for array indexing.
     if token.type == {
       case .OPEN_PAREN;
-        get_token(script);
+        get_token(lexer);
         debug_print("PROCEDURE ARGUMENTS LIST");
-        arg_exprs, ok := parse_procedure_arguments(script);
+        arg_exprs, ok := parse_procedure_arguments(lexer);
         if !ok  return null;
-        return make_procedure_call(script, token, left, arg_exprs);
+        return make_procedure_call(lexer.script, token, left, arg_exprs);
         
         
       case .DOT;
-        dot_token := get_token(script);
+        dot_token := get_token(lexer);
         debug_print("BINARY DOT");
         
-        token_after_dot := get_token(script);
+        token_after_dot := get_token(lexer);
         if token_after_dot.type == {
           case .OPEN_PAREN;
             debug_print("CAST");
-            type_expr := my_parse_expression(script, 0);
-            close_paren := get_token(script);
+            type_expr := lexer.script.my_parse_expression(lexer, 0);
+            close_paren := get_token(lexer);
             if close_paren.type != .CLOSE_PAREN {
-                set_parse_error(script, "Unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.type, loc = close_paren.location);
+                set_parse_error(lexer.script, "Unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.type, loc = close_paren.location);
                 return null;
             }
-            return make_cast(script, dot_token, left, type_expr);
+            return make_cast(lexer.script, dot_token, left, type_expr);
             
           case .IDENTIFIER;
-            identifier := make_identifier(script, token_after_dot);
-            return make_dot(script, dot_token, left, identifier);
+            identifier := make_identifier(lexer.script, token_after_dot);
+            return make_dot(lexer.script, dot_token, left, identifier);
             
           case .OPEN_BRACE;
-            struct_contents, ok := parse_contents_of_struct_literal(script);
+            struct_contents, ok := parse_contents_of_struct_literal(lexer);
             if !ok {
-                set_parse_error(script, "Failed to parse contents of struct literal.", loc = token.location);
+                set_parse_error(lexer.script, "Failed to parse contents of struct literal.", loc = token.location);
                 return null;
             }
-            literal := make_struct_literal(script, token_after_dot, struct_contents);
-            return make_dot(script, dot_token, left, literal);
+            literal := make_struct_literal(lexer.script, token_after_dot, struct_contents);
+            return make_dot(lexer.script, dot_token, left, literal);
         }
         
-        set_parse_error(script, "Unexpected % token '%' after dot.", token.type, token.text, loc = token.location);
+        set_parse_error(lexer.script, "Unexpected % token '%' after dot.", token.type, token.text, loc = token.location);
         return null;
         
         
       case .ARROW;
-        arrow_token := get_token(script);
+        arrow_token := get_token(lexer);
         
-        token_after_arrow := get_token(script);
+        token_after_arrow := get_token(lexer);
         if token_after_arrow.type == {
           case .IDENTIFIER;
-            identifier := make_identifier(script, token_after_arrow);
-            return make_arrow(script, arrow_token, left, identifier);
+            identifier := make_identifier(lexer.script, token_after_arrow);
+            return make_arrow(lexer.script, arrow_token, left, identifier);
         }
         
-        set_parse_error(script, "Unexpected % token '%' after arrow.", token.type, token.text, loc = token.location);
+        set_parse_error(lexer.script, "Unexpected % token '%' after arrow.", token.type, token.text, loc = token.location);
         return null;
         
         
       case .OPEN_BRACKET;
-        open_bracket_token := get_token(script);
+        open_bracket_token := get_token(lexer);
         debug_print("ARRAY SUBSCRIPT");
         
-        indexing_expr := my_parse_expression(script, 0);
+        indexing_expr := lexer.script.my_parse_expression(lexer, 0);
         if indexing_expr == null  return null;
-        if !expect_token_type(script, .CLOSE_BRACKET)  return null;
+        if !expect_token_type(lexer, .CLOSE_BRACKET)  return null;
         
-        return make_subscript(script, open_bracket_token, left, indexing_expr);
+        return make_subscript(lexer.script, open_bracket_token, left, indexing_expr);
     }
     
     // We only consume the binary operator here if it is of a higher precedence than the previous binary operator.
     // If we hit a binary operator but its precedence is too low, we return left back to caller.
-    is_operator, operator_index := get_binary_operator(script, token);
+    is_operator, operator_index := get_binary_operator(lexer.script, token);
     if is_operator {
-        _operator := get_operator_info(script, operator_index);
+        _operator := get_operator_info(lexer.script, operator_index);
         if _operator.precedence <= min_prec  return left;
         
         debug_print("BINARY OPERATOR: %", _operator.token);
         
-        operator_token := get_token(script);
-        right := my_parse_expression(script, _operator.precedence);
+        operator_token := get_token(lexer);
+        right := lexer.script.my_parse_expression(lexer, _operator.precedence);
         if right == null  return null;
         
-        return make_operator(script, operator_token, operator_index, left, right);
+        return make_operator(lexer.script, operator_token, operator_index, left, right);
     }
     
     return left;
 }
 
 // TODO: eventually, we will just want to call parse_block and then we can check if the contents of the block are valid for a struct literal during typechecking
-parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := Token_Type.CLOSE_BRACE) -> ([] *Node, bool) {
-    if expect_token_type(script, scope_end_token)  return .[], true;
+parse_contents_of_struct_literal :: (lexer: *Lexer, scope_end_token := Token_Type.CLOSE_BRACE) -> ([] *Node, bool) {
+    if expect_token_type(lexer, scope_end_token)  return .[], true;
     
-    expressions := parse_comma_separated_expressions(script,, temp);
+    expressions := parse_comma_separated_expressions(lexer,, temp);
     if !expressions  return .[], false;
     
     expression_is_binary_assignment :: (node: *Node) -> bool {
@@ -708,7 +700,7 @@ parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := T
     if using_assignment_syntax {
         for expressions {
             if !expression_is_binary_assignment(it) {
-                set_parse_error(script, "Expected an assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
+                set_parse_error(lexer.script, "Expected an assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
                 return .[], false;
             }
         }
@@ -716,32 +708,32 @@ parse_contents_of_struct_literal :: (using script: *Script, scope_end_token := T
         // TODO: More thorough checks could be done here to make sure that the expressions in the struct literal are not binary assignments with +=, -=, etc.
         for expressions {
             if expression_is_binary_assignment(it) {
-                set_parse_error(script, "Unexpected assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
+                set_parse_error(lexer.script, "Unexpected assignment expression. Explicit member assignments cannot be mixed with simple comma-separated expressions in a struct literal.", loc = it.location);
                 return .[], false;
             }
         }
     }
     
-    scope_end := get_token(script);
+    scope_end := get_token(lexer);
     if scope_end.type != scope_end_token {
-        set_parse_error(script, "Expected a closing brace after initialization expressions of struct literal. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
+        set_parse_error(lexer.script, "Expected a closing brace after initialization expressions of struct literal. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
         return .[], false;
     }
     
-    return array_copy(expressions,, get_allocator(script)), true;
+    return array_copy(expressions,, get_allocator(lexer.script)), true;
 }
 
-parse_procedure_arguments :: (using script: *Script, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool) {
-    if expect_token_type(script, scope_end_token)  return .[], true;
+parse_procedure_arguments :: (lexer: *Lexer, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool) {
+    if expect_token_type(lexer, scope_end_token)  return .[], true;
     
-    expressions := parse_comma_separated_expressions(script,, temp);
+    expressions := parse_comma_separated_expressions(lexer,, temp);
     if !expressions  return .[], false;
     
-    scope_end := get_token(script);
+    scope_end := get_token(lexer);
     if scope_end.type != scope_end_token {
-        set_parse_error(script, "Expected a closing paren after arguments of procedure call. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
+        set_parse_error(lexer.script, "Expected a closing paren after arguments of procedure call. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
         return .[], false;
     }
     
-    return array_copy(expressions,, get_allocator(script)), true;
+    return array_copy(expressions,, get_allocator(lexer.script)), true;
 }

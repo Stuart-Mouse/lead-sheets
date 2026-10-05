@@ -2417,22 +2417,22 @@ string literals we obviously do need to hold onto though, but we can just copy t
 
 Stuff to do after going back to working branch:
 
-use new scanner
+- [X] use new scanner
 
-move lexer out of script, store script pointer on lexer
-rewrite parse procs to take lexer instead of script
-set error struct on lexer when lexer encounters error rather than returning an error token
-    this will allow use to format the error string, should clean up return value handling
-    must still propogate the error back to script (mayber just set the error on the script rather than the lexer?)
+- [X] move lexer out of script, store script pointer on lexer
+- [X] rewrite parse procs to take lexer instead of script
+- [ ] set error struct on lexer when lexer encounters error rather than returning an error token
+    - this will allow use to format the error string, should clean up return value handling
+    - must still propogate the error back to script (mayber just set the error on the script rather than the lexer?)
 
-add keyword token type, then disambiguate on token text
-    also use for true/false
+- [ ] add keyword token type, then disambiguate on token text
+    - also use for true/false
 
-put serial number on nodes
-make node flags a u32
+- [ ] put serial number on nodes
+- [X] make node flags a u32
 
-store more compact source info on nodes, use source range rather than location
-store trivia in a more compact manner as well
+- [ ] store more compact source info on nodes, use source range rather than location
+- [ ] store trivia in a more compact manner as well
 
 then figure out how to handle comments better so that we can attach them to AST directly (and in the future, edit them)
 

@@ -42,26 +42,10 @@ Token_Type :: enum {
     COMMA           :: #char ",";
     COLON           :: #char ":";
     SEMICOLON       :: #char ";";
-    // ASSIGN_EQUAL    :: #char "=";
-    
-    // BINARY_OR       :: #char "|";
-    // BINARY_AND      :: #char "&";
-    // BINARY_NOT      :: #char "~";
-    // BINARY_XOR      :: #char "^";
-    
-    // LESS_THAN       :: #char "<";
-    // GREATER_THAN    :: #char ">";
-    
-    // ADD             :: #char "+";
-    // SUB             :: #char "-";
-    // MUL             :: #char "*";
-    // DIV             :: #char "/";
-    
-    // DOLLAR          :: #char "$";
-    
-    
     
     IDENTIFIER      :: 256;
+    DIRECTIVE;
+    // KEYWORD;
     
     TRUE;
     FALSE;
@@ -71,24 +55,8 @@ Token_Type :: enum {
     
     OPERATOR;
     
-    // COMPARE_EQUAL;
-    // LESS_THAN_OR_EQUAL_TO;
-    // GREATER_THAN_OR_EQUAL_TO;
-    
-    // LOGICAL_AND;
-    // LOGICAL_OR;
-    
-    // PLUS_EQUALS;
-    // MINUS_EQUALS;
-    // AND_EQUALS;
-    // OR_EQUALS;
-    // XOR_EQUALS;
-    
-    // DOUBLE_QUESTION_MARK;
-    
     ARROW;      // ->
-    SPREAD;
-    DIRECTIVE;
+    SPREAD;     // .. 
     
     IF;
     IFX;
@@ -121,7 +89,9 @@ Token :: struct {
 Lexer :: struct {
     using #as scanner: Scanner;
     
-    lexer_proc := lex_next_token;
+    script: *Script;
+    
+    lex_next_token := default_lex_next_token;
     
     TOKEN_BUFFER_COUNT :: 4;
     token_buffer: [TOKEN_BUFFER_COUNT] Token; // ring buffer, indexed modulo TOKEN_BUFFER_COUNT
@@ -129,14 +99,16 @@ Lexer :: struct {
 }
 
 
-init_lexer :: (using script: *Script, file := "", location := Source_Code_Location.{ "", 1, 1 }) {
-    lexer = .{};
-    lexer.file = file;
+init_lexer :: (lexer: *Lexer, script: *Script, file := "", location := Source_Code_Location.{ "", 1, 1 }) {
+    lexer.* = .{};
+    lexer.script = script;
+    
+    init_scanner(*lexer.scanner, file);
     lexer.location = location;
     
     // lex first few tokens into token buffer
     for 0..lexer.TOKEN_BUFFER_COUNT-1 {
-        lexer.token_buffer[it] = lex_next_token(script);
+        lexer.token_buffer[it] = lexer.lex_next_token(lexer);
         if lexer.token_buffer[it].type == .ERROR
         || lexer.token_buffer[it].type == .EOF {
             break;
@@ -145,76 +117,71 @@ init_lexer :: (using script: *Script, file := "", location := Source_Code_Locati
 }
 
 // consumes a token
-get_token :: (script: *Script) -> Token {
-    using script.lexer;
-    
+get_token :: (using lexer: *Lexer) -> Token {
     return_token := token_buffer[next_token_index];
     if return_token.type == .ERROR 
     || return_token.type == .EOF {
         return return_token;
     }
     
-    token_buffer[next_token_index] = lexer_proc(script);
+    token_buffer[next_token_index] = lex_next_token(lexer);
     next_token_index = (next_token_index + 1) % TOKEN_BUFFER_COUNT;
     
     return return_token;
 }
 
 // peeks next_token, but does not consume it
-peek_token :: (script: *Script, peek_index := 0) -> Token {
-    using script.lexer;
+peek_token :: (using lexer: *Lexer, peek_index := 0) -> Token {
     assert(peek_index >= 0 && peek_index < TOKEN_BUFFER_COUNT-1);
     index := (next_token_index + peek_index) % TOKEN_BUFFER_COUNT;
     return token_buffer[index];
 }
 
 // consumes token if it was expected type, else it was just peeked
-expect_token_type :: (script: *Script, type: Token_Type) -> bool {
-    token := peek_token(script);
+expect_token_type :: (using lexer: *Lexer, type: Token_Type) -> bool {
+    token := peek_token(lexer);
     if token.type == type {
-        get_token(script);
+        get_token(lexer);
         return true;
     }
     return false;
 }
 
-lex_next_token :: (script: *Script) -> Token {
-    using script.lexer;
-    
-    trivia, ok := skip_whitespace_and_comments(*script.lexer);
-    if !ok    return make_error_token(location, .UNEXPECTED_EOF, message = "in the middle of a comment");
-    if !file  return .{ type = .EOF, location = location, trivia = trivia };
+default_lex_next_token :: (using lexer: *Lexer) -> Token {
+    trivia, ok := skip_whitespace_and_comments(lexer);
+    if !ok            return make_error_token(location, .UNEXPECTED_EOF, message = "in the middle of a comment");
+    if is_eof(lexer)  return .{ type = .EOF, location = location, trivia = trivia };
     
     // we grab cursor location at top so that it points to start of token
-    token_location := script.lexer.location;
+    token_location := lexer.location;
     
     // convenience macro for short tokens
     make_token :: (type: Token_Type, len: int) -> Token #expand {
-        defer advance(*script.lexer, len);
+        defer advance(lexer, len);
         return .{
             type       = type,
-            text       = slice(file, 0, len),
+            text       = slice(remaining_as_string(lexer), 0, len),
             location   = token_location,
             trivia     = trivia, 
         };
     }
     
     // 2-character tokens (excluding operators)
-    if file.count >= 2 {
-        if slice(file, 0, 2) == {
+    if remaining_as_string(lexer).count >= 2 {
+        if slice(remaining_as_string(lexer), 0, 2) == {
           case ".."; return make_token(.SPREAD, 2);
           case "->"; return make_token(.ARROW, 2);
         }
     }
     
     // single-character tokens (excluding operators)
-    if is_any(file[0], "()[]{},.:;?") {
-        return make_token(xx file[0], 1);
+    if is_any(lexer.cursor.*, "()[]{},.:;?") {
+        return make_token(xx lexer.cursor.*, 1);
     }
     
     // NOTE: this is being done before operators, presumably because a number may start with a minus sign
     //       this is probably fine, but be aware of this while doing operator refactoring
-    token_text := try_lex_number(*script.lexer);
+    token_text := default_try_lex_number(lexer);
     if token_text  return .{ .NUMBER, token_text, token_location, trivia, .NO_ERROR };
     
     // operator tokens
@@ -222,7 +189,7 @@ lex_next_token :: (script: *Script) -> Token {
         best_match, best_match_len := -1;
         for script.operator_table {
             if it.token.count > best_match_len 
-            && begins_with(file, it.token) {
+            && begins_with(lexer, it.token) {
                 best_match = it_index;
                 best_match_len = it.token.count;
             }
@@ -233,7 +200,7 @@ lex_next_token :: (script: *Script) -> Token {
         }
     }
     
-    token_text = try_lex_identifier(*script.lexer);
+    token_text = try_lex_identifier(lexer);
     if token_text {
         type := Token_Type.IDENTIFIER;
         if token_text == {
@@ -252,36 +219,36 @@ lex_next_token :: (script: *Script) -> Token {
     
     // TODO: perhaps this should not be a token in itself, and should be handled on a higher level by the parser
     // parse a directive
-    if file[0] == #char "#" {
-        advance(*script.lexer);
-        token_text = try_lex_identifier(*script.lexer);
+    if get_next_byte(lexer) == #char "#" {
+        advance(lexer);
+        token_text = try_lex_identifier(lexer);
         if token_text  return .{ .DIRECTIVE, token_text, token_location, trivia, .NO_ERROR };
-        return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{1,file.data}, "while attempting to parse a directive name.");
+        return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{ 1, lexer.cursor }, "while attempting to parse a directive name.");
     }
     
     // parse string or backticked identifier
-    if file[0] == #char "\"" || file[0] == #char "`" { 
-        quote_char := file[0];
+    if get_next_byte(lexer) == #char "\"" || get_next_byte(lexer) == #char "`" { 
+        quote_char := get_next_byte(lexer);
         
-        if !advance(*script.lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
-        token_text := string.{ 0, file.data };
+        if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+        token_text := string.{ 0, lexer.cursor };
         
-        while file[0] != quote_char {
-            if file[0] == #char "\\" {
-                _, ok := parse_escape_sequence(*script.lexer);
+        while get_next_byte(lexer) != quote_char {
+            if get_next_byte(lexer) == #char "\\" {
+                _, ok := parse_escape_sequence(lexer);
                 if !ok  return make_error_token(token_location, .UNEXPECTED_CHARACTER, "invalid escape sequence encountered while parsing string");
             } else {
-                if !advance(*script.lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+                if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
             }
         }
         
-        token_text.count = script.lexer.file.data - token_text.data;
-        advance(*script.lexer);
+        token_text.count = lexer.cursor - token_text.data;
+        advance(lexer);
         is_identifier := quote_char == #char "`";
         return .{ ifx is_identifier then .IDENTIFIER else .STRING, token_text, token_location, trivia, .NO_ERROR };
     }
     
-    return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{1,file.data});
+    return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{ 1, lexer.cursor });
 }
 
 // NOTE: we use the trivia string to attach some additional context to error tokens
@@ -295,11 +262,11 @@ continues_identifier :: is_alnum;
 
 // returns true if we even start to parse an identifier, not only on success
 try_lex_identifier :: (using lexer: *Lexer) -> string {
-    if begins_identifier(file[0]) {
-        str := string.{ 1, *file[0] };
+    if begins_identifier(get_next_byte(lexer)) {
+        str := string.{ 1, lexer.cursor };
         advance(lexer);
         
-        while file && continues_identifier(file[0]) {
+        while continues_identifier(get_next_byte(lexer)) {
             str.count += 1;
             advance(lexer);
         }
@@ -315,51 +282,27 @@ is_legal_identifier :: (str: string) -> bool {
     return true;
 }
 
-tokenize :: (file: string) -> ([..] Token, bool) {
-    lexer: Lexer;
-    init_lexer(*lexer, file);
-    
-    success := true;
-    tokens: [..] Token;
-    
-    defer if !success {
-        array_free(tokens);
-        memset(*tokens, 0, size_of(type_of(tokens)));
-    }
-    
-    while lexer.file {
-        token := get_token(lexer);
-        array_add(*tokens, token);
-        if token.type == {
-            case .EOF;    break;
-            case .ERROR;  success = false; break;
-        }
-    }
-    
-    return tokens, success;
-}
-
 // cycles between skipping whitespace and comments until next character is neither
 skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bool) {
-    if file.count == 0  return "", true;
+    if is_eof(lexer)  return "", true;
     
-    trivia := string.{ 0, file.data };
+    trivia := string.{ 0, lexer.cursor };
     ok := true;
     
-    while loop := file.count > 0 {
-        while is_whitespace(file[0]) {
+    while loop := !is_eof(lexer) {
+        while is_whitespace(get_next_byte(lexer)) {
             if !advance(lexer)  break;
         }
-        if begins_with(file, "//") {
+        if begins_with(lexer, "//") {
             advance(lexer, 2);
-            while file[0] != #char "\n" {
+            while get_next_byte(lexer) != #char "\n" {
                 if !advance(lexer)  break loop;
             }
             advance(lexer);
         }
-        else if begins_with(file, "/*") {
+        else if begins_with(lexer, "/*") {
             advance(lexer, 2);
-            while !begins_with(file, "*/") {
+            while !begins_with(lexer, "*/") {
                 if !advance(lexer) {
                     ok = false;
                     break loop; 
@@ -370,7 +313,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bo
         else break;
     }
     
-    trivia.count = file.data - trivia.data;
+    trivia.count = lexer.cursor - trivia.data;
     return trivia, ok;
 }
 

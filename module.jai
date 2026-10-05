@@ -8,7 +8,6 @@
     - [ ] Add "freed" nodes to a free list so that they can be reused.  
 */
 Script :: struct {
-    lexer:                  Lexer;
     flags:                  Flags;
     
     variables:              [..] External_Variable;
