@@ -1,67 +1,5 @@
 
-/*
-    Notes about error handling:
-    
-        currently, we aren't using result objects because of the stack frame bloat issue...
-        we may reevaluate this in the future if it provides us with considerably better or_return semantics, but it seems like we can do just as well with a single error object that gets set in the script itself.
-        
-        only typechecking really makes much use of checking the script.error for flow control, 
-            and TBH we could probably go back to simply checking if the returned value type is null for all internal calls to typecheck_node, only checking script.error when we really need to. 
-                this would probably be just a bit faster too.
-            but in either case, we will want to check the script.error for typechecking callbacks, so that they may return null when they simply don't want to override typechecking for a given node
-        
-        there aren't really many error cases during execution, and we simply use a bool return value on execute_node for flow control. it is then just assumed that the error should always be set before returning false
-            again, we may make typechecking behave the same later on
-        
-        evaluation incomplete
-        parsing incomplete
-        lexing incomplete, really need to figure out better solution for propogating up lexer errors
-        
-        for all cases, we still need to further improve the actual error recording and reporting
-
-
-*/
-
-// Result :: struct(T: Type) {
-//     error: Error;
-//     value: T;
-// }
-
-// operator ! :: inline (result: Result) -> bool { return result.error.type != .NO_ERROR; }
-
-// make_result :: inline (value: $T) -> Result(T) {
-//     return .{ value = value };
-// }
-
-// // only for errors, since we have binary compatibility in that case
-// recast_error :: (result: Result($T), $to_type: Type) -> Result(to_type) {
-//     assert(result.error != .NO_ERROR);
-//     return .{ error = result.error };
-// }
-
-// or_return :: (result: Result($T), $R: Type) -> T #expand {
-//     if !result  `return recast_error(R, result); 
-//     return result.value;
-// }
-
-// or_return :: (result: Result($T)) -> T #expand {
-//     if !result  `return result;
-//     return result.value;
-// }
-
-// or_default :: inline (result: Result($T), default: T) -> T {
-//     if !result  return default;
-//     return result.value;
-// }
-
-
 // ===== Error Struct =====
-
-// instead of just returning all errors as bool + string, we are using an error enum and union
-// one reason for this is that we want to be able to recover from certain types of errors that may occur, particularly during typechecking
-// the other reason is that we can defer formatting an error into a string until we have completely unwound the stack to the point where the error is handled or reported
-// this means we can attach more information as we unwind, which should give better context to some error messages
-// another benefit is that in the future we could aggregate multiple errors before printing them all out
 
 // s64 is definitely overkill but whatever
 Error_Type :: enum s64 {
@@ -105,7 +43,7 @@ Error :: union {
 
 Error_Base :: struct {
     type:       Error_Type;
-    message:    string;                 // TODO: this is actually really huge, so we should just make the error message string be heap allocated and make sure to manage it properly
+    message:    string;
     location:   Source_Code_Location;   // NOTE: This is the Jai location where the error struct itself was created, not the location in the script source.
 }
 
