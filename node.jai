@@ -20,17 +20,13 @@ Node :: struct {
     node_type:              Type;
     value_type:             *Type_Info;
     scope:                  *Node;
+    serial:                 u32;
     flags:                  Flags;
-    
-    // TODO: consider keeping all source tokens, store pointer to token on node
-    //       or store tokens based on node type, as maybe some will use multiple tokens.
-    // TODO: should have some source code range rather than just a location
     
     // These get copied from source token.
     location:   Source_Code_Location;
     trivia:     string;
-    
-    Flags :: enum_flags { 
+    Flags :: enum_flags u32 { 
         // lexical flags
         PARENTHESIZED;          // explicitly, textually
         IS_CONSTANT;            // used to mark all nodes expressions that can be used as 'constants' (e.g. in a type slot of a declaration). that value may not ACTUALLY be a constant because I'm still figuring out how much that's even gonna be a thing in this language
@@ -137,31 +133,11 @@ Node_Cast :: struct {
         but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
 */
 
-// TODO: Delete this referrent stuff. If we do implement something like this, we should put the interface on the Script, not on individual nodes.
-
 // Referent_Type :: struct {
-//     get_name:   (*Script, *Referent) -> bool, string;
-//     get_type:   (*Script, *Referent) -> bool, *Type_Info;
-//     compare:    (*Script, *Referent, *Referent) -> bool;
-//     // get_value:  (Referent) -> bool, Any; // How would this actually work without broader context?
-// }
-
-// Referent :: struct {
-//     referent_type:  *Referent_Type;
-//     handle:         Handle;
-    
-//     Handle :: struct {
-//         pointer:    *void;
-//         index:      int;
-//     }
-// }
-
-// get_name :: (script: *Script, referent: *Referent) -> bool, string {
-//     return referent.referent_type.get_name(script, referent);
-// }
-
-// get_type :: (script: *Script, referent: *Referent) -> bool, *Type_Info {
-//     return referent.referent_type.get_type(script, referent);
+//     get_name:   (*Script, *void) -> bool, string;
+//     get_type:   (*Script, *void) -> bool, *Type_Info;
+//     get_value:  (*Script, *void) -> bool, *void; // How would this actually work without broader context?
+//     compare:    (*Script, *void, *void) -> bool;
 // }
 
 Identifier_Type :: enum { UNRESOLVED; DECLARATION; LITERAL; STRUCT_MEMBER; EXTERNAL_TYPE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
@@ -320,9 +296,9 @@ get_literal_value_as_any :: (literal: *Node_Literal) -> Any {
 // ===== Operators =====
 
 Node_Operator :: struct {
-    using #as node_base: Node;
-    token:          string;
-    operator_id:    Operator_ID;
+    using #as node_base:    Node;
+    token:                  string;
+    operator_id:            Operator_ID;
     
     union { // check node.flag & .OVERLOAD
         builtin_operation_id:   Builtin_Operation_ID;
