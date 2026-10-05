@@ -26,6 +26,7 @@ Node :: struct {
     // These get copied from source token.
     location:   Source_Code_Location;
     trivia:     string;
+    
     Flags :: enum_flags u32 { 
         // lexical flags
         PARENTHESIZED;          // explicitly, textually

@@ -89,7 +89,12 @@ Token :: struct {
 Lexer :: struct {
     using #as scanner: Scanner;
     
-    script: *Script;
+    // using script.interface_procedures; // causes crash: compiler bug?
+    using,only(
+        parse_expression,
+        parse_binary,
+        parse_leaf,
+    ) script: *Script;
     
     lex_next_token := default_lex_next_token;
     

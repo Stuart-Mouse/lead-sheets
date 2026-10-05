@@ -42,15 +42,15 @@ append_spaces :: (builder: *String_Builder, spaces: int) {
 }
 
 print_script :: (
-    using script:   *Script, 
-    builder:        *String_Builder
+    script:   *Script, 
+    builder:  *String_Builder
 ) -> bool {
     push_print_style();
     
     // We have this special case to omit the braces around the root block.
     // But perhaps we should find a better way to handle this...
-    if ast_root.node_type == Node_Block {
-        block := ast_root.(*Node_Block);
+    if script.ast_root.node_type == Node_Block {
+        block := script.ast_root.(*Node_Block);
         for block.statements {
             print_node_or_return(script, it, builder, 0);
             if !should_skip_placing_semicolon(it) {
@@ -61,14 +61,14 @@ print_script :: (
         return true;
     }
     
-    print_node_or_return(script, ast_root, builder, 0);
+    print_node_or_return(script, script.ast_root, builder, 0);
     return true;
 }
 
 sprint_node :: (script: *Script, node: *Node) -> string {
     push_print_style();
     builder: String_Builder;
-    script.my_print_node(script, node, *builder, 0);
+    script.print_node(script, node, *builder, 0);
     return builder_to_string(*builder);
 }
 
@@ -77,19 +77,19 @@ append_trivia :: (builder: *String_Builder, node: *Node) {
 }
 
 print_node_or_return :: (
-    using script:   *Script, 
-    node:           *Node, 
-    builder:        *String_Builder,
-    indent:         int,
+    script:     *Script, 
+    node:       *Node, 
+    builder:    *String_Builder,
+    indent:     int,
 ) #expand {
-    if !script.my_print_node(script, node, builder, indent)  `return false;
+    if !script.print_node(script, node, builder, indent)  `return false;
 }
 
-print_node :: (
-    using script:   *Script, 
-    node:           *Node, 
-    builder:        *String_Builder,
-    indent:         int,
+default_print_node :: (
+    script:     *Script, 
+    node:       *Node, 
+    builder:    *String_Builder,
+    indent:     int,
 ) -> bool {
     if node == null {
         log("Tried to read from null pointer in print_node().");

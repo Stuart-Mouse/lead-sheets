@@ -81,7 +81,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
             get_token(lexer);
             debug_print("TARGET"); debug_print_push_indent();
             
-            _break.target_identifier = xx lexer.script.my_parse_expression(lexer, 0);
+            _break.target_identifier = xx lexer.parse_expression(lexer, 0);
             if _break.target_identifier == null  return null;
             if _break.target_identifier.node_type != Node_Identifier {
                 set_parse_error(lexer.script, "Expected an identifier for break target.", loc = _break.target_identifier.location);
@@ -98,7 +98,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         debug_print("EXPRESSION"); debug_print_push_indent();
         
         if !expect_token_type(lexer, .SEMICOLON) {
-            _break.value_expression = lexer.script.my_parse_expression(lexer, 0);
+            _break.value_expression = lexer.parse_expression(lexer, 0);
             if _break.value_expression == null  return null;
             
             if !check_for_semicolon(lexer, _break.value_expression, expect_semicolon) {
@@ -131,7 +131,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
             lexer.script.current_scope = if_statement.then_block;  
             defer lexer.script.current_scope = if_statement;
             
-            if_statement.subcondition = lexer.script.my_parse_expression(lexer, 0);
+            if_statement.subcondition = lexer.parse_expression(lexer, 0);
             if if_statement.subcondition == null  return null;
             
             close_bracket_token := get_token(lexer);
@@ -196,7 +196,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         while_loop.block.scope = while_loop;
         
         debug_print("CONDITION");
-        while_loop.condition = lexer.script.my_parse_expression(lexer, 0);
+        while_loop.condition = lexer.parse_expression(lexer, 0);
         if while_loop.condition == null  return null;
         
         debug_print("STATEMENT");
@@ -260,7 +260,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
                 debug_print("CONTROL TYPE IS RANGE");
                 for_loop.control_type = .RANGE;
                 for_loop.range.lower  = exprs[0];
-                for_loop.range.upper  = lexer.script.my_parse_expression(lexer, 0);
+                for_loop.range.upper  = lexer.parse_expression(lexer, 0);
                 if !for_loop.range.upper  return null;
             } else {
                 debug_print("CONTROL TYPE IS ARRAY");
@@ -284,7 +284,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
     
     debug_print("EXPRESSION");
     
-    expression := lexer.script.my_parse_expression(lexer, 0);
+    expression := lexer.parse_expression(lexer, 0);
     if expression == null  return null;
     
     if expect_token_type(lexer, .COLON) {
@@ -296,7 +296,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         next_token := peek_token(lexer);
         if !is_operator(next_token, "=") && next_token.type != .COLON {
             debug_print("WITH EXPLICIT TYPE");
-            declaration.type_expression = lexer.script.my_parse_expression(lexer, 999); // @Hack: This prevents us from parsing the `=` expected after the type expression.
+            declaration.type_expression = lexer.parse_expression(lexer, 999); // @Hack: This prevents us from parsing the `=` expected after the type expression.
             if !declaration.type_expression  return null;
             if declaration.type_expression.node_type != Node_Identifier {
                 set_parse_error(lexer.script, "Type expression of a declaration must be an identifier. (was %)", declaration.type_expression.node_type, loc = expression.location);
@@ -320,7 +320,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         
         if do_assignment {
             debug_print("WITH ASSIGNMENT");
-            declaration.init_expression = lexer.script.my_parse_expression(lexer, 0);
+            declaration.init_expression = lexer.parse_expression(lexer, 0);
             if declaration.init_expression == null  return null;
             if is_macro_declaration then declaration.flags |= .STATIC;
         }
@@ -360,7 +360,7 @@ check_for_semicolon :: (lexer: *Lexer, expression: *Node, expect_semicolon := tr
 }
 
 
-parse_leaf :: (lexer: *Lexer) -> *Node {
+default_parse_leaf :: (lexer: *Lexer) -> *Node {
     debug_print_push_indent();
     token := get_token(lexer);
     
@@ -368,7 +368,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
     if is_operator {
         debug_print("PREFIX OPERATOR (%)", token.text);
         precedence := get_operator_info(lexer.script, operator_index).precedence;
-        left := lexer.script.my_parse_expression(lexer, precedence);
+        left := lexer.parse_expression(lexer, precedence);
         if left == null  return null;
         return make_operator(lexer.script, token, operator_index, left, null);
     }
@@ -380,7 +380,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
         if_expression := alloc_node(lexer.script, Node_If_Expression, loc = if_token.location, trivia = if_token.trivia);
         
         debug_print("CONDITION"); debug_print_push_indent();
-        if_expression.condition = parse_expression(lexer, 0);
+        if_expression.condition = lexer.parse_expression(lexer, 0);
         if if_expression.condition == null  return null;
         
         token = peek_token(lexer);
@@ -393,7 +393,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
             
           case;
             debug_print("THEN EXPRESSION"); debug_print_push_indent();
-            if_expression.then_expression = lexer.script.my_parse_expression(lexer, 0);
+            if_expression.then_expression = lexer.parse_expression(lexer, 0);
             if if_expression.then_expression == null  return null;
         }
         
@@ -401,7 +401,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
         if token.type == .ELSE {
             get_token(lexer);
             debug_print("ELSE EXPRESSION"); debug_print_push_indent();
-            if_expression.else_expression = lexer.script.my_parse_expression(lexer, 0);
+            if_expression.else_expression = lexer.parse_expression(lexer, 0);
             if if_expression.else_expression == null  return null;
         }
         
@@ -440,7 +440,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
       case .OPEN_PAREN;
         open_paren_location := token.location;
         
-        expression := lexer.script.my_parse_expression(lexer, 0);
+        expression := lexer.parse_expression(lexer, 0);
         if expression == null  return null;
         expression.flags |= .PARENTHESIZED;
         
@@ -517,7 +517,7 @@ parse_leaf :: (lexer: *Lexer) -> *Node {
             
             debug_print("NAMED BLOCK (%)", name_token.text); debug_print_push_indent();
             
-            block := lexer.script.my_parse_leaf(lexer).(*Node_Block);
+            block := lexer.parse_leaf(lexer).(*Node_Block);
             if block == null  return null;
             assert(block.node_type == Node_Block);
             
@@ -556,20 +556,20 @@ parse_statement_string :: (script: *Script, statement: string, expect_eof := tru
 parse_expression_string :: (script: *Script, expr: string, expect_eof := true) -> *Node {
     lexer: Lexer;
     init_lexer(*lexer, script, expr);
-    expression := script.my_parse_expression(*lexer, 0);
+    expression := script.parse_expression(*lexer, 0);
     
     if expect_eof && !expect_token_type(*lexer, .EOF)  return null;
     return expression;
 }
 
-parse_expression :: (lexer: *Lexer, min_prec: int) -> *Node {
-    left := lexer.script.my_parse_leaf(lexer);
+default_parse_expression :: (lexer: *Lexer, min_prec: int) -> *Node {
+    left := lexer.parse_leaf(lexer);
     if left == null  return null;
     
     // going iteratively, precedence can only decrease
     while true {
         // but going only recursively, precedence will only increase
-        node := lexer.script.my_parse_binary(lexer, left, min_prec);
+        node := lexer.parse_binary(lexer, left, min_prec);
         if node == null  return null;
         if node == left  break;
         left = node;
@@ -581,7 +581,7 @@ parse_expression :: (lexer: *Lexer, min_prec: int) -> *Node {
 parse_comma_separated_expressions :: (lexer: *Lexer) -> [] *Node {
     expressions: [..] *Node;
     while true {
-        expr := lexer.script.my_parse_expression(lexer, 0);
+        expr := lexer.parse_expression(lexer, 0);
         if expr == null {
             array_reset(*expressions);
             return .[];
@@ -593,7 +593,7 @@ parse_comma_separated_expressions :: (lexer: *Lexer) -> [] *Node {
 }
 
 // If we hit a binary operator but its precedence is too low, we return left back to caller.
-parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
+default_parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
     token := peek_token(lexer);
     
     // In addition to normal binary operators, we have a few binary-operator-like constructs that have essentially infinite operator precedence.
@@ -615,7 +615,7 @@ parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
         if token_after_dot.type == {
           case .OPEN_PAREN;
             debug_print("CAST");
-            type_expr := lexer.script.my_parse_expression(lexer, 0);
+            type_expr := lexer.parse_expression(lexer, 0);
             close_paren := get_token(lexer);
             if close_paren.type != .CLOSE_PAREN {
                 set_parse_error(lexer.script, "Unexpected token '%' in cast type expression. Expected a closing paren.", close_paren.type, loc = close_paren.location);
@@ -659,7 +659,7 @@ parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
         open_bracket_token := get_token(lexer);
         debug_print("ARRAY SUBSCRIPT");
         
-        indexing_expr := lexer.script.my_parse_expression(lexer, 0);
+        indexing_expr := lexer.parse_expression(lexer, 0);
         if indexing_expr == null  return null;
         if !expect_token_type(lexer, .CLOSE_BRACKET)  return null;
         
@@ -676,7 +676,7 @@ parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
         debug_print("BINARY OPERATOR: %", _operator.token);
         
         operator_token := get_token(lexer);
-        right := lexer.script.my_parse_expression(lexer, _operator.precedence);
+        right := lexer.parse_expression(lexer, _operator.precedence);
         if right == null  return null;
         
         return make_operator(lexer.script, operator_token, operator_index, left, right);

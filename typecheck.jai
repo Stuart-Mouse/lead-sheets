@@ -21,14 +21,14 @@ typecheck_node_or_return :: (
 ) -> (
     value_type:     *Type_Info
 ) #expand {
-    result := script.my_typecheck_node(script, node, check_flags, hint_type);
+    result := script.typecheck_node(script, node, check_flags, hint_type);
     if has_error(script) then `return;
     assert(node.value_type != null, "Node returned null value_type, but no error was set!");
     return result;
 }
 
-typecheck_node :: (
-    using script:   *Script, 
+default_typecheck_node :: (
+    script:         *Script, 
     node:           *Node, 
     check_flags:    Typechecking_Flags = .NONE,
     hint_type:      *Type_Info         = null
@@ -84,7 +84,7 @@ typecheck_script :: (script: *Script) -> bool {
     if script.ast_root == null                  return false;
     if script.ast_root.node_type != Node_Block  return false;
     
-    script.my_typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
+    script.typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
     if has_error(script)  return false;
     
     script.flags |= .TYPECHECKED;
@@ -330,7 +330,7 @@ get_cast_result_type :: (_cast: *Node_Cast) -> *Type_Info {
 }
 
 can_do_implicit_reference :: (script: *Script, node: *Node, type: *Type_Info) -> bool {
-    if !script.my_is_valid_lvalue(script, node)  return false;
+    if !script.is_valid_lvalue(script, node)  return false;
     
     ptr_info := type.(*Type_Info_Pointer);
     if ptr_info.type != .POINTER return false;
@@ -345,12 +345,12 @@ can_do_implicit_reference :: (script: *Script, node: *Node, type: *Type_Info) ->
 
 // NOTE: if this returns false, we have an error
 set_as_lvalue :: (script: *Script, node: *Node) -> bool {
-    return script.my_is_valid_lvalue(script, node, set_as_lvalue = true);
+    return script.is_valid_lvalue(script, node, set_as_lvalue = true);
 }
 
 // TODO: maybe add a unique error type for INVALID_LVALUE
 // NOTE: if need_lvalue is true, then we must set the script error if the node is not a valid lvlaue
-is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_lvalue := false) -> bool {
+default_is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_lvalue := false) -> bool {
     need_lvalue ||= set_as_lvalue;
     if set_as_lvalue then node.flags |= .PUSH_BY_POINTER;
     
@@ -390,7 +390,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
             return true;
             
           case .LITERAL;
-            return script.my_is_valid_lvalue(script, identifier.literal, need_lvalue, set_as_lvalue);
+            return script.is_valid_lvalue(script, identifier.literal, need_lvalue, set_as_lvalue);
             
           case .DECLARATION;
             return true;
@@ -398,24 +398,24 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         
       case Node_Arrow;
         arrow := node.(*Node_Arrow);
-        return script.my_is_valid_lvalue(script, arrow.left, need_lvalue, set_as_lvalue);
+        return script.is_valid_lvalue(script, arrow.left, need_lvalue, set_as_lvalue);
         
       case Node_Dot;
         dot := node.(*Node_Dot);
         if dot.left.value_type.type == .STRUCT {
-            return script.my_is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue)
-                && script.my_is_valid_lvalue(script, dot.right, need_lvalue);
+            return script.is_valid_lvalue(script, dot.left, need_lvalue, set_as_lvalue)
+                && script.is_valid_lvalue(script, dot.right, need_lvalue);
         }
-        return script.my_is_valid_lvalue(script, dot.right, need_lvalue);
+        return script.is_valid_lvalue(script, dot.right, need_lvalue);
         
       case Node_Subscript;
         subscript := node.(*Node_Subscript);
-        return script.my_is_valid_lvalue(script, subscript.base_expression, need_lvalue);
+        return script.is_valid_lvalue(script, subscript.base_expression, need_lvalue);
         
       case Node_Cast;
         _cast := node.(*Node_Cast);
         if _cast.value.value_type.type == .ANY {
-            return script.my_is_valid_lvalue(script, _cast.value, need_lvalue, set_as_lvalue);
+            return script.is_valid_lvalue(script, _cast.value, need_lvalue, set_as_lvalue);
         }
         if need_lvalue then set_typecheck_error(script, "Using the result of a cast as an lvalue is not currently supported, unless casting from an Any", node = node);
         return false;
@@ -476,7 +476,7 @@ is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, set_as_l
         which will prevent there ever being a mismatch betweenwhat is returned and what is set on the node
 */
 
-typecheck_directive :: (using script: *Script, directive: *Node_Directive, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_directive :: (script: *Script, directive: *Node_Directive, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     directive.value_type = type_info(void); // by default
     
     // we always call the directive a second time during typechecking, 
@@ -493,7 +493,7 @@ typecheck_directive :: (using script: *Script, directive: *Node_Directive, check
     }
 }
 
-typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_literal :: (script: *Script, literal: *Node_Literal, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if #complete literal.literal_type == {
       case .ANY;
         literal.value_type = literal.any.type;
@@ -569,7 +569,7 @@ typecheck_literal :: (using script: *Script, literal: *Node_Literal, check_flags
     assert(literal.value_type != null);
 }
 
-typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_identifier :: (script: *Script, identifier: *Node_Identifier, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: prevent re-typechecking identifier which has already been resolved
     if identifier.identifier_type != .UNRESOLVED  return;
     
@@ -599,8 +599,8 @@ typecheck_identifier :: (using script: *Script, identifier: *Node_Identifier, ch
     return;
 }
 
-default_resolve_identifier_in_global_scope :: (using script: *Script, identifier: *Node_Identifier) -> bool {
-    for type_table {
+default_resolve_identifier_in_global_scope :: (script: *Script, identifier: *Node_Identifier) -> bool {
+    for script.type_table {
         if it.name == identifier.name {
             identifier.flags |= .IS_CONSTANT;   // the type table is assumed to be constant during the script's lifetime
             identifier.identifier_type = .EXTERNAL_TYPE;
@@ -610,11 +610,11 @@ default_resolve_identifier_in_global_scope :: (using script: *Script, identifier
         }
     }
     
-    for variables {
+    for script.variables {
         if it.name == identifier.name {
             identifier.identifier_type = .EXTERNAL_VARIABLE;
             identifier.index           = it_index;
-            identifier.value_type      = ifx it.flags & .ANY then xx Any else variables[it_index].type;
+            identifier.value_type      = ifx it.flags & .ANY then xx Any else script.variables[it_index].type;
             return true;
         }
     }
@@ -623,7 +623,7 @@ default_resolve_identifier_in_global_scope :: (using script: *Script, identifier
 }
 
 
-typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Binary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if binary_operator.directive {
         typecheck_node_or_return(script, binary_operator.directive, check_flags, hint_type);
         if binary_operator.directive.runtime_node  return;
@@ -640,10 +640,10 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
         
         // Binary operation checking is a bit more complicated, because either side may require a type hint from the other.
         if !(left\_is_number_literal && !right_is_number_literal) {
-            left_type  = my_typecheck_node(script, binary_operator.left,  check_flags, hint_type);
+            left_type  = script.typecheck_node(script, binary_operator.left,  check_flags, hint_type);
         }
         if !(right_is_number_literal && !left\_is_number_literal) {
-            right_type = my_typecheck_node(script, binary_operator.right, check_flags, hint_type);
+            right_type = script.typecheck_node(script, binary_operator.right, check_flags, hint_type);
         }
         
         // If both come back null on first try, we return the upstream error.
@@ -746,7 +746,7 @@ typecheck_binary_operator :: (using script: *Script, binary_operator: *Node_Bina
 }
 
 
-typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operator, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if unary_operator.directive {
         typecheck_node_or_return(script, unary_operator.directive, check_flags, hint_type);
         if unary_operator.directive.runtime_node  return;
@@ -783,8 +783,8 @@ typecheck_unary_operator :: (using script: *Script, unary_operator: *Node_Unary_
 }
 
 
-typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
-    proc_info := my_typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
+typecheck_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Call, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+    proc_info := script.typecheck_node(script, procedure_call.procedure_expression).(*Type_Info_Procedure);
     
     if script.error.type == .UNRESOLVED_IDENTIFIER 
     && procedure_call.procedure_expression.node_type == Node_Identifier {
@@ -797,7 +797,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         // In the first check, we do not provide any type hints, which means we may fail to typecheck arguments where the type hint is required.
         // But we ignore this error on the first pass, since we may be able to provide a type hint later after selecting an overload.
         for procedure_call.arguments {
-            my_typecheck_node(script, it);
+            script.typecheck_node(script, it);
             if script.error.type == .MISSING_TYPE_HINT  clear_error(script);
             if has_error(script)  return;
         }
@@ -808,7 +808,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         
         identifier.identifier_type = .EXTERNAL_PROCEDURE;
         identifier.index           = procedure_index;
-        proc_info, identifier.value_type = procedures[procedure_index].__type_info;
+        proc_info, identifier.value_type = script.procedures[procedure_index].__type_info;
         
         // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
         // We also iterate more manually here so that we can replace nodes if we need to insert any implicit casts, since we need a **Node for that.
@@ -883,7 +883,7 @@ typecheck_procedure_call :: (using script: *Script, procedure_call: *Node_Proced
         else type_info(void);
 }
 
-typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_cast :: (script: *Script, _cast: *Node_Cast, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if _cast.flags & .IMPLICIT {
         typecheck_node_or_return(script, _cast.value);
         _cast.value_type = _cast.implicit_type;
@@ -903,9 +903,9 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
             return;
         }
         
-        my_evaluate_node(script, type_expression);
+        script.evaluate_node(script, type_expression);
         if has_error(script)  return;
-        _cast.value_type = pop_as(*stack, *Type_Info);
+        _cast.value_type = pop_as(*script.stack, *Type_Info);
         
         from_type := typecheck_node_or_return(script, _cast.value, hint_type = _cast.value_type);
         if is_aggregate(from_type) && from_type.type != .ANY {
@@ -915,7 +915,7 @@ typecheck_cast :: (using script: *Script, _cast: *Node_Cast, check_flags := Type
 }
 
 // TODO: Later on we will want to implement some logic to optimize arrows by assigning a set type if there is a coresponding virtual declaration in the same scope with the same owning identifier.
-typecheck_arrow :: (using script: *Script, arrow: *Node_Arrow, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_arrow :: (script: *Script, arrow: *Node_Arrow, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, arrow.left);
     if !set_as_lvalue(script, arrow.left)  return;
     
@@ -927,7 +927,7 @@ typecheck_arrow :: (using script: *Script, arrow: *Node_Arrow, check_flags := Ty
     arrow.value_type = xx Any;
 }
 
-typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_dot :: (script: *Script, dot: *Node_Dot, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: dot.left may be null for unary dot enums and struct literals with no explicit type.
     // Setting left_type to 'Type' when dot.left is null gets us into the proper case down below, where we will try to use hint_type to resolve the struct literal or enum value name.
     left_type: *Type_Info;
@@ -989,7 +989,7 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
         //       However, this may not be possible if the LHS is not a valid lvalue,
         //       and in that case, we still should be able to access its members.
         if dot.left.value_type.type != .POINTER { 
-            if script.my_is_valid_lvalue(script, dot.left) {
+            if script.is_valid_lvalue(script, dot.left) {
                 assert(set_as_lvalue(script, dot.left));
             }
         }
@@ -1006,9 +1006,9 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
                 return;
             }
             
-            my_evaluate_node(script, dot.left);
+            script.evaluate_node(script, dot.left);
             if has_error(script)  return;
-            namespace = pop_as(*stack, *Type_Info);
+            namespace = pop_as(*script.stack, *Type_Info);
         } else {
             if hint_type == null || (hint_type.type != .ENUM && hint_type.type != .STRUCT) {
                 set_typecheck_error(script, "Unary dot can only be used for enums, but hint_type was %", as_type(hint_type), type = .MISSING_TYPE_HINT, node = dot);
@@ -1072,12 +1072,12 @@ typecheck_dot :: (using script: *Script, dot: *Node_Dot, check_flags := Typechec
     set_typecheck_error(script, "Left side of dot expression must be a struct or type. Got: %", as_type(dot.left.value_type), node = dot);
 }
 
-typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_subscript :: (script: *Script, subscript: *Node_Subscript, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, subscript.base_expression);
     if !set_as_lvalue(script, subscript.base_expression)  return; // TODO
     
     // TODO: Just testing this logic for now. We should be able to index without needing an lvalue.
-    // if script.my_is_valid_lvalue(script, subscript.base_expression) {
+    // if script.is_valid_lvalue(script, subscript.base_expression) {
     //     assert(set_as_lvalue(script, subscript.base_expression));
     // }
     
@@ -1099,7 +1099,7 @@ typecheck_subscript :: (using script: *Script, subscript: *Node_Subscript, check
     subscript.value_type = base_type.element_type;
 }
 
-typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_declaration :: (script: *Script, declaration: *Node_Declaration, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     explicit_type: *Type_Info;
     if declaration.type_expression {
         type_expression := declaration.type_expression;
@@ -1114,9 +1114,9 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
             return;
         }
         
-        my_evaluate_node(script, type_expression);
+        script.evaluate_node(script, type_expression);
         if has_error(script)  return;
-        explicit_type = pop_as(*stack, *Type_Info);
+        explicit_type = pop_as(*script.stack, *Type_Info);
     }
     
     right_type: *Type_Info;
@@ -1178,7 +1178,7 @@ typecheck_declaration :: (using script: *Script, declaration: *Node_Declaration,
     }
 }
 
-typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_block :: (script: *Script, block: *Node_Block, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     block.value_type = null;
     
     block.stack_frame_size = 0;
@@ -1196,7 +1196,7 @@ typecheck_block :: (using script: *Script, block: *Node_Block, check_flags := Ty
     }
 }
 
-typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_if_statement :: (script: *Script, if_statement: *Node_If_Statement, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: we treat the condition as a statement-level construct so that the user can write a declaration in there.
     then_type := typecheck_node_or_return(script, if_statement.condition, .IS_STATEMENT_ROOT);
     
@@ -1214,7 +1214,7 @@ typecheck_if_statement :: (using script: *Script, if_statement: *Node_If_Stateme
     if_statement.value_type = type_info(void);
 }
 
-typecheck_if_expression :: (using script: *Script, if_expression: *Node_If_Expression, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_if_expression :: (script: *Script, if_expression: *Node_If_Expression, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     // NOTE: we treat the condition as a statement-level construct so that the user can write a declaration in there.
     then_type := typecheck_node_or_return(script, if_expression.condition, .IS_STATEMENT_ROOT);
     
@@ -1233,7 +1233,7 @@ typecheck_if_expression :: (using script: *Script, if_expression: *Node_If_Expre
     if_expression.value_type = then_type;
 }
 
-typecheck_break :: (using script: *Script, _break: *Node_Break, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_break :: (script: *Script, _break: *Node_Break, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     target_name := ifx _break.target_identifier then get_name(script, _break.target_identifier);
     
     _break.resolved_target = get_break_target(script, target_name, _break.scope);
@@ -1286,14 +1286,14 @@ get_break_target :: (script: *Script, target_name: string, scope: *Node) -> *Nod
 }
 
 
-typecheck_while_loop :: (using script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_while_loop :: (script: *Script, while_loop: *Node_While_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     typecheck_node_or_return(script, while_loop.condition);
     typecheck_node_or_return(script, while_loop.block, .IS_STATEMENT_ROOT);
     
     while_loop.value_type = type_info(void);
 }
 
-typecheck_for_loop :: (using script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
+typecheck_for_loop :: (script: *Script, for_loop: *Node_For_Loop, check_flags := Typechecking_Flags.NONE, hint_type: *Type_Info = null) {
     if #complete for_loop.control_type == {
       case .RANGE;
         debug_print("typechecking range lower");

@@ -14,7 +14,7 @@ evaluate_script :: (script: *Script) -> bool {
     }
     
     reset_stack(*script.stack);
-    script.my_evaluate_node(script, script.ast_root);
+    script.evaluate_node(script, script.ast_root);
     return !has_error(script);
 }
 
@@ -36,11 +36,11 @@ evaluate_statement :: (script: *Script, expr: string, scope: *Node = null, user_
         return false, NULL_ANY, null;
     }
     
-    if !typecheck_node(script, root, .IS_STATEMENT_ROOT) { 
+    if !script.typecheck_node(script, root, .IS_STATEMENT_ROOT) { 
         return false, NULL_ANY, null;
     }
     
-    result := script.my_evaluate_node(script, root, flags = .DISCARD_VALUE);
+    result := script.evaluate_node(script, root, flags = .DISCARD_VALUE);
     if has_error(script) {
         return false, NULL_ANY, null;
     }
@@ -57,7 +57,7 @@ Evaluation_Flags :: enum_flags {
 evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any #expand {
     // log("% -> %", node, as_type(node.value_type));
     
-    value := script.my_evaluate_node(script, node, provided_storage, flags);
+    value := script.evaluate_node(script, node, provided_storage, flags);
     if has_error(script)  `return NULL_ANY;
     return value;
 }
@@ -68,10 +68,10 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
     Otherwise, we push the result value (or a pointer to the result value, depending on should_push_by_pointer) to the stack.
     
     The contract for executing nodes is this:
-        If script.my_evaluate_node returns false
+        If script.evaluate_node returns false
             The script error will be set with some valid error.
             This error should be propogated back up to the user.
-        If script.my_evaluate_node returns true
+        If script.evaluate_node returns true
             If provided_storage is not null
                 The result value must be written to the provided_storage.
                 script.stack.top must have the same value as it did before evaluate_node was called.
@@ -86,7 +86,7 @@ evaluate_node_or_return :: (script: *Script, node: *Node, provided_storage: *voi
     TODO: we are having the same problem here with having a massive stack frame that we had before with typechecking
           until that issue is (hopefully, eventually) fixed, I will have to refactor this funciton to check each execute each individual node type in its own procedure.
 */
-evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
+default_evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     debug_print("Evaluating % (%) @ %", node.node_type, node, get_location(node));
     debug_print_push_indent();
     
@@ -102,7 +102,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
       case Node_Directive;
         directive := node.(*Node_Directive);
         if directive.runtime_node {
-            return script.my_evaluate_node(script, directive.runtime_node, provided_storage = provided_storage);
+            return script.evaluate_node(script, directive.runtime_node, provided_storage = provided_storage);
         }
         return VOID_ANY;
         
@@ -155,7 +155,7 @@ evaluate_node :: (script: *Script, node: *Node, provided_storage: *void = null, 
         result = evaluate_break(script, xx node, provided_storage, flags);
         
       case;
-        assert(false, "Unhandled node type in script.my_evaluate_node: %", node.node_type);
+        assert(false, "Unhandled node type in script.evaluate_node: %", node.node_type);
     }
     
     if !has_error(script) {
@@ -231,7 +231,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
         result = prepare_result(script, identifier, variable_any, provided_storage);
         
       case .LITERAL;
-        result = script.my_evaluate_node(script, identifier.literal, provided_storage = provided_storage);
+        result = script.evaluate_node(script, identifier.literal, provided_storage = provided_storage);
         
       case .EXTERNAL_TYPE;
         assert(!should_push_by_pointer(identifier));
@@ -256,7 +256,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
       case .UNRESOLVED; #through;
       case .STRUCT_MEMBER; #through;
       case;
-        assert(false, "Invalid identifier type in script.my_evaluate_node: %", identifier.identifier_type);
+        assert(false, "Invalid identifier type in script.evaluate_node: %", identifier.identifier_type);
     }
     return result;
 }
@@ -264,7 +264,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
 evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operator, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if unary_operator.flags & .OVERLOAD {
         debug_print("Evaluating overloaded operator...");
-        return script.my_evaluate_node(script, unary_operator.overload_procedure, provided_storage = provided_storage);
+        return script.evaluate_node(script, unary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
     operator_info := get_operator_info(script, unary_operator);
@@ -288,7 +288,7 @@ evaluate_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operato
 evaluate_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Operator, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if binary_operator.flags & .OVERLOAD {
         debug_print("Evaluating overloaded operator...");
-        return script.my_evaluate_node(script, binary_operator.overload_procedure, provided_storage = provided_storage);
+        return script.evaluate_node(script, binary_operator.overload_procedure, provided_storage = provided_storage);
     }
     
     // special case: operator = is always a simple memcpy
@@ -450,7 +450,7 @@ evaluate_arrow :: (script: *Script, arrow: *Node_Arrow, provided_storage: *void 
 evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null, flags := Evaluation_Flags.NONE) -> Any {
     if dot.left == null {
         assert(dot.value_type.type == .ENUM || dot.value_type.type == .STRUCT);
-        return script.my_evaluate_node(script, dot.right, provided_storage = provided_storage);
+        return script.evaluate_node(script, dot.right, provided_storage = provided_storage);
     }
     
     left_type := dot.left.value_type;
@@ -504,7 +504,7 @@ evaluate_dot :: (script: *Script, dot: *Node_Dot, provided_storage: *void = null
         
       case .TYPE;
         // NOTE: the type expression on LHS was evaluated during typechecking
-        return script.my_evaluate_node(script, dot.right, provided_storage = provided_storage);
+        return script.evaluate_node(script, dot.right, provided_storage = provided_storage);
         
       case;
         assert(false, "Invalid Node_Dot: %", dot.*);

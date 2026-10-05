@@ -51,17 +51,16 @@ Script :: struct {
 Script_Interface_Procedures :: struct {
     // fallback: *Script_Interface_Procedures;
     
-    // to make it easy to override parsing procedures individually, while still being able to make use of many of the convenient higher-order procs like parse_comma_separated_expressions.
-    my_parse_expression := parse_expression;
-    my_parse_binary     := parse_binary;
-    my_parse_leaf       := parse_leaf;
+    parse_expression                    := default_parse_expression;
+    parse_binary                        := default_parse_binary;
+    parse_leaf                          := default_parse_leaf;
     
-    my_typecheck_node   := typecheck_node;
-    my_is_valid_lvalue  := is_valid_lvalue;
+    typecheck_node                      := default_typecheck_node;
+    is_valid_lvalue                     := default_is_valid_lvalue;
     
-    my_evaluate_node    := evaluate_node;
+    evaluate_node                       := default_evaluate_node;
     
-    my_print_node       := print_node;
+    print_node                          := default_print_node;
     
     resolve_identifier_in_global_scope  := default_resolve_identifier_in_global_scope;
     resolve_builtin_operation           := default_resolve_builtin_operation;
@@ -80,13 +79,13 @@ Script_Interface_Procedures :: struct {
 
 DEFAULT_SCRIPT_INTERFACE_PROCEDURES :: Script_Interface_Procedures.{};
 
-deinit_script :: (using script: *Script) {
-    array_reset(*variables);
-    array_reset(*procedures);
-    array_reset(*directives);
-    array_reset(*type_table);
-    array_reset(*operator_table);
-    fini(*pool);
+deinit_script :: (script: *Script) {
+    array_reset(*script.variables);
+    array_reset(*script.procedures);
+    array_reset(*script.directives);
+    array_reset(*script.type_table);
+    array_reset(*script.operator_table);
+    fini(*script.pool);
     #if USING_DYNCALL {
         if script.dyncall_vm {
             dcFree(script.dyncall_vm);
