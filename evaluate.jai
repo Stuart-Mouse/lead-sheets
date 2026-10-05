@@ -235,10 +235,10 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
         
       case .EXTERNAL_TYPE;
         assert(!should_push_by_pointer(identifier));
-        result = prepare_result(script, identifier, as_type(script.type_table[identifier.index].type), provided_storage);
+        result = prepare_result(script, identifier, as_type(script.type_table[identifier.locator].type), provided_storage);
         
       case .EXTERNAL_VARIABLE;
-        variable := *script.variables[identifier.index];
+        variable := *script.variables[identifier.locator];
         value    := get_value(variable);
         debug_print("variable: %", variable.*);
         if variable.value_pointer == null {
@@ -250,7 +250,7 @@ evaluate_identifier :: (script: *Script, identifier: *Node_Identifier, provided_
         
       case .EXTERNAL_PROCEDURE;
         assert(!should_push_by_pointer(identifier));
-        result = prepare_result(script, identifier, to_any(*script.procedures[identifier.index]), provided_storage);
+        result = prepare_result(script, identifier, to_any(*script.procedures[identifier.locator]), provided_storage);
         
         // identifier types that should never be executed:
       case .UNRESOLVED; #through;

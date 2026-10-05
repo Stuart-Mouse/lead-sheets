@@ -134,25 +134,46 @@ Node_Cast :: struct {
         but, obviously we will want to add some way to check that these identifiers do not conflict when we reserialize...
 */
 
+/*
+    I still kind of want to implement this generic referent stuff, 
+    since in theory it would make it easier to extened the language with other kinds of reference,
+    but the current method of identifying referent_type using a *Referent_Type seems unreliable.
+    
+    It also requires us to create global structs for the various referrent types we will use, which is kind of messy.
+*/
+
 // Referent_Type :: struct {
-//     get_name:   (*Script, *void) -> bool, string;
-//     get_type:   (*Script, *void) -> bool, *Type_Info;
-//     get_value:  (*Script, *void) -> bool, *void; // How would this actually work without broader context?
-//     compare:    (*Script, *void, *void) -> bool;
+//     get_name:   (*Script, Referent) -> string;
+//     get_type:   (*Script, Referent) -> *Type_Info;
+//     get_value:  (*Script, Referent) -> *void;
 // }
 
-Identifier_Type :: enum { UNRESOLVED; DECLARATION; LITERAL; STRUCT_MEMBER; EXTERNAL_TYPE; EXTERNAL_VARIABLE; EXTERNAL_PROCEDURE; }; 
+// Referent :: struct {
+//     using referent_type:    *Referent_Type;
+//     locator:                u64;
+// }
+
+
+Identifier_Type :: enum { 
+    UNRESOLVED :: 0; 
+    DECLARATION; 
+    LITERAL; 
+    STRUCT_MEMBER; 
+    EXTERNAL_TYPE; 
+    EXTERNAL_VARIABLE; 
+    EXTERNAL_PROCEDURE; 
+}; 
 
 Node_Identifier :: struct {
     using #as node_base:    Node;
+    // parsed_name:            string;
+    // resolved_referent:      Referent;
+    
     identifier_type:        Identifier_Type;
     union {
-        name:               string;     // NOTE: This should only be read when referent is null. Otherwise, get the name from the referent.
-        // referent:           *Referent;
-        index:              int;    // external variable, procedure, or type
+        name:               string;     // NOTE: This should only be read when identifier_type is UNRESOLVED. Otherwise, we get the name from the resolved referent.
+        locator:            u64;        // Used for external variables, procedures, and types.
         declaration:        *Node_Declaration;
-        
-        // TODO: don't store offset here. We can store on the dot node or something.
         struct_member_info: *Type_Info_Struct_Member;
         literal:            *Node_Literal;
     }
@@ -168,11 +189,16 @@ is_unresolved_identifier :: (node: *Node) -> bool {
 }
 
 get_name :: (script: *Script, identifier: *Node_Identifier) -> string {
+    // if identifier.resolved_referent.referent_type {
+    //     return identifier.resolved_referent.get_name(identifier.resolved_referent);
+    // }
+    // return identifier.parsed_name;
+    
     if #complete identifier.identifier_type == {
       case .UNRESOLVED;         return identifier.name;
-      case .EXTERNAL_TYPE;      return script.type_table[identifier.index].name;
-      case .EXTERNAL_VARIABLE;  return script.variables [identifier.index].name;
-      case .EXTERNAL_PROCEDURE; return script.procedures[identifier.index].name;
+      case .EXTERNAL_TYPE;      return script.type_table[identifier.locator].name;
+      case .EXTERNAL_VARIABLE;  return script.variables [identifier.locator].name;
+      case .EXTERNAL_PROCEDURE; return script.procedures[identifier.locator].name;
       case .STRUCT_MEMBER;      return identifier.struct_member_info.name;
       case .DECLARATION;        return get_name(script, identifier.declaration);
       case .LITERAL;
@@ -182,17 +208,10 @@ get_name :: (script: *Script, identifier: *Node_Identifier) -> string {
         return enum_value_to_name(xx identifier.literal.value_type, identifier.literal.number.as_s64);
     }
     unreachable();
-    
-    // if identifier.referent {
-    //     _, name := get_name(script, identifier.referent);
-    //     return name;
-    // }
-    // return identifier.name;
 }
 
 compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifier) -> bool {
     if !i1 || !i2 || i1.referent_type != i2.referent_type  return false;
-    // return i1.referent_type.compare(script, i1.referent, i2.referent);
     if #complete i1.identifier_type == {
       case .UNRESOLVED;         return false;
       case .EXTERNAL_TYPE;      return i1.index == i2.index;
@@ -207,6 +226,23 @@ compare_referents :: (script: *Script, i1: *Node_Identifier, i2: *Node_Identifie
 
 // TODO: We may want to find some way of attaching a named block to a declaration so that it can be resolved in the same way.
 //       This will be necessary in order to prevent name conflicts between declarations and named blocks.
+
+// NOTE: This is not a constant so that you can override it at runtime if need be, but maybe be careful about that since this is still a global!
+//       And I don't really have any way to not make this a global because we need to be able to compare pointers to Referent_Types in the same way we do for Node Types.
+// declaration_referent_type := Referent_Type.{
+//     get_name = (script: *Script, referent: Referent) -> string {
+//         declaration := referent.locator.(*Node_Declaration);
+//         return get_name(script, declaration);
+//     }
+//     get_type = (script: *Script, referent: Referent) -> *Type_Info {
+//         declaration := referent.locator.(*Node_Declaration);
+//         return declaration.value_type;
+//     }
+//     get_value = (script: *Script, referent: Referent) -> *void {
+//         declaration := referent.locator.(*Node_Declaration);
+//         return get_value_pointer(script, declaration);
+//     }
+// };
 
 Node_Declaration :: struct {
     using #as node_base:    Node;

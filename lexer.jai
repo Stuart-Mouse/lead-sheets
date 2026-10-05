@@ -45,6 +45,9 @@ Token_Type :: enum {
     
     IDENTIFIER      :: 256;
     DIRECTIVE;
+    
+    // TODO: Add mechanism to add keywords in a similar way to directives.
+    //       We could also use keywords to replace special literals like true and false.
     // KEYWORD;
     
     TRUE;
@@ -74,17 +77,6 @@ Token :: struct {
     location:   Source_Code_Location;
 }
 
-/*
-    Lexer can be used either in a sort of active mode where tokens are only lexed as requested, 
-        or in a pre-lexed mode where all tokens are lexed up front.
-    If input was pre-lexed, then Lexer will return sequential tokens from `tokens`,
-        otherwise, it will use `token_buffer` as a ring buffer for the next few tokens.
-    The interface is exactly the same either way, but we support both so that there's options 
-        about how things get allocated, since you will probably only want to pre-lex an entire 
-        input string if those tokens will be stored in the script's arena.
-    It's sort of like how we have an option to either allocate nodes in the script's arena or 
-        using the temporary allocator, depending on the use case.
-*/
 Lexer :: struct {
     using #as scanner: Scanner;
     

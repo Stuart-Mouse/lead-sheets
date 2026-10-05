@@ -375,7 +375,7 @@ default_is_valid_lvalue :: (script: *Script, node: *Node, need_lvalue := false, 
             return false;
             
           case .EXTERNAL_VARIABLE;
-            variable := *script.variables[identifier.index];
+            variable := *script.variables[identifier.locator];
             if variable.flags & .CONSTANT {
                 if need_lvalue then set_typecheck_error(script, "An external variable cannot be used as an lvalue when marked as constant.", node = node);
                 return false;
@@ -595,7 +595,7 @@ typecheck_identifier :: (script: *Script, identifier: *Node_Identifier, check_fl
     if script.resolve_identifier_in_global_scope(script, identifier)  return;
     
     // NOTE: we don't attach an error message here, because most likely this error will be caught and handled
-    set_typecheck_error(script, "", type = .UNRESOLVED_IDENTIFIER, node = identifier);
+    set_typecheck_error(script, type = .UNRESOLVED_IDENTIFIER, node = identifier);
     return;
 }
 
@@ -604,7 +604,7 @@ default_resolve_identifier_in_global_scope :: (script: *Script, identifier: *Nod
         if it.name == identifier.name {
             identifier.flags |= .IS_CONSTANT;   // the type table is assumed to be constant during the script's lifetime
             identifier.identifier_type = .EXTERNAL_TYPE;
-            identifier.index           = it_index;
+            identifier.locator         = xx it_index;
             identifier.value_type      = xx Type;
             return true;
         }
@@ -613,7 +613,7 @@ default_resolve_identifier_in_global_scope :: (script: *Script, identifier: *Nod
     for script.variables {
         if it.name == identifier.name {
             identifier.identifier_type = .EXTERNAL_VARIABLE;
-            identifier.index           = it_index;
+            identifier.locator         = xx it_index;
             identifier.value_type      = ifx it.flags & .ANY then xx Any else script.variables[it_index].type;
             return true;
         }
@@ -806,8 +806,8 @@ typecheck_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Ca
         procedure_index := resolve_procedure_index(script, procedure_name, procedure_call);
         if procedure_index == -1  return;
         
-        identifier.identifier_type = .EXTERNAL_PROCEDURE;
-        identifier.index           = procedure_index;
+        identifier.identifier_type       = .EXTERNAL_PROCEDURE;
+        identifier.locator               = xx procedure_index;
         proc_info, identifier.value_type = script.procedures[procedure_index].__type_info;
         
         // For the second pass over the arguments, we go back and verify the types for all arguments, re-typechecking those that may have failed due to a missing type hint.
