@@ -70,9 +70,8 @@ Token_Type :: enum {
 Token :: struct {
     type:       Token_Type;
     text:       string;
-    location:   Source_Code_Location;
     trivia:     string;
-    error_type: Error_Type; // TODO: maybe unionize with normal result?  Seems easier than making the lexer return some Result object...
+    location:   Source_Code_Location;
 }
 
 /*
@@ -122,28 +121,28 @@ init_lexer :: (lexer: *Lexer, script: *Script, file := "", location := Source_Co
 }
 
 // consumes a token
-get_token :: (using lexer: *Lexer) -> Token {
-    return_token := token_buffer[next_token_index];
+get_token :: (lexer: *Lexer) -> Token {
+    return_token := lexer.token_buffer[lexer.next_token_index];
     if return_token.type == .ERROR 
     || return_token.type == .EOF {
         return return_token;
     }
     
-    token_buffer[next_token_index] = lex_next_token(lexer);
-    next_token_index = (next_token_index + 1) % TOKEN_BUFFER_COUNT;
+    lexer.token_buffer[lexer.next_token_index] = lexer.lex_next_token(lexer);
+    lexer.next_token_index = (lexer.next_token_index + 1) % lexer.TOKEN_BUFFER_COUNT;
     
     return return_token;
 }
 
 // peeks next_token, but does not consume it
-peek_token :: (using lexer: *Lexer, peek_index := 0) -> Token {
-    assert(peek_index >= 0 && peek_index < TOKEN_BUFFER_COUNT-1);
-    index := (next_token_index + peek_index) % TOKEN_BUFFER_COUNT;
-    return token_buffer[index];
+peek_token :: (lexer: *Lexer, peek_index := 0) -> Token {
+    assert(peek_index >= 0 && peek_index < lexer.TOKEN_BUFFER_COUNT-1);
+    index := (lexer.next_token_index + peek_index) % lexer.TOKEN_BUFFER_COUNT;
+    return lexer.token_buffer[index];
 }
 
 // consumes token if it was expected type, else it was just peeked
-expect_token_type :: (using lexer: *Lexer, type: Token_Type) -> bool {
+expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
     token := peek_token(lexer);
     if token.type == type {
         get_token(lexer);
@@ -152,20 +151,18 @@ expect_token_type :: (using lexer: *Lexer, type: Token_Type) -> bool {
     return false;
 }
 
-default_lex_next_token :: (using lexer: *Lexer) -> Token {
-    trivia, ok := skip_whitespace_and_comments(lexer);
-    if !ok            return make_error_token(location, .UNEXPECTED_EOF, message = "in the middle of a comment");
-    if is_eof(lexer)  return .{ type = .EOF, location = location, trivia = trivia };
+default_lex_next_token :: (lexer: *Lexer) -> Token {
+    trivia := skip_whitespace_and_comments(lexer);
+    if has_error(lexer.script)  return .{ type = .ERROR };
+    if is_eof(lexer)            return .{ type = .EOF, location = lexer.location, trivia = trivia };
     
-    // we grab cursor location at top so that it points to start of token
     token_location := lexer.location;
     
-    // convenience macro for short tokens
-    make_token :: (type: Token_Type, len: int) -> Token #expand {
-        defer advance(lexer, len);
+    make_token :: (type: Token_Type, count: int) -> Token #expand {
+        defer advance(lexer, count);
         return .{
             type       = type,
-            text       = slice(remaining_as_string(lexer), 0, len),
+            text       = slice(remaining_as_string(lexer), 0, count),
             location   = token_location,
             trivia     = trivia, 
         };
@@ -187,12 +184,12 @@ default_lex_next_token :: (using lexer: *Lexer) -> Token {
     // NOTE: this is being done before operators, presumably because a number may start with a minus sign
     //       this is probably fine, but be aware of this while doing operator refactoring
     token_text := default_try_lex_number(lexer);
-    if token_text  return .{ .NUMBER, token_text, token_location, trivia, .NO_ERROR };
+    if token_text  return .{ .NUMBER, token_text, trivia, token_location };
     
     // operator tokens
     {
         best_match, best_match_len := -1;
-        for script.operator_table {
+        for lexer.script.operator_table {
             if it.token.count > best_match_len 
             && begins_with(lexer, it.token) {
                 best_match = it_index;
@@ -200,7 +197,7 @@ default_lex_next_token :: (using lexer: *Lexer) -> Token {
             }
         }
         if best_match >= 0 {
-            _operator := *script.operator_table[best_match];
+            _operator := *lexer.script.operator_table[best_match];
             return make_token(.OPERATOR, _operator.token.count);
         }
     }
@@ -219,47 +216,52 @@ default_lex_next_token :: (using lexer: *Lexer) -> Token {
           case "else";      type = .ELSE;
           case "break";     type = .BREAK;
         }
-        return .{ type, token_text, token_location, trivia, .NO_ERROR };
+        return .{ type, token_text, trivia, token_location };
     }
     
-    // TODO: perhaps this should not be a token in itself, and should be handled on a higher level by the parser
     // parse a directive
     if get_next_byte(lexer) == #char "#" {
         advance(lexer);
         token_text = try_lex_identifier(lexer);
-        if token_text  return .{ .DIRECTIVE, token_text, token_location, trivia, .NO_ERROR };
-        return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{ 1, lexer.cursor }, "while attempting to parse a directive name.");
+        if token_text  return .{ .DIRECTIVE, token_text, trivia, token_location };
+        
+        set_lexer_error(lexer.script, "Unexpected character encountered while attempting to parse a directive name.", type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+        return .{ type = .ERROR };
     }
     
     // parse string or backticked identifier
     if get_next_byte(lexer) == #char "\"" || get_next_byte(lexer) == #char "`" { 
         quote_char := get_next_byte(lexer);
         
-        if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+        if !advance(lexer) {
+            set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = lexer.location);
+            return .{ type = .ERROR };
+        }
         token_text := string.{ 0, lexer.cursor };
         
         while get_next_byte(lexer) != quote_char {
             if get_next_byte(lexer) == #char "\\" {
                 _, ok := parse_escape_sequence(lexer);
-                if !ok  return make_error_token(token_location, .UNEXPECTED_CHARACTER, "invalid escape sequence encountered while parsing string");
+                if !ok {
+                    set_lexer_error(lexer.script, "Invalid escape sequence encountered while parsing string literal.", type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+                    return .{ type = .ERROR };
+                }
             } else {
-                if !advance(lexer)  return make_error_token(token_location, .UNEXPECTED_EOF, message = "while parsing string.");
+                if !advance(lexer) {
+                    set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = lexer.location);
+                    return .{ type = .ERROR };
+                }
             }
         }
         
         token_text.count = lexer.cursor - token_text.data;
         advance(lexer);
         is_identifier := quote_char == #char "`";
-        return .{ ifx is_identifier then .IDENTIFIER else .STRING, token_text, token_location, trivia, .NO_ERROR };
+        return .{ ifx is_identifier then .IDENTIFIER else .STRING, token_text, trivia, token_location };
     }
     
-    return make_error_token(token_location, .UNEXPECTED_CHARACTER, string.{ 1, lexer.cursor });
-}
-
-// NOTE: we use the trivia string to attach some additional context to error tokens
-make_error_token :: (location: Source_Code_Location, error_type: Error_Type, text := "", message := "") -> Token { 
-    assert(error_type & .CLASS_MASK == .LEXER_ERROR);
-    return .{ type = .ERROR, location = location, error_type = error_type, text = text, trivia = message }; 
+    set_lexer_error(lexer.script, "Unexpected character encountered: '%'", string.{ 1, lexer.cursor }, type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+    return .{ type = .ERROR };
 }
 
 begins_identifier :: (char: u8) -> bool { return is_alpha(char) || char == #char "_"; }
@@ -288,11 +290,10 @@ is_legal_identifier :: (str: string) -> bool {
 }
 
 // cycles between skipping whitespace and comments until next character is neither
-skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bool) {
-    if is_eof(lexer)  return "", true;
+skip_whitespace_and_comments :: (using lexer: *Lexer) -> trivia: string {
+    if is_eof(lexer)  return "";
     
     trivia := string.{ 0, lexer.cursor };
-    ok := true;
     
     while loop := !is_eof(lexer) {
         while is_whitespace(get_next_byte(lexer)) {
@@ -309,8 +310,8 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bo
             advance(lexer, 2);
             while !begins_with(lexer, "*/") {
                 if !advance(lexer) {
-                    ok = false;
-                    break loop; 
+                    set_lexer_error(lexer.script, "Unexpected EOF in multiline comment.", type = .UNEXPECTED_EOF, loc = lexer.location);
+                    return "";
                 }
             }
             advance(lexer, 2);
@@ -319,7 +320,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> (trivia: string, ok: bo
     }
     
     trivia.count = lexer.cursor - trivia.data;
-    return trivia, ok;
+    return trivia;
 }
 
 is_whitespace :: inline (char: u8) -> bool {

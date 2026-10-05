@@ -49,8 +49,7 @@ Error_Base :: struct {
 
 Lexer_Error :: struct {
     using 
-    base:   Error_Base;
-    token:  Token;
+    base:       Error_Base;
 }
 
 Parse_Error :: struct {
@@ -86,18 +85,17 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
     
     if get_class(error) == {
       case .LEXER_ERROR;
-        token := error.lexer.token;
         if append_script_location {
-            print(builder, "\n%:%,%: ", token.location.fully_pathed_filename, token.location.line_number, token.location.character_number);
+            print(builder, "\n%:%,%: ", error.lexer.location.fully_pathed_filename, error.lexer.location.line_number, error.lexer.location.character_number);
         }
         
-        if error.type == {
-          case .UNEXPECTED_TOKEN;
-            print(builder, "Unexpected token: % \"%\"", token.type, token.text);
+        // if error.type == {
+        //   case .UNEXPECTED_TOKEN;
+        //     print(builder, "Unexpected token: % \"%\"", token.type, token.text);
             
-          case .UNEXPECTED_CHARACTER;
-            print(builder, "Unexpected character: % \"%\"", token.type, token.text);
-        }
+        //   case .UNEXPECTED_CHARACTER;
+        //     print(builder, "Unexpected character: % \"%\"", token.type, token.text);
+        // }
         
       case .PARSE_ERROR;
         node := error.parse.node;
@@ -181,8 +179,14 @@ set_general_error :: (script: *Script, format: string, args: ..Any, loc := #call
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, loc := #caller_location) {
-    // assert(type & .CLASS_MASK == .PARSE_ERROR);
+set_lexer_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.LEXER_ERROR, loc := #caller_location) {
+    assert(type & .CLASS_MASK == .LEXER_ERROR);
+    script.error.base = .{ type = .LEXER_ERROR, location = loc };
+    set_error_message(script, sprint(format, ..args));
+} @PrintLike
+
+set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.PARSE_ERROR, loc := #caller_location) {
+    assert(type & .CLASS_MASK == .PARSE_ERROR);
     script.error.base = .{ type = .PARSE_ERROR, location = loc };
     script.error.parse.node = node;
     set_error_message(script, sprint(format, ..args));
