@@ -53,7 +53,7 @@ can_register_procedure :: (proc_info: *Type_Info_Procedure) -> bool {
 }
 
 
-format_procedure_overload :: (builder: *String_Builder, script: *Script, overload: Procedure_Overload_Report.Entry) #expand {
+format_procedure_overload :: (builder: *String_Builder, script: *Script, overload: Procedure_Overload_Report.Entry) {
     proc := script.procedures[overload.proc_index];
     
     print(builder, "%(", proc.name);

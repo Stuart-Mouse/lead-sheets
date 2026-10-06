@@ -74,7 +74,7 @@ Token :: struct {
     type:       Token_Type;
     text:       string;
     trivia:     string;
-    location:   Source_Code_Location;
+    location:   Source_Location_Info;
 }
 
 Lexer :: struct {
@@ -87,6 +87,8 @@ Lexer :: struct {
         parse_leaf,
     ) script: *Script;
     
+    source_file_id: Source_File_ID;
+    
     lex_next_token := default_lex_next_token;
     
     TOKEN_BUFFER_COUNT :: 4;
@@ -94,10 +96,10 @@ Lexer :: struct {
     next_token_index: int;
 }
 
-
-init_lexer :: (lexer: *Lexer, script: *Script, file := "", location := Source_Code_Location.{ "", 1, 1 }) {
+init_lexer :: (lexer: *Lexer, script: *Script, file := "", location := Source_Code_Location.{ "", 1, 1 }, source_file_id: Source_File_ID = 0) {
     lexer.* = .{};
     lexer.script = script;
+    lexer.source_file_id = source_file_id;
     
     init_scanner(*lexer.scanner, file);
     lexer.location = location;
@@ -146,18 +148,26 @@ expect_token_type :: (lexer: *Lexer, type: Token_Type) -> bool {
 default_lex_next_token :: (lexer: *Lexer) -> Token {
     trivia := skip_whitespace_and_comments(lexer);
     if has_error(lexer.script)  return .{ type = .ERROR };
-    if is_eof(lexer)            return .{ type = .EOF, location = lexer.location, trivia = trivia };
+    if is_eof(lexer)            return .{ type = .EOF, location = get_source_location_info(lexer), trivia = trivia };
     
-    token_location := lexer.location;
+    token_location := Source_Location_Info.{
+        file_id = lexer.source_file_id,
+        l0      = xx lexer.line_number,
+        l1      = xx lexer.line_number,
+        c0      = xx lexer.character_number,
+        c1      = xx lexer.character_number,
+    };
     
     make_token :: (type: Token_Type, count: int) -> Token #expand {
-        defer advance(lexer, count);
-        return .{
+        token_location.c1 = xx (token_location.c0 + count);
+        token := Token.{
             type       = type,
             text       = slice(remaining_as_string(lexer), 0, count),
             location   = token_location,
             trivia     = trivia, 
         };
+        advance(lexer, count);
+        return token;
     }
     
     // 2-character tokens (excluding operators)
@@ -176,7 +186,10 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
     // NOTE: this is being done before operators, presumably because a number may start with a minus sign
     //       this is probably fine, but be aware of this while doing operator refactoring
     token_text := default_try_lex_number(lexer);
-    if token_text  return .{ .NUMBER, token_text, trivia, token_location };
+    if token_text {
+        token_location.c1 = xx (token_location.c0 + token_text.count - 1);
+        return .{ .NUMBER, token_text, trivia, token_location };
+    }
     
     // operator tokens
     {
@@ -208,6 +221,7 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
           case "else";      type = .ELSE;
           case "break";     type = .BREAK;
         }
+        token_location.c1 = xx (token_location.c0 + token_text.count - 1);
         return .{ type, token_text, trivia, token_location };
     }
     
@@ -215,9 +229,11 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
     if get_next_byte(lexer) == #char "#" {
         advance(lexer);
         token_text = try_lex_identifier(lexer);
-        if token_text  return .{ .DIRECTIVE, token_text, trivia, token_location };
-        
-        set_lexer_error(lexer.script, "Unexpected character encountered while attempting to parse a directive name.", type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+        if token_text { 
+            token_location.c1 = xx (token_location.c0 + token_text.count - 1);
+            return .{ .DIRECTIVE, token_text, trivia, token_location };
+        }
+        set_lexer_error(lexer.script, "Unexpected character encountered while attempting to parse a directive name.", type = .UNEXPECTED_CHARACTER, loc = get_source_location_info(lexer));
         return .{ type = .ERROR };
     }
     
@@ -226,7 +242,7 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
         quote_char := get_next_byte(lexer);
         
         if !advance(lexer) {
-            set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = lexer.location);
+            set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = get_source_location_info(lexer));
             return .{ type = .ERROR };
         }
         token_text := string.{ 0, lexer.cursor };
@@ -235,12 +251,12 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
             if get_next_byte(lexer) == #char "\\" {
                 _, ok := parse_escape_sequence(lexer);
                 if !ok {
-                    set_lexer_error(lexer.script, "Invalid escape sequence encountered while parsing string literal.", type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+                    set_lexer_error(lexer.script, "Invalid escape sequence encountered while parsing string literal.", type = .UNEXPECTED_CHARACTER, loc = get_source_location_info(lexer));
                     return .{ type = .ERROR };
                 }
             } else {
                 if !advance(lexer) {
-                    set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = lexer.location);
+                    set_lexer_error(lexer.script, "Unexpected EOF encountered while parsing string literal.", type = .UNEXPECTED_EOF, loc = get_source_location_info(lexer));
                     return .{ type = .ERROR };
                 }
             }
@@ -249,10 +265,12 @@ default_lex_next_token :: (lexer: *Lexer) -> Token {
         token_text.count = lexer.cursor - token_text.data;
         advance(lexer);
         is_identifier := quote_char == #char "`";
+        
+        token_location.c1 = xx (token_location.c0 + token_text.count - 1);
         return .{ ifx is_identifier then .IDENTIFIER else .STRING, token_text, trivia, token_location };
     }
     
-    set_lexer_error(lexer.script, "Unexpected character encountered: '%'", string.{ 1, lexer.cursor }, type = .UNEXPECTED_CHARACTER, loc = lexer.location);
+    set_lexer_error(lexer.script, "Unexpected character encountered: '%'", string.{ 1, lexer.cursor }, type = .UNEXPECTED_CHARACTER, loc = get_source_location_info(lexer));
     return .{ type = .ERROR };
 }
 
@@ -302,7 +320,7 @@ skip_whitespace_and_comments :: (using lexer: *Lexer) -> trivia: string {
             advance(lexer, 2);
             while !begins_with(lexer, "*/") {
                 if !advance(lexer) {
-                    set_lexer_error(lexer.script, "Unexpected EOF in multiline comment.", type = .UNEXPECTED_EOF, loc = lexer.location);
+                    set_lexer_error(lexer.script, "Unexpected EOF in multiline comment.", type = .UNEXPECTED_EOF, loc = get_source_location_info(lexer));
                     return "";
                 }
             }
@@ -320,4 +338,72 @@ is_whitespace :: inline (char: u8) -> bool {
       || char == #char "\t"
       || char == #char "\r"
       || char == #char "\n";
+}
+
+
+
+
+
+Source_Location_Info :: struct {
+    file_id:            Source_File_ID;
+    using text_range:   Source_Text_Range;
+}
+
+// Indicates index + 1, so that 0 acts as a null value.
+Source_File_ID :: #type,isa u32;
+
+// NOTE: Source_Text_Range is inclusive of both bounds.
+Source_Text_Range :: struct { l0, l1, c0, c1: u32; };
+
+// Assuming the source range is all on one line, which is often the case.
+make_source_text_range :: (line_number: int, character_number: int, count: int) -> Source_Text_Range {
+    return .{ xx line_number, xx line_number, xx character_number, xx (character_number + min(count - 1, 0)) };
+}
+
+get_source_location_info :: (lexer: Lexer) -> Source_Location_Info {
+    return .{
+        file_id     = lexer.source_file_id, 
+        text_range  = .{ xx lexer.line_number, xx lexer.line_number, xx lexer.character_number, xx lexer.character_number },
+    };
+}
+
+print_source_range_with_underline :: (builder: *String_Builder, source_text: string, source_range: Source_Text_Range) {
+    text := source_text;
+    
+    if source_range.l0 != source_range.l1 then return;
+    
+    line_number := 1;
+    while text && line_number < source_range.l0 {
+        if text[0] == "\n" {
+            line_number += 1;
+            if line_number == source_range.l0 {
+                advance(*text);
+                break;
+            }
+        }
+        advance(*text);
+    }
+    
+    line_begin := text.data;
+    line_end   := line_begin;
+    while text {
+        if text[0] == "\n" {
+            line_end = text.data;
+            break;
+        }
+        advance(*text);
+    }
+    if line_end == line_begin then line_end = text.data;
+    
+    line_string := string.{ line_end - line_begin, line_begin };
+    append(builder, line_string);
+    append(builder, "\n");
+    
+    for 1..source_range.c0-1 {
+        append(builder, " ");
+    }
+    for source_range.c0..source_range.c1-1 {
+        append(builder, "^");
+    }
+    append(builder, "\n");
 }

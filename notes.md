@@ -2425,8 +2425,9 @@ Stuff to do after going back to working branch:
     - this will allow use to format the error string, should clean up return value handling
     - must still propogate the error back to script (mayber just set the error on the script rather than the lexer?)
 
-- [ ] add keyword token type, then disambiguate on token text
+- [/] add keyword token type, then disambiguate on token text
     - also use for true/false
+    - not actually doing this for now because it is slower and makes code more complicated, not less, and there is no real benefit to doing so atm
 
 - [ ] put serial number on nodes
 - [X] make node flags a u32

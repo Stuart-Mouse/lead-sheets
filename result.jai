@@ -42,9 +42,10 @@ Error :: union {
 }
 
 Error_Base :: struct {
-    type:       Error_Type;
-    message:    string;
-    location:   Source_Code_Location;   // NOTE: This is the Jai location where the error struct itself was created, not the location in the script source.
+    type:               Error_Type;
+    message:            string;
+    jai_location:       Source_Code_Location;   // NOTE: This is the Jai location where the error struct itself was created, not the location in the script source.
+    script_location:    Source_Location_Info;
 }
 
 Lexer_Error :: struct {
@@ -75,20 +76,32 @@ Execution_Error :: struct {
 
 get_class :: inline (error: Error) -> Error_Type { return error.type & .CLASS_MASK; }
 
+// TODO: print referenced source line with underline showing the problematic expression
 format_error :: (builder: *String_Builder, script: *Script, append_jai_location := true, append_script_location := true) {
     if !has_error(script)  return;
     error := *script.error;
     
     if append_jai_location {
-        print(builder, "%:%,%: ", error.location.fully_pathed_filename, error.location.line_number, error.location.character_number);
+        print(builder, "%:%,%: ", error.jai_location.fully_pathed_filename, error.jai_location.line_number, error.jai_location.character_number);
+    }
+    
+    if append_script_location {
+        source_file_path: string;
+        if error.script_location.file_id {
+            source_file_path = script.source_files[error.script_location.file_id-1].file_path;
+        }
+        
+        append(builder, "\n");
+        if source_file_path {
+            append(builder, source_file_path);
+            append(builder, ":");
+        }
+        
+        print(builder, "%,%: ", error.script_location.l0, error.script_location.c0);
     }
     
     if get_class(error) == {
       case .LEXER_ERROR;
-        if append_script_location {
-            print(builder, "\n%:%,%: ", error.lexer.location.fully_pathed_filename, error.lexer.location.line_number, error.lexer.location.character_number);
-        }
-        
         // if error.type == {
         //   case .UNEXPECTED_TOKEN;
         //     print(builder, "Unexpected token: % \"%\"", token.type, token.text);
@@ -100,9 +113,6 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
       case .PARSE_ERROR;
         node := error.parse.node;
         if node {
-            if append_script_location {
-                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
-            }
         } else {
             // print(builder, "[node is null! error type is %] ", error.type);
         }
@@ -110,9 +120,6 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
       case .TYPECHECK_ERROR;
         node := error.typecheck.node;
         if node {
-            if append_script_location {
-                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
-            }
             if error.type == {
               case .UNRESOLVED_IDENTIFIER;
                 assert(node.node_type == Node_Identifier);
@@ -135,9 +142,6 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
       case .EXECUTION_ERROR;
         node := error.execution.node;
         if node {
-            if append_script_location {
-                print(builder, "\n%:%,%: ", node.location.fully_pathed_filename, node.location.line_number, node.location.character_number);
-            }
             if error.type == {
               case .STACK_OVERFLOW;
                 assert(node.node_type == Node_Identifier);
@@ -156,53 +160,58 @@ format_error :: (builder: *String_Builder, script: *Script, append_jai_location 
         append(builder, "\n");
         append(builder, message);
     }
+    
+    if error.script_location.file_id {
+        append(builder, "\n");
+        source_file_content := script.source_files[error.script_location.file_id-1].file_content;
+        print_source_range_with_underline(builder, source_file_content, error.script_location.text_range);
+    }
 }
 
-format_error :: (script: *Script, append_jai_location := true, append_script_location := true) -> string {
+format_error :: (script: *Script, append_jai_location := false, append_script_location := true) -> string {
     builder: String_Builder; 
     format_error(*builder, script, append_jai_location, append_script_location);
     return builder_to_string(*builder); 
 }
 
-log_error :: (script: *Script, append_jai_location := true, append_script_location := true) {
+log_error :: (script: *Script, append_jai_location := false, append_script_location := true) {
     error_string := format_error(script, append_jai_location, append_script_location,, temp);
     log("%", error_string);
 }
 
 
-// set_error :: (script: *Script, type: Error_Type, format: string, args: ..Any, loc := #caller_location) {
-//     script.error = .{ type = type, location = loc };
-// } @PrintLike
-
-set_general_error :: (script: *Script, format: string, args: ..Any, loc := #caller_location) {
-    script.error.base = .{ type = .GENERAL_ERROR, location = loc };
+set_general_error :: (script: *Script, format: string, args: ..Any, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
+    script.error.base = .{ type = .GENERAL_ERROR, jai_location = jai_loc, script_location = loc };
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-set_lexer_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.LEXER_ERROR, loc := #caller_location) {
+set_lexer_error :: (script: *Script, format: string = "", args: ..Any, type := Error_Type.LEXER_ERROR, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
     assert(type & .CLASS_MASK == .LEXER_ERROR);
-    script.error.base = .{ type = .LEXER_ERROR, location = loc };
+    script.error.base = .{ type = .LEXER_ERROR, jai_location = jai_loc, script_location = loc };
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.PARSE_ERROR, loc := #caller_location) {
+set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.PARSE_ERROR, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
     assert(type & .CLASS_MASK == .PARSE_ERROR);
-    script.error.base = .{ type = .PARSE_ERROR, location = loc };
+    script.error.base = .{ type = .PARSE_ERROR, jai_location = jai_loc, script_location = loc };
     script.error.parse.node = node;
+    if node then script.error.script_location = node.location;
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, loc := #caller_location) {
+set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, jai_loc := #caller_location) {
     assert(type & .CLASS_MASK == .TYPECHECK_ERROR);
-    script.error.base = .{ type = type, location = loc };
+    script.error.base = .{ type = type, jai_location = jai_loc };
     script.error.typecheck.node = node;
+    if node then script.error.script_location = node.location;
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 
-set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, loc := #caller_location) {
+set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, jai_loc := #caller_location) {
     assert(type & .CLASS_MASK == .EXECUTION_ERROR);
-    script.error.base = .{ type = type, location = loc };
+    script.error.base = .{ type = type, jai_location = jai_loc };
     script.error.execution.node = node;
+    if node then script.error.script_location = node.location;
     set_error_message(script, sprint(format, ..args));
 } @PrintLike
 

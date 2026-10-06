@@ -1,9 +1,12 @@
-// NOTE: file path only used for error reporting
+// NOTE: Script takes ownership over the provided string.
 parse_source_file :: (script: *Script, source: string, file_path := "") -> bool {
     if !(script.flags & .INITIALIZED)  return false;
     
+    array_add(*script.source_files, .{ copy_string(file_path), source });
+    source_file_id: Source_File_ID = xx script.source_files.count;
+    
     lexer: Lexer;
-    init_lexer(*lexer, script, source, location = .{ file_path, 1, 1 });
+    init_lexer(*lexer, script, source, location = .{ file_path, 1, 1 }, source_file_id = source_file_id);
     
     root_block := alloc_node(script, Node_Block);
     script.ast_root      = root_block;
@@ -55,7 +58,7 @@ parse_block_or_statement :: (lexer: *Lexer, block: *Node_Block, expect_semicolon
         statement := parse_statement(lexer, expect_semicolon);
         if statement == null {
             if !has_error(lexer.script) {
-                set_parse_error(lexer.script, "Expected a statement.", loc = lexer.location);
+                set_parse_error(lexer.script, "Expected a statement.", loc = get_source_location_info(lexer));
             }
             return false;
         }
@@ -103,7 +106,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
             
             if !check_for_semicolon(lexer, _break.value_expression, expect_semicolon) {
                 token = peek_token(lexer);
-                set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = lexer.location);
+                set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = get_source_location_info(lexer));
                 return null;
             }
         }
@@ -330,7 +333,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
     
     if !check_for_semicolon(lexer, expression, expect_semicolon) {
         token = peek_token(lexer);
-        set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = lexer.location);
+        set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = get_source_location_info(lexer));
         return null;
     }
     
@@ -602,9 +605,13 @@ default_parse_binary :: (lexer: *Lexer, left: *Node, min_prec: int) -> *Node {
       case .OPEN_PAREN;
         get_token(lexer);
         debug_print("PROCEDURE ARGUMENTS LIST");
-        arg_exprs, ok := parse_procedure_arguments(lexer);
+        arg_exprs, ok, end_token := parse_procedure_arguments(lexer);
         if !ok  return null;
-        return make_procedure_call(lexer.script, token, left, arg_exprs);
+        
+        proc_call := make_procedure_call(lexer.script, token, left, arg_exprs);
+        proc_call.location.l1 = end_token.location.l1;
+        proc_call.location.c1 = end_token.location.c1;
+        return proc_call;
         
         
       case .DOT;
@@ -723,17 +730,21 @@ parse_contents_of_struct_literal :: (lexer: *Lexer, scope_end_token := Token_Typ
     return array_copy(expressions,, get_allocator(lexer.script)), true;
 }
 
-parse_procedure_arguments :: (lexer: *Lexer, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool) {
-    if expect_token_type(lexer, scope_end_token)  return .[], true;
-    
-    expressions := parse_comma_separated_expressions(lexer,, temp);
-    if !expressions  return .[], false;
-    
-    scope_end := get_token(lexer);
-    if scope_end.type != scope_end_token {
-        set_parse_error(lexer.script, "Expected a closing paren after arguments of procedure call. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
-        return .[], false;
+parse_procedure_arguments :: (lexer: *Lexer, scope_end_token := Token_Type.CLOSE_PAREN) -> ([] *Node, bool, Token) {
+    scope_end := peek_token(lexer);
+    if scope_end.type == scope_end_token {
+        get_token(lexer);
+        return .[], true, scope_end;
     }
     
-    return array_copy(expressions,, get_allocator(lexer.script)), true;
+    expressions := parse_comma_separated_expressions(lexer,, temp);
+    if !expressions  return .[], false, .{};
+    
+    scope_end = get_token(lexer);
+    if scope_end.type != scope_end_token {
+        set_parse_error(lexer.script, "Expected a closing paren after arguments of procedure call. Instead we saw % token '%'.", scope_end.type, scope_end.text, loc = scope_end.location);
+        return .[], false, .{};
+    }
+    
+    return array_copy(expressions,, get_allocator(lexer.script)), true, scope_end;
 }

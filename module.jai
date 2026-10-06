@@ -1,13 +1,13 @@
-
 /*
     TODO: 
-    - [X] Add a menas to override the allocator with a user-provided one.
-        - But how to handle declarations?
-            - This turns out to not really matter since we can just not save the declarations.
-            
-    - [ ] Add "freed" nodes to a free list so that they can be reused.  
+    We need to solve a relatively important problem, which is that I am now just leaking any source files that we read in as a script.
+    Because we no longer store the lexer on the script, we have a problem when trying to refer back to the source text, for instance, when constructing error messages.
+    So we will need to store the source text on the script.
+    Perhaps we can just do this using a resizable array in which we add key/value pairs of file path and file contents for any source files,
 */
 Script :: struct {
+    source_files:           [..] Script_Source_File;
+    
     variables:              [..] External_Variable;
     procedures:             [..] External_Procedure;
     directives:             [..] Directive;
@@ -48,6 +48,11 @@ Script :: struct {
     }
 }
 
+Script_Source_File :: struct { 
+    file_path:      string; 
+    file_content:   string; 
+};
+
 Script_Interface_Procedures :: struct {
     // fallback: *Script_Interface_Procedures;
     
@@ -80,6 +85,11 @@ Script_Interface_Procedures :: struct {
 DEFAULT_SCRIPT_INTERFACE_PROCEDURES :: Script_Interface_Procedures.{};
 
 deinit_script :: (script: *Script) {
+    for script.source_files {
+        free(it.file_path);
+        free(it.file_content);
+    }
+    array_reset(*script.source_files);
     array_reset(*script.variables);
     array_reset(*script.procedures);
     array_reset(*script.directives);

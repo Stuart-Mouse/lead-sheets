@@ -12,7 +12,7 @@
         - we can override the behaviour of existing nodes without needing to modify their internal data structure or content
         - the user can 
     
-    If the user wants to add some marginal functionality on top of some interface, or add handling for new types, tey an just write a single procedure that handles those types in a switch statement,
+    If the user wants to add some marginal functionality on top of some interface, or add handling for new types, they can just write a single procedure that handles those types in a switch statement,
     and then call back into the default procedure for the default node types.
 */
 
@@ -23,8 +23,12 @@ Node :: struct {
     serial:                 u32;
     flags:                  Flags;
     
+    // TODO: Replace Source_Code_Location with the following:
+    //       We should be able to get filename from some other source, not store on every node.
+    location: Source_Location_Info;
+    
     // These get copied from source token.
-    location:   Source_Code_Location;
+    // location:   Source_Code_Location;
     trivia:     string;
     
     Flags :: enum_flags u32 { 
@@ -440,8 +444,19 @@ Node_Break :: struct {
     value_expression:   *Node;
 }
 
-
 alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node = null, loc := #caller_location, trivia := "") -> *Node_Type
+#modify {
+    return is_subclass_of(Node_Type.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
+} {
+    node := New(Node_Type,, get_allocator(script));
+    node.node_type = Node_Type;
+    node.scope     = ifx scope else script.current_scope;
+    // node.location  = make_source_text_range(loc.line_number, loc.character_number, 1);
+    node.trivia    = trivia;
+    return node;
+}
+
+alloc_node :: (script: *Script, $Node_Type: Type, scope: *Node = null, loc: Source_Location_Info, trivia := "") -> *Node_Type
 #modify {
     return is_subclass_of(Node_Type.(*Type_Info_Struct), "Node"), "Type passed to alloc_node must be a subclass of Node!";
 } {
@@ -464,6 +479,10 @@ get_location :: (node: Node) -> string {
 
 format_location :: (location: Source_Code_Location) -> string {
     return tprint("%:%,%", location.fully_pathed_filename, location.line_number, location.character_number);
+}
+
+format_location :: (location: Source_Location_Info) -> string {
+    return tprint("%,%", location.l0, location.c0);
 }
 
 
@@ -502,7 +521,7 @@ make_identifier :: (script: *Script, source_token: Token) -> *Node_Identifier {
 
 // NOTE: It is actually important that one call make_operation instead of making the node manually!
 //       This is because we do the extra shenanigans for handling operator directives here.
-make_operator :: (script: *Script, source_token: Token, operator_id: int, left: *Node, right: *Node, loc := #caller_location) -> *Node_Operator {
+make_operator :: (script: *Script, source_token: Token, operator_id: int, left: *Node, right: *Node, loc := Source_Location_Info.{}) -> *Node_Operator {
     operator_info := get_operator_info(script, operator_id);
     
     base_operator: *Node_Operator;
@@ -576,6 +595,10 @@ make_procedure_call :: (script: *Script, source_token: Token, proc_expr: *Node, 
     node := alloc_node(script, Node_Procedure_Call, loc = source_token.location, trivia = source_token.trivia);
     node.procedure_expression = proc_expr;
     node.arguments            = arg_exprs;
+    node.location.l0 = node.procedure_expression.location.l0;
+    node.location.c0 = node.procedure_expression.location.c0;
+    node.location.l1 = node.procedure_expression.location.l1;
+    node.location.c1 = node.procedure_expression.location.c1;
     return node;
 }
 
@@ -618,7 +641,7 @@ make_cast :: (script: *Script, source_token: Token, value: *Node, type_expr: *No
 
 // NOTE: we can't use make_literal to make a STRUCT literal since that would require providing values as expressions
 //       so this will only work for basically numbers, strings, and enums
-make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_Literal {
+make_literal :: (script: *Script, value: Any, loc := Source_Location_Info.{}) -> *Node_Literal {
     literal := alloc_node(script, Node_Literal);
     literal.value_type = value.type;
     if value.type.type == .STRING {
@@ -637,7 +660,7 @@ make_literal :: (script: *Script, value: Any, loc := #caller_location) -> *Node_
     return literal;
 }
 
-make_number_literal :: (script: *Script, number: $T, loc := #caller_location) -> *Node 
+make_number_literal :: (script: *Script, number: $T, loc := Source_Location_Info.{}) -> *Node 
 #modify {
     return is_numeric(T), "Type must be numeric (integer or float).";
 } {
@@ -647,7 +670,7 @@ make_number_literal :: (script: *Script, number: $T, loc := #caller_location) ->
     return literal;
 }
 
-make_identifier :: (script: *Script, name: string, loc := #caller_location) -> *Node_Identifier {
+make_identifier :: (script: *Script, name: string, loc := Source_Location_Info.{}) -> *Node_Identifier {
     node := alloc_node(script, Node_Identifier, loc = loc);
     node.name = name;
     return node;
