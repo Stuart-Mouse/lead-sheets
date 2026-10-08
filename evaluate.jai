@@ -560,7 +560,7 @@ evaluate_declaration :: (script: *Script, declaration: *Node_Declaration, provid
             return false;
         }
         
-        if !(declaration.flags & .STATIC) || !redeclared {
+        if redeclared {
             if declaration.init_expression {
                 evaluate_node_or_return(script, declaration.init_expression, provided_storage = member_value.value_pointer);
             } else {

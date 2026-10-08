@@ -1129,9 +1129,9 @@ typecheck_declaration :: (script: *Script, declaration: *Node_Declaration, check
         }
         // if the init expression of a declaration is marked as constant, then the declaration is also marked as constant
         // however, if the declaration is later re-assigned to a new value, the declaration will lose this designation
-        if declaration.init_expression.flags & .IS_CONSTANT {
-            declaration.flags |= .IS_CONSTANT;
-        }
+        // if declaration.init_expression.flags & .IS_CONSTANT {
+        //     declaration.flags |= .IS_CONSTANT;
+        // }
     } else {
         // TODO: can we validly assume that default-initialized values are essentially constant?
         // assert(explicit_type != null);
@@ -1148,8 +1148,7 @@ typecheck_declaration :: (script: *Script, declaration: *Node_Declaration, check
             return;
         }
     } else if declaration.left.node_type == Node_Arrow {
-        dot := declaration.left.(*Node_Dot);
-        typecheck_node_or_return(script, dot);
+        typecheck_node_or_return(script, declaration.left);
     } else {
         set_typecheck_error(script, "Left-hand side of declaration must be a simple identifier or a virtual member expresion.", node = declaration);
         return;
