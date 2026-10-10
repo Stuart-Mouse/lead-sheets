@@ -182,13 +182,13 @@ log_error :: (script: *Script, append_jai_location := false, append_script_locat
 
 set_general_error :: (script: *Script, format: string, args: ..Any, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
     script.error.base = .{ type = .GENERAL_ERROR, jai_location = jai_loc, script_location = loc };
-    set_error_message(script, sprint(format, ..args));
+    set_error_message(script, sprint(format, ..args,, context.default_allocator), no_copy = true);
 } @PrintLike
 
 set_lexer_error :: (script: *Script, format: string = "", args: ..Any, type := Error_Type.LEXER_ERROR, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
     assert(type & .CLASS_MASK == .LEXER_ERROR);
     script.error.base = .{ type = .LEXER_ERROR, jai_location = jai_loc, script_location = loc };
-    set_error_message(script, sprint(format, ..args));
+    set_error_message(script, sprint(format, ..args,, context.default_allocator), no_copy = true);
 } @PrintLike
 
 set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *Node = null, type := Error_Type.PARSE_ERROR, loc := Source_Location_Info.{}, jai_loc := #caller_location) {
@@ -196,7 +196,7 @@ set_parse_error :: (script: *Script, format: string = "", args: ..Any, node: *No
     script.error.base = .{ type = .PARSE_ERROR, jai_location = jai_loc, script_location = loc };
     script.error.parse.node = node;
     if node then script.error.script_location = node.location;
-    set_error_message(script, sprint(format, ..args));
+    set_error_message(script, sprint(format, ..args,, context.default_allocator), no_copy = true);
 } @PrintLike
 
 set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.TYPECHECK_ERROR, jai_loc := #caller_location) {
@@ -204,7 +204,7 @@ set_typecheck_error :: (script: *Script, format: string = "", args: ..Any, node:
     script.error.base = .{ type = type, jai_location = jai_loc };
     script.error.typecheck.node = node;
     if node then script.error.script_location = node.location;
-    set_error_message(script, sprint(format, ..args));
+    set_error_message(script, sprint(format, ..args,, context.default_allocator), no_copy = true);
 } @PrintLike
 
 set_execution_error :: (script: *Script, format: string = "", args: ..Any, node: *Node, type := Error_Type.EXECUTION_ERROR, jai_loc := #caller_location) {
@@ -212,10 +212,14 @@ set_execution_error :: (script: *Script, format: string = "", args: ..Any, node:
     script.error.base = .{ type = type, jai_location = jai_loc };
     script.error.execution.node = node;
     if node then script.error.script_location = node.location;
-    set_error_message(script, sprint(format, ..args));
+    set_error_message(script, sprint(format, ..args,, context.default_allocator), no_copy = true);
 } @PrintLike
 
-set_error_message :: (script: *Script, message: string) {
+set_error_message :: (script: *Script, message: string, no_copy := false) {
     if script.error.message then free(script.error.message);
-    script.error.message = message;
+    if no_copy {
+        script.error.message = message;
+    } else {
+        script.error.message = copy_string(message,, context.default_allocator);
+    }
 }

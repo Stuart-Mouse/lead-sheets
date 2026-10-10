@@ -106,7 +106,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
             
             if !check_for_semicolon(lexer, _break.value_expression, expect_semicolon) {
                 token = peek_token(lexer);
-                set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = get_source_location_info(lexer));
+                set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", _break.value_expression.node_type, token.type, token.text, loc = token.location);
                 return null;
             }
         }
@@ -308,7 +308,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         }
         
         do_assignment := false;
-        is_macro_declaration := false;
+        is_static_declaration := false;
         
         next_token = peek_token(lexer);
         if is_operator(next_token, "=") {
@@ -318,14 +318,14 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
         else if next_token.type == .COLON {
             get_token(lexer);
             do_assignment = true;
-            is_macro_declaration = true;
+            is_static_declaration = true;
         }
         
         if do_assignment {
             debug_print("WITH ASSIGNMENT");
             declaration.init_expression = lexer.parse_expression(lexer, 0);
             if declaration.init_expression == null  return null;
-            if is_macro_declaration then declaration.flags |= .STATIC;
+            if is_static_declaration then declaration.flags |= .STATIC;
         }
         
         expression = declaration;
@@ -333,7 +333,7 @@ parse_statement :: (lexer: *Lexer, expect_semicolon := true) -> *Node {
     
     if !check_for_semicolon(lexer, expression, expect_semicolon) {
         token = peek_token(lexer);
-        set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = get_source_location_info(lexer));
+        set_parse_error(lexer.script, "Expected a semicolon after statement (%), but saw % token: '%'", expression.node_type, token.type, token.text, loc = token.location);
         return null;
     }
     

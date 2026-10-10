@@ -825,7 +825,7 @@ typecheck_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Ca
                     print(*builder, "\tProcedure identifier: '%'\n", procedure_name);
                     print(*builder, "\tArgument expression: '%'\n", sprint_node(script, node,, temp));
                     print(*builder, "\tExpected type '%', got '%'\n", expected_type, type);
-                    set_typecheck_error(script, builder_to_string(*builder,, temp), node = node, type = .MISSING_TYPE_HINT);
+                    set_typecheck_error(script, builder_to_string(*builder), node = node, type = .MISSING_TYPE_HINT);
                     return;
                 }
             } else {
@@ -836,7 +836,7 @@ typecheck_procedure_call :: (script: *Script, procedure_call: *Node_Procedure_Ca
                     print(*builder, "\tProcedure identifier: '%'\n", procedure_name);
                     print(*builder, "\tArgument expression: '%'\n", sprint_node(script, node,, temp));
                     print(*builder, "\tExpected type '%', got '%'\n", expected_type, node.value_type);
-                    set_error_message(script, builder_to_string(*builder));
+                    set_typecheck_error(script, builder_to_string(*builder), node = node);
                     return;
                 }
                 if replacement  replace_node(node_ptr_ptr, replacement);
