@@ -85,6 +85,7 @@ Script_Interface_Procedures :: struct {
 DEFAULT_SCRIPT_INTERFACE_PROCEDURES :: Script_Interface_Procedures.{};
 
 deinit_script :: (script: *Script) {
+    free(script.error.message);
     for script.source_files {
         free(it.file_path);
         free(it.file_content);
@@ -126,7 +127,10 @@ init_script :: (script: *Script, stack_size := 2048) {
 }
 
 has_error :: (script: *Script) -> bool { return script.error.type != .NO_ERROR; }
-clear_error :: (script: *Script) { memzero(*script.error); }
+clear_error :: (script: *Script) { 
+    free(script.error.message);
+    memzero(*script.error); 
+}
 
 get_allocator :: (script: *Script) -> Allocator {
     if script.user_allocator.proc then return script.user_allocator;
