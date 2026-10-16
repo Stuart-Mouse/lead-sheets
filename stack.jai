@@ -127,7 +127,7 @@ peek_as :: inline (using stack: *Stack, $T: Type) -> T {
     
     In addition to pushing the array data, we also push the array count.
     This just seems like a very useful thing, and uses only marginally more stack space.
-    You can always push jsut the array data manually if you really want to.
+    You can always push just the array data manually if you really want to.
     
     TODO: maybe add a peek_array?
 */

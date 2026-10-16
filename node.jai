@@ -311,9 +311,20 @@ Node_Literal :: struct {
         aggregate: struct {
             value_pointer:      *void;      // will only be used if literal has static storage
             expressions:        [] *Node;   // expressions to init struct members by. later maybe also accepting assignment statements
+            
+            // TODO: Could replace 'expressions' with a Node_Block that contains the initializer expressions inside it. 
         }
         any: Any;
     }
+}
+
+is_string_literal :: (node: *Node) -> bool, string {
+    if node.node_type != Node_Literal  return false, "";
+    
+    literal := node.(*Node_Literal);
+    if literal.literal_type != .STRING  return false, "";
+    
+    return true, literal.text;
 }
 
 is_number_literal :: (node: *Node) -> bool {

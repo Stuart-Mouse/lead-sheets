@@ -161,7 +161,7 @@ register_operator :: (script: *Script, lexical_type: Operator_Info.Lexical_Type,
     TODO: consider whether we should have some 'invalid' zero value for Builtin_Operation_ID
 */
 
-Builtin_Operation_ID :: int;
+Builtin_Operation_ID :: u16;
 
 // this is dumb, but it must be done (for now)
 #insert -> string {
@@ -288,24 +288,24 @@ default_resolve_builtin_operation :: (
           case .BINARY;
             if it.left .(*Type_Info) == left_type 
             && it.right.(*Type_Info) == right_type {
-                return it_index, false;
+                return xx (it_index + 1), false;
             }
-        
+            
             if it.is_symmetric 
             && it.left .(*Type_Info) == right_type 
             && it.right.(*Type_Info) == left_type {
-                return it_index, true;
+                return xx (it_index + 1), true;
             }
-          
+            
           case .PREFIX;
-            if it.left.(*Type_Info) == left_type  return it_index, false;
+            if it.left.(*Type_Info) == left_type  return xx (it_index + 1), false;
             
           case .ASSIGNMENT;
             if it.left .(*Type_Info) == left_type 
-            && it.right.(*Type_Info) == right_type  return it_index, false;
+            && it.right.(*Type_Info) == right_type  return xx (it_index + 1), false;
         }
     }
-    return -1, false;
+    return 0, false;
 }
 
 default_execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, result: *void) -> bool {
@@ -315,7 +315,7 @@ default_execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, rig
         
         append(*builder, "if id == {\n");
         for BUILTIN_OPERATIONS {
-            print_to_builder(*builder, "  case %;\n", it_index);
+            print_to_builder(*builder, "  case %;\n", it_index + 1);
             if it.type == {
               case .PREFIX;
                 print_to_builder(*builder, "    result.(*%3).* = %2left.(*%1).*;\n", it.left, it.identifier, it.result);

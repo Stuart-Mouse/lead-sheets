@@ -87,6 +87,9 @@ typecheck_script :: (script: *Script) -> bool {
     script.typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
     if has_error(script)  return false;
     
+    bytes_allocated := script.pool.current_point - script.pool.memory_base;
+    log("After typechecking script, pool has allocaated % bytes.", bytes_allocated);
+    
     script.flags |= .TYPECHECKED;
     return true;
 }
@@ -712,15 +715,15 @@ typecheck_binary_operator :: (script: *Script, binary_operator: *Node_Binary_Ope
     right_underlying_type := ifx right_type && right_type.type == .ENUM then right_type.(*Type_Info_Enum).internal_type.(*Type_Info) else right_type;
     
     builtin_operation_id, swap_arguments := script.resolve_builtin_operation(binary_operator.token, operator_info.lexical_type, left_underlying_type, right_underlying_type);
-    if builtin_operation_id >= 0 {
+    if builtin_operation_id > 0 {
         binary_operator.builtin_operation_id = builtin_operation_id;
         
         if swap_arguments then binary_operator.flags |= .SWAP_OPERANDS;
         
         // NOTE: only uses the enum type if both left and right enums match, 
         //       otherwise we set return type as the matching underlying type.
-        binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
-        debug_print("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_id]);
+        binary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id-1].result.(*Type_Info);
+        debug_print("builtin operation: %", BUILTIN_OPERATIONS[builtin_operation_id-1]);
         
         if left_type.type == .ENUM && left_type == right_type {
             // if binary_operator.value_type != left_underlying_type {
@@ -764,9 +767,9 @@ typecheck_unary_operator :: (script: *Script, unary_operator: *Node_Unary_Operat
         else expression_value_type;
     
     builtin_operation_id := script.resolve_builtin_operation(unary_operator.token, operator_info.lexical_type, expression_underlying_type, null);
-    if builtin_operation_id >= 0 {
+    if builtin_operation_id > 0 {
         unary_operator.builtin_operation_id = builtin_operation_id;
-        unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id].result.(*Type_Info);
+        unary_operator.value_type = BUILTIN_OPERATIONS[builtin_operation_id-1].result.(*Type_Info);
         return;
     }
     

@@ -295,6 +295,6 @@ try_calling_procedure_with_wrapper :: (proc_info: *Type_Info_Procedure, proc_ptr
             return it.wrapper(proc_ptr, arguments, return_values);
         }
     }
-    log("Error: % has not been registered for use in a dynamic call.", (*proc_info).(*Type).*);
+    log("Error: Procedure type has not been registered for use in a dynamic call: %", (*proc_info).(*Type).*);
     return false;
 }
