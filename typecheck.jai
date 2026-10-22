@@ -87,8 +87,8 @@ typecheck_script :: (script: *Script) -> bool {
     script.typecheck_node(script, script.ast_root, .IS_STATEMENT_ROOT);
     if has_error(script)  return false;
     
-    bytes_allocated := script.pool.current_point - script.pool.memory_base;
-    log("After typechecking script, pool has allocaated % bytes.", bytes_allocated);
+    // bytes_allocated := script.pool.current_point - script.pool.memory_base;
+    // log("After typechecking script, pool has allocated % bytes.", bytes_allocated);
     
     script.flags |= .TYPECHECKED;
     return true;

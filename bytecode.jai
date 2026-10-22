@@ -1,26 +1,6 @@
 #if false {
 
 /*
-    TODO: I actually want to start on this sooner rather than later now. 
-    
-    Evaluating scripts by walking the AST has worked fine for a while, but of course it is not ideal, and I have already started running into some problems.
-    
-    I really should do one more cleanup/refactoring pass before starting the bytecode stuff
-    the main focus of this will be in separating the parse and typecheck info on code nodes
-        we should be able to very easily revert any typechecking that was done on a node and re-typecheck it so that we can robustly handle code modification
-        biggest issue is how to handle identifiers and still allow renaming. Right now we destructively typecheck these by replacing the source name with other info
-            maybe we just take the name member out of the union, but then we need to make sure that this is never used if the identifier has already been resolved!
-        
-    it may also be a good time to consider making each node more aware of how it is referenced, so that we can trivially replace nodes in-place
-        sea of nodes?
-            store each node type in its own array, prevent duplication of nodes
-            track nodes that refer to each node
-            need some Typechecked node that points to underlying lexical node and provides the type information 
-                the same lexical node may be interpretted differently based on the context
-    
-    another big thing to think about is how to improve the robustness of identifier resolution, and how to re-check that identifiers are valid even after being renamed
-        
-    
     GOALS:
     - [ ] much better performance than AST walking
     - [ ] good debuggability, step through scripts as they execute
@@ -38,47 +18,7 @@
         we can probably do this by storing some index + count representing range of bytecode, along with pointer to ast node that generated it
         or maybe in the bytecode itself we just have an instruction that sets some 'cursor' in the script context that indicates the ast node 
         
-        
     
-    Literal Types
-    u8, u16, u32, u64
-    s8, s16, s32, s64
-    f32, f64    
-    pointer
-    aggregate
-    
-    
-    Instruction set:
-    
-    GOTO(location, condition)
-        location: 64-bit pointer/index used to set instruction pointer
-        condition: bool
-    ADD, SUB, MUL, DIV
-        variants:
-            u8, u16, u32, u64
-            s8, s16, s32, s64
-            f32, f64
-    CAST
-        variants: 
-            int -> int
-            int -> float
-            float -> int
-    PUSH_WORD
-        register-sized types only
-    PUSH_BYTES
-        used to copy aggregate literals onto the stack
-    MODIFY_STACK_POINTER
-        SET, ADD
-    MEMCPY(to: u32/64, from: u32/64, count: u32)
-        variants needed for copy from stack or from random memory location
-    PUSH_VARIABLE(variable_id: u16)
-        performs a lookup in variables table, or maybe directly indexes
-    CALL_PROCEDURE(procedure_id: u16)
-        what about operands?  some way to optimize the usual procedure calling method?        
-        
-        
-        
-        
     Notes:
     
     In order to still allow users to easily extend the language without needing to go all the way down to bytecode, 
@@ -241,7 +181,7 @@ Bytecode_Set_Stack_Frame_Pointer :: struct {
     instruction_type = .SET_STACK_POINTER;
 }
 
-// operands are just 2 words on top of stack
+// left, right, and result are popped from stack
 Bytecode_Builtin_Operation :: struct {
     using #as base: Bytecode_Instruction;
     instruction_type = .BUILTIN_OPERATION;
@@ -303,6 +243,19 @@ Bytecode_Copy_Memory :: struct {
         and at the root level we can provide the final storage and prevent a copy when pulling out the final value.
         But for bytecode, we can just establish the proper storage for all subexpression results up front.
     
+    So, another problem that we have to consider now that we need to be more rigorous about stack usage is that we probably can't just push aggregates onto the stack willy nilly anymore
+    We were only able to get away with this before because, as mentioned above, our only concern was that each node left the proper stack pointer in the right spot when it returned
+    and this meant we could just use the stack as free scratch space so long as we stored the value of the stack pointer before doing so
+    
+    but now, we have ot worry about instructions that can't just do arbitrarily-sized pops
+    the instructions need to pop only word-size operands
+    this means we will have to calculate our max required scratch space ofr intermediate values up front, and then include that scratch space in the containing stack frame.
+    then we can just store intermediate values for aggregates directly into our scratch space, and push pointers 
+    
+    
+    NOTE: We also will probably need to refactor execute_builtin_operation so that it takes Words as operands rather than pointers to values
+    because for register-sized types, we really are better off just passing the value itself rather than a pointer to the value
+    this will make the code gen only slightly omre complicated, but should result in faster runtime code and will make bytecode generation much simpler 
 */
 
 /*

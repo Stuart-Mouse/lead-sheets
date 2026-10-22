@@ -308,6 +308,7 @@ default_resolve_builtin_operation :: (
     return 0, false;
 }
 
+// TODO: refactor so that non-aggregate types are not passed by pointer.
 default_execute_builtin_operation :: (id: Builtin_Operation_ID, left: *void, right: *void, result: *void) -> bool {
     // generate switch case for all builtin operations
     #insert -> string {
